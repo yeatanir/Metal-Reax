@@ -11,6 +11,7 @@
 // (nonbonded_pair_counted(), ENGINE_SPEC 3.1).
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <span>
 #include <vector>
 
@@ -105,6 +106,25 @@ struct FarRowsF32 {
   std::vector<float> r2;           // nall * cap
   std::uint32_t max_count() const noexcept;
 };
+
+// Grow-and-retry (LAMMPS_INTEGRATION S6): `launch(cap)` runs the row kernel with that capacity. If any row needed more than
+// `cap`, the true counts are known, so the next attempt uses the exact need (rounded up to a multiple of 8). Throws
+// SystemError after `max_attempts` or if nall * cap would exceed 32-bit indexing. `attempts` (optional) receives the number of launches.
+FarRowsF32 build_far_rows_with_growth(const std::function<FarRowsF32(std::uint32_t)>& launch, std::uint32_t initial_cap, std::uint32_t nall,
+                                      unsigned max_attempts = 4, unsigned* attempts = nullptr);
+
+// Verification of device rows against the CPU-64 list (VALIDATION NBR-1/NBR-2). Contract of the float rows:
+//   * superset: every CPU-64 pair (d <= row cutoff) is present            -> `missing` must be 0
+//   * bounded:  every device pair has CPU-64 distance <= cutoff + 2*margin -> `illegal_extra` must be 0
+//   * the stored r2 equals the double distance squared to 2*(d + margin)*margin
+// Pairs in the band (cutoff, cutoff + 2*margin] that the device includes are legal and only counted (`band_extra`).
+struct RowComparison {
+  std::size_t cpu_entries = 0, device_entries = 0;
+  std::size_t missing = 0, illegal_extra = 0, band_extra = 0, bad_r2 = 0, structural = 0;  // structural: j <= i, j >= nall, duplicates
+  bool overflow = false;                                                                   // some row has count > cap
+  bool ok() const noexcept { return !overflow && missing == 0 && illegal_extra == 0 && bad_r2 == 0 && structural == 0; }
+};
+RowComparison compare_rows_to_far_list(const FarRowsF32& rows, const FarList& cpu, const AtomSet& atoms, const NeighborCutoffs& cut, double margin);
 
 // ---- deterministic reductions ------------------------------------------------------------------------------------
 // Canonical fixed-order float sum: element e belongs to chunk e / chunk_len; chunks are summed sequentially in float, then

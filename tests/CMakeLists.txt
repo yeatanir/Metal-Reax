@@ -18,6 +18,21 @@ reaxmetal_add_test(ffield_parser)
 reaxmetal_add_test(pair_settings)
 reaxmetal_add_test(neighbor)
 
+# The Metal kernels executed as C++ (EMULATION: evidence about kernel logic, not about Metal; see the file header)
+add_executable(test_metal_emulation test_metal_emulation.cpp)
+target_link_libraries(test_metal_emulation PRIVATE reaxmetal_metal)
+target_include_directories(test_metal_emulation PRIVATE ${PROJECT_SOURCE_DIR}/src/metal/shaders ${CMAKE_CURRENT_SOURCE_DIR}/metal_shim ${PROJECT_SOURCE_DIR}/tools)
+target_compile_definitions(test_metal_emulation PRIVATE REAXMETAL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+reaxmetal_apply_warnings(test_metal_emulation)
+reaxmetal_apply_strict_fp(test_metal_emulation)
+add_test(NAME metal_emulation COMMAND test_metal_emulation)
+# Syntax/type check of the Objective-C++ backend against hand-written stub headers (no Apple SDK needed). Weak evidence, see the script.
+find_program(RM_CLANGXX NAMES clang++ clang++-18 clang++-17 clang++-16 clang++-15)
+if(RM_CLANGXX AND NOT APPLE)
+  add_test(NAME objcxx_syntax COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/check_objcxx_syntax.sh ${RM_CLANGXX})
+  set_tests_properties(objcxx_syntax PROPERTIES SKIP_RETURN_CODE 77)
+endif()
+
 # ---- M1: frozen artefacts and the reference-harness self-tests (no LAMMPS needed) --------------------------------------
 add_test(NAME tolerances_frozen
   COMMAND ${CMAKE_COMMAND} -DMANIFEST=${PROJECT_SOURCE_DIR}/tolerances/TOLERANCES.sha256 -DBASE=${PROJECT_SOURCE_DIR}/tolerances
@@ -48,6 +63,19 @@ if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
   target_link_libraries(test_ffield_tables PRIVATE reaxmetal_core)
   reaxmetal_apply_warnings(test_ffield_tables)
   add_test(NAME ffield_tables COMMAND test_ffield_tables ${REAXMETAL_FFIELD_DIR} ${PROJECT_SOURCE_DIR}/tests/fixtures/ffield_tables.sha256)
+  # NBR-3: engine pair enumeration vs the interaction tallies LAMMPS recorded in M1 (needs the ffields for nonb_cut) and
+  # NBR-2: engine ghost set vs LAMMPS' ghost set (needs the stock LAMMPS shared library)
+  if(Python3_FOUND)
+    add_test(NAME neighbor_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_neighbor_fixtures.py
+             --tool $<TARGET_FILE:reaxmetal_neighbor_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR})
+    set_tests_properties(neighbor_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    if(RM_LIBLAMMPS)
+      add_test(NAME lammps_ghosts COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/lammps/run_ghosts.py
+               --lib ${RM_LIBLAMMPS} --tool $<TARGET_FILE:reaxmetal_neighbor_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR})
+      set_tests_properties(lammps_ghosts PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL"
+        ENVIRONMENT "LD_LIBRARY_PATH=${REAXMETAL_LAMMPS_PREFIX}/lib;DYLD_LIBRARY_PATH=${REAXMETAL_LAMMPS_PREFIX}/lib")
+    endif()
+  endif()
 else()
-  message(STATUS "REAXMETAL_FFIELD_DIR not set: ffield_tables (PARSE-1) not registered")
+  message(STATUS "REAXMETAL_FFIELD_DIR not set: ffield_tables (PARSE-1), neighbor_fixtures and lammps_ghosts not registered")
 endif()

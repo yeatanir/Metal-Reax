@@ -22,7 +22,10 @@ int main() {
   }
   {
     const PairSettings p = parse({"NULL", "checkqeq", "no", "enobonds", "off", "lgvdw", "true", "tabulate", "0"});
-    RM_CHECK(!p.checkqeq && !p.enobonds && p.lgvdw && p.tabulate == 0);
+    RM_CHECK(!p.checkqeq && !p.enobonds && p.lgvdw && p.tabulate == 0 && !p.selfcheck);
+    RM_CHECK(parse({"NULL", "reaxmetal_selfcheck", "yes"}).selfcheck);
+    RM_CHECK(!parse({"NULL", "reaxmetal_selfcheck", "no"}).selfcheck);
+    RM_EXPECT_THROW(parse({"NULL", "reaxmetal_selfcheck", "maybe"}), FfieldError);
     const PairSettings q = parse({"NULL", "safezone", "1.5", "mincap", "100", "minhbonds", "30", "list/blocking", "yes"});
     RM_CHECK(q.safezone == 1.5 && q.mincap == 100 && q.minhbonds == 30 && q.list_blocking && q.notices.size() == 4);   // Ignored options leave a notice each
   }

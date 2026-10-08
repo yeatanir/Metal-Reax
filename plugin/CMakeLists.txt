@@ -54,15 +54,16 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
     FAIL_REGULAR_EXPRESSION "FAILED;UNEXPECTED;SUMMARY failures=[1-9]")
 endif()
 
-# Adapter A1 differential test (tests/lammps/run_a1.py): extract() parity, accept/reject parity, host checks and the
-# explicit compute() refusal, against the stock pinned LAMMPS shared library. Needs a shared-library LAMMPS build
-# with LAMMPS_EXCEPTIONS (tools/build_reference_matrix.sh stock-gcc) and REAXMETAL_FFIELD_DIR.
-if(REAXMETAL_LAMMPS_PREFIX AND REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/lib/liblammps.so" AND REAXMETAL_BUILD_TESTS)
+# Adapter differential tests (tests/lammps/run_a1.py, run_a2.py): extract()/accept-reject parity and host checks (A1), and the ghost-native
+# host view + far-list self-check inside LAMMPS against the 58 fixtures (A2). They drive the stock pinned LAMMPS shared library through its
+# C interface, so they need a build with LAMMPS_EXCEPTIONS (tools/build_lammps_reference.sh) and REAXMETAL_FFIELD_DIR.
+if(RM_LIBLAMMPS AND REAXMETAL_FFIELD_DIR AND REAXMETAL_BUILD_TESTS)
   find_package(Python3 REQUIRED COMPONENTS Interpreter)
-  add_test(NAME lammps_a1 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_a1.py
-           --lib ${REAXMETAL_LAMMPS_PREFIX}/lib/liblammps.so --plugin $<TARGET_FILE:reaxmetal_adapter_plugin>
-           --ffield-dir ${REAXMETAL_FFIELD_DIR})
-  set_tests_properties(lammps_a1 PROPERTIES
-    ENVIRONMENT "LAMMPS_POTENTIALS=${REAXMETAL_FFIELD_DIR};LD_LIBRARY_PATH=${REAXMETAL_LAMMPS_PREFIX}/lib"
-    FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  foreach(_t a1 a2)
+    add_test(NAME lammps_${_t} COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_${_t}.py
+             --lib ${RM_LIBLAMMPS} --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR})
+    set_tests_properties(lammps_${_t} PROPERTIES
+      ENVIRONMENT "LAMMPS_POTENTIALS=${REAXMETAL_FFIELD_DIR};LD_LIBRARY_PATH=${REAXMETAL_LAMMPS_PREFIX}/lib;DYLD_LIBRARY_PATH=${REAXMETAL_LAMMPS_PREFIX}/lib"
+      FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  endforeach()
 endif()

@@ -8,14 +8,19 @@
 
 #include "atom.h"
 #include "comm.h"
+#include "domain.h"
 #include "error.h"
 #include "force.h"
 #include "memory.h"
 #include "modify.h"
+#include "neigh_list.h"
+#include "neighbor.h"
 #include "utils.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <unordered_map>
 
 #include "reaxmetal/capabilities.hpp"
 
@@ -150,7 +155,12 @@ void PairReaxFFMetal::init_style()
 
   if (cutmax_ < 2.0 * settings_.control.bond_cut && comm->me == 0)
     error->warning(FLERR, "Total cutoff < 2*bond cutoff. May need to use an increased neighbor list skin.");
+
+  // A2 self-check only: ask LAMMPS for the list the reference kernels use (half, newton off, with ghost rows), to compare against
+  if (settings_.selfcheck) neighbor->add_request(this, NeighConst::REQ_GHOST | NeighConst::REQ_NEWTON_OFF);
 }
+
+void PairReaxFFMetal::init_list(int id, NeighList *ptr) { Pair::init_list(id, ptr); }
 
 double PairReaxFFMetal::init_one(int i, int j)
 {
@@ -174,9 +184,117 @@ void *PairReaxFFMetal::extract(const char *str, int &dim)
   return nullptr;
 }
 
+reaxmetal::NeighborCutoffs PairReaxFFMetal::cutoffs() const
+{
+  reaxmetal::NeighborCutoffs c;
+  c.nonb = ff_->file_control().nonb_cut;
+  c.bond = settings_.control.bond_cut;
+  c.hbond = settings_.control.hbond_cut;
+  return c;
+}
+
+reaxmetal::Box PairReaxFFMetal::host_box() const
+{
+  return reaxmetal::Box::from_lammps({domain->boxlo[0], domain->boxlo[1], domain->boxlo[2]}, {domain->boxhi[0], domain->boxhi[1], domain->boxhi[2]},
+                                     {domain->xy, domain->xz, domain->yz}, {domain->periodicity[0] != 0, domain->periodicity[1] != 0, domain->periodicity[2] != 0});
+}
+
+reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) const
+{
+  using reaxmetal::SystemError;
+  const int nlocal = atom->nlocal, nall = atom->nlocal + atom->nghost;
+  // C3 (strict where the reference only warns): the ghost shell must be wide enough for owned-atom results to be those of the reference
+  const double need = cutoffs().required_shell(), have = comm->get_comm_cutoff();
+  if (have < need)
+    throw SystemError("ghost shell too narrow: communication cutoff " + std::to_string(have) + " < required max(nonb_cut, hbond_cut, 2*bond_cut) = " + std::to_string(need) +
+                      " (use comm_modify cutoff)");
+  reaxmetal::AtomSet a;
+  a.nlocal = static_cast<std::size_t>(nlocal);
+  a.x.resize(3 * static_cast<std::size_t>(nall));
+  a.type.resize(static_cast<std::size_t>(nall));
+  a.tag.resize(static_cast<std::size_t>(nall));
+  a.owner.resize(static_cast<std::size_t>(nall));
+  a.shift.assign(static_cast<std::size_t>(nall), {0, 0, 0});
+  std::unordered_map<tagint, int> owned_by_tag;
+  owned_by_tag.reserve(static_cast<std::size_t>(nlocal) * 2);
+  for (int i = 0; i < nall; ++i) {
+    const auto si = static_cast<std::size_t>(i);
+    for (int c = 0; c < 3; ++c) a.x[3 * si + static_cast<std::size_t>(c)] = atom->x[i][c];
+    const int t = atom->type[i];
+    a.type[si] = map_[static_cast<std::size_t>(t)];
+    a.tag[si] = atom->tag[i];
+    a.owner[si] = i;
+    if (i < nlocal && !owned_by_tag.emplace(atom->tag[i], i).second) throw SystemError("duplicate atom id " + std::to_string(atom->tag[i]) + " among owned atoms");
+  }
+  for (int g = nlocal; g < nall; ++g) {
+    const auto sg = static_cast<std::size_t>(g);
+    const auto it = owned_by_tag.find(atom->tag[g]);
+    if (it == owned_by_tag.end()) throw SystemError("ghost " + std::to_string(g) + " has no owned atom with id " + std::to_string(atom->tag[g]));
+    a.owner[sg] = it->second;
+    const reaxmetal::Vec3 fg = box.to_fractional(a.position(sg)), fo = box.to_fractional(a.position(static_cast<std::size_t>(it->second)));
+    for (std::size_t d = 0; d < 3; ++d) {
+      const double s = std::nearbyint(fg[d] - fo[d]);
+      if (!box.periodic[d] && s != 0.0) throw SystemError("ghost " + std::to_string(g) + " is shifted along a non-periodic direction");
+      a.shift[sg][d] = static_cast<std::int32_t>(s);
+    }
+  }
+  a.validate(box, 1e-8);   // ghost == owner + lattice shift, same tag/type (the contract LAMMPS_INTEGRATION section 4 measured)
+  return a;
+}
+
+std::string PairReaxFFMetal::selfcheck_summary(bool &ok)
+{
+  using namespace reaxmetal;
+  ok = false;
+  if (!list) throw SystemError("no LAMMPS neighbor list was provided to the self-check");
+  const Box box = host_box();
+  const AtomSet a = host_atom_set(box);
+  const NeighborCutoffs cut = cutoffs();
+  const FarList ours = build_far_list(a, cut);
+  std::size_t lammps_entries = 0, mismatched_rows = 0, rows_seen = 0;
+  std::vector<int> row;
+  const int nrows = list->inum + list->gnum;
+  for (int ii = 0; ii < nrows; ++ii) {
+    const int i = list->ilist[ii];
+    ++rows_seen;
+    const double rc = cut.row_cut(static_cast<std::size_t>(i), a.nlocal), rc2 = rc * rc;
+    row.clear();
+    for (int jj = 0; jj < list->numneigh[i]; ++jj) {
+      const int j = list->firstneigh[i][jj] & NEIGHMASK;
+      const double dx = atom->x[j][0] - atom->x[i][0], dy = atom->x[j][1] - atom->x[i][1], dz = atom->x[j][2] - atom->x[i][2];
+      if (dx * dx + dy * dy + dz * dz <= rc2) row.push_back(j);
+    }
+    std::sort(row.begin(), row.end());
+    lammps_entries += row.size();
+    const auto b = ours.nbr.begin() + static_cast<std::ptrdiff_t>(ours.row_start[static_cast<std::size_t>(i)]);
+    const auto e = ours.nbr.begin() + static_cast<std::ptrdiff_t>(ours.row_start[static_cast<std::size_t>(i) + 1]);
+    if (!std::equal(row.begin(), row.end(), b, e)) ++mismatched_rows;
+  }
+  const PairCounts pc = count_nonbonded_pairs(a, ours, cut);
+  ok = (rows_seen == a.nall()) && mismatched_rows == 0 && lammps_entries == ours.entries();
+  return "ReaxMetal A2 self-check " + std::string(ok ? "OK" : "FAILED") + ": nlocal=" + std::to_string(a.nlocal) + " nghost=" + std::to_string(a.nghost()) +
+         " rows=" + std::to_string(rows_seen) + " lammps_entries=" + std::to_string(lammps_entries) + " engine_entries=" + std::to_string(ours.entries()) +
+         " mismatched_rows=" + std::to_string(mismatched_rows) + " vdw_oo=" + std::to_string(pc.oo) + " vdw_og=" + std::to_string(pc.og) +
+         " vdw_self=" + std::to_string(pc.self) + " comm_cutoff=" + std::to_string(comm->get_comm_cutoff());
+}
+
 void PairReaxFFMetal::compute(int, int)
 {
+  std::string selfcheck;
+  if (settings_.selfcheck) {
+    bool ok = false;
+    std::string failure;
+    try {
+      selfcheck = selfcheck_summary(ok);
+    } catch (const std::exception &e) {
+      failure = e.what();
+    }
+    if (!failure.empty()) error->all(FLERR, "ReaxMetal A2 self-check could not run: {}", failure);
+    if (!ok) error->all(FLERR, "{}", selfcheck);
+    selfcheck += "; ";
+  }
   error->all(FLERR,
-             "Pair style reaxff/metal: the force backend is not implemented yet (milestone M4). This adapter (A1, milestone M2) "
-             "provides parsing, pair_coeff mapping, extract() and host checks only; it never returns zero energies or forces.");
+             "{}Pair style reaxff/metal: the force backend is not implemented yet (milestone M4). This adapter (A1/A2, milestones M2/M3) "
+             "provides parsing, pair_coeff mapping, extract(), host checks and the ghost-native host view only; it never returns zero energies or forces.",
+             selfcheck);
 }

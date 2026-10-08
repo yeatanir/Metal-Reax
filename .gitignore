@@ -8,3 +8,4 @@
 __pycache__/
 # upstream trees fetched by tools/fetch_lammps.sh must never be committed
 /third_party/lammps/checkout/
+/mac-reports/

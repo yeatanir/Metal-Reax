@@ -1,0 +1,1 @@
+// Intentionally empty: stands in for <metal_stdlib> when src/metal/shaders/*.metal is compiled as C++ (tests/metal_shim).

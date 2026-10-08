@@ -297,6 +297,74 @@ std::uint32_t FarRowsF32::max_count() const noexcept {
   return m;
 }
 
+FarRowsF32 build_far_rows_with_growth(const std::function<FarRowsF32(std::uint32_t)>& launch, std::uint32_t initial_cap, std::uint32_t nall,
+                                      unsigned max_attempts, unsigned* attempts) {
+  std::uint32_t cap = initial_cap == 0 ? 1u : initial_cap;
+  for (unsigned a = 1; a <= max_attempts; ++a) {
+    if (static_cast<std::uint64_t>(nall) * cap > 0xFFFFFFFFull) throw SystemError("far rows: nall * capacity exceeds 32-bit indexing");
+    FarRowsF32 rows = launch(cap);
+    if (attempts) *attempts = a;
+    const std::uint32_t need = rows.max_count();
+    if (need <= cap) return rows;
+    cap = (need + 7u) / 8u * 8u;
+  }
+  throw SystemError("far rows: row capacity still too small after " + std::to_string(max_attempts) + " attempts");
+}
+
+RowComparison compare_rows_to_far_list(const FarRowsF32& rows, const FarList& cpu, const AtomSet& atoms, const NeighborCutoffs& cut, double margin) {
+  RowComparison r;
+  const std::size_t n = atoms.nall();
+  if (rows.nall != n || rows.count.size() != n || cpu.rows() != n) {
+    r.structural = 1;
+    return r;
+  }
+  r.cpu_entries = cpu.entries();
+  for (std::size_t i = 0; i < n; ++i) {
+    const std::uint32_t cnt = rows.count[i];
+    if (cnt > rows.cap) {
+      r.overflow = true;
+      continue;
+    }
+    r.device_entries += cnt;
+    const double rc = cut.row_cut(i, atoms.nlocal);
+    std::vector<std::int32_t> dev(rows.nbr.begin() + static_cast<std::ptrdiff_t>(i * rows.cap), rows.nbr.begin() + static_cast<std::ptrdiff_t>(i * rows.cap + cnt));
+    std::vector<std::size_t> pos(dev.size());
+    std::iota(pos.begin(), pos.end(), std::size_t{0});
+    std::sort(pos.begin(), pos.end(), [&](std::size_t a, std::size_t b) { return dev[a] < dev[b]; });
+    std::vector<std::int32_t> sorted;
+    for (std::size_t k : pos) sorted.push_back(dev[k]);
+    for (std::size_t k = 0; k < sorted.size(); ++k) {
+      if (sorted[k] <= static_cast<std::int32_t>(i) || static_cast<std::size_t>(sorted[k]) >= n || (k > 0 && sorted[k] == sorted[k - 1])) ++r.structural;
+    }
+    // superset check against the CPU row (ascending j)
+    std::size_t a = cpu.row_start[i];
+    const std::size_t aend = cpu.row_start[i + 1];
+    std::size_t b = 0;
+    while (a < aend && b < sorted.size()) {
+      if (cpu.nbr[a] == sorted[b]) { ++a; ++b; }
+      else if (cpu.nbr[a] < sorted[b]) { ++r.missing; ++a; }
+      else { ++b; }   // device-only entry: classified below
+    }
+    r.missing += aend - a;
+    // device-only entries: legal only inside the margin band; r2 consistency for every device entry
+    for (std::size_t k = 0; k < pos.size(); ++k) {
+      const std::int32_t j = dev[k];
+      if (j <= static_cast<std::int32_t>(i) || static_cast<std::size_t>(j) >= n) continue;
+      const double dx = atoms.x[3 * static_cast<std::size_t>(j)] - atoms.x[3 * i], dy = atoms.x[3 * static_cast<std::size_t>(j) + 1] - atoms.x[3 * i + 1],
+                   dz = atoms.x[3 * static_cast<std::size_t>(j) + 2] - atoms.x[3 * i + 2];
+      const double d2 = dx * dx + dy * dy + dz * dz, d = std::sqrt(d2);
+      const bool in_cpu = std::binary_search(cpu.nbr.begin() + static_cast<std::ptrdiff_t>(cpu.row_start[i]), cpu.nbr.begin() + static_cast<std::ptrdiff_t>(cpu.row_start[i + 1]), j);
+      if (!in_cpu) {
+        if (d > rc + 2.0 * margin) ++r.illegal_extra;
+        else ++r.band_extra;
+      }
+      const double dev_r2 = static_cast<double>(rows.r2[i * rows.cap + k]);
+      if (std::fabs(dev_r2 - d2) > 2.0 * (d + margin) * margin + 1e-6) ++r.bad_r2;
+    }
+  }
+  return r;
+}
+
 // ---- deterministic reductions ------------------------------------------------------------------------------------
 std::vector<float> fixed_order_partials_f32(std::span<const float> v, std::uint32_t chunk_len) {
   if (chunk_len == 0) throw SystemError("fixed_order_partials_f32: chunk_len must be > 0");

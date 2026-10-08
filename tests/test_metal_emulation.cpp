@@ -1,0 +1,270 @@
+// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
+// M3 kernels, EMULATED: src/metal/shaders/reaxmetal_m3.metal is compiled as C++ through tests/metal_shim and executed one
+// "thread" at a time on the CPU. This verifies the kernels' logic and the host-side contracts around them (row growth, row
+// verification, reduction order). It says nothing about the Metal compiler or the GPU: those are verified on the Apple machine
+// (docs/VALIDATION.md MET-1..MET-4) and until then the Metal status is "written", not "executed".
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <limits>
+#include <random>
+#include <sstream>
+#include <string>
+#include <vector>
+
+#include "reaxmetal/metal_backend.hpp"
+#include "m3_systems.hpp"
+#include "reaxmetal/neighbor.hpp"
+#include "test_util.hpp"
+
+#include "metal_shim.hpp"
+#include "reaxmetal_m3_types.h"
+#include "reaxmetal_m3.metal"
+#include "metal_shim_end.hpp"
+
+using namespace reaxmetal;
+
+namespace {
+struct Rng {
+  std::mt19937_64 g;
+  explicit Rng(std::uint64_t s) : g(s) {}
+  double u() { return static_cast<double>(g() >> 11) * (1.0 / 9007199254740992.0); }
+};
+
+FarRowsF32 emulate_far_rows(const DeviceListInput& in, std::uint32_t cap) {
+  FarRowsF32 rows;
+  rows.nall = in.nall;
+  rows.cap = cap;
+  rows.count.assign(in.nall, 0);
+  rows.nbr.assign(static_cast<std::size_t>(in.nall) * cap, -1);
+  rows.r2.assign(static_cast<std::size_t>(in.nall) * cap, 0.0f);
+  RmFarRowsParams p{};
+  p.nall = in.nall; p.nlocal = in.nlocal; p.cap = cap;
+  p.ncx = in.grid.ncell[0]; p.ncy = in.grid.ncell[1]; p.ncz = in.grid.ncell[2];
+  p.rc2_owned = in.rc2_owned; p.rc2_ghost = in.rc2_ghost;
+  for (std::uint32_t i = 0; i < in.nall; ++i)
+    rm_far_rows(in.x.data(), in.grid.atom_cell.data(), in.grid.cell_start.data(), in.grid.cell_items.data(), rows.nbr.data(), rows.r2.data(), rows.count.data(), p, i);
+  return rows;
+}
+
+AtomSet make_system(const Box& box, std::size_t n, Rng& r, double spread, double shell) {
+  std::vector<double> x;
+  std::vector<int> type(n, 0);
+  std::vector<std::int64_t> tag;
+  for (std::size_t i = 0; i < n; ++i) {
+    const Vec3 c = box.to_cartesian({r.u() * spread, r.u() * spread, r.u() * spread});
+    x.insert(x.end(), c.begin(), c.end());
+    tag.push_back(static_cast<std::int64_t>(i) + 1);
+  }
+  ExpandOptions opt;
+  opt.shell = shell;
+  return expand_images(box, x, type, tag, opt);
+}
+}  // namespace
+
+static std::string strip_comments(const std::string& s) {
+  std::string out;
+  for (std::size_t i = 0; i < s.size(); ++i) {
+    if (s.compare(i, 2, "//") == 0) {
+      while (i < s.size() && s[i] != '\n') ++i;
+      out += '\n';
+    } else if (s.compare(i, 2, "/*") == 0) {
+      const std::size_t e = s.find("*/", i + 2);
+      i = (e == std::string::npos) ? s.size() : e + 1;
+    } else {
+      out += s[i];
+    }
+  }
+  return out;
+}
+
+static void test_shader_source_lints() {
+  const std::string full = mtl::shader_source();
+  const std::string src = strip_comments(full);
+  RM_CHECK(!src.empty());
+  RM_CHECK_MSG(src.find("double") == std::string::npos, "MSL has no double (Apple GPUs have no FP64)");
+  RM_CHECK_MSG(src.find("atomic") == std::string::npos, "no atomics in the validated path (ADR-007)");
+  RM_CHECK_MSG(src.find("std::") == std::string::npos, "no C++ standard library in MSL");
+  RM_CHECK_MSG(src.find("#include \"") == std::string::npos, "the runtime compiler cannot resolve local includes");
+  RM_CHECK_MSG(src.find("printf") == std::string::npos, "no printf");
+  RM_CHECK(src.find("#include <metal_stdlib>") != std::string::npos);
+  RM_CHECK(src.find("struct RmFarRowsParams") != std::string::npos);        // types header was prepended
+  RM_CHECK(src.find("struct RmFarRowsParams") < src.find("kernel void rm_far_rows"));
+  for (const char* k : {"rm_saxpy", "rm_math_probe", "rm_far_rows", "rm_partial_sums", "rm_sum_partials"}) {
+    RM_CHECK_MSG(src.find(std::string("kernel void ") + k) != std::string::npos, k);
+    const auto names = mtl::kernel_names();
+    RM_CHECK_MSG(std::find(names.begin(), names.end(), std::string(k)) != names.end(), k);
+  }
+  // the assembled source is exactly types header + kernel file
+  const std::string t = rmtest::read_file(std::string(REAXMETAL_SOURCE_DIR) + "/src/metal/shaders/reaxmetal_m3_types.h");
+  const std::string k = rmtest::read_file(std::string(REAXMETAL_SOURCE_DIR) + "/src/metal/shaders/reaxmetal_m3.metal");
+  RM_CHECK(full == t + "\n" + k);
+  // struct layout the host relies on
+  static_assert(sizeof(rm_u32) == 4 && sizeof(rm_f32) == 4, "scalar widths");
+  static_assert(sizeof(RmFarRowsParams) == 32 && sizeof(RmReduceParams) == 8 && sizeof(RmSaxpyParams) == 8, "parameter block layout");
+}
+
+static void test_saxpy_and_probe() {
+  std::vector<float> x(1000), y(1000), want(1000);
+  for (std::size_t i = 0; i < x.size(); ++i) {
+    x[i] = static_cast<float>(i % 17) - 8.0f;
+    y[i] = static_cast<float>(i % 5);
+    want[i] = 2.5f * x[i] + y[i];   // exact in float for these values
+  }
+  RmSaxpyParams p{static_cast<std::uint32_t>(x.size()), 2.5f};
+  std::vector<float> got = y;
+  for (std::uint32_t i = 0; i < 1010; ++i) rm_saxpy(x.data(), got.data(), p, i);   // 10 threads past the end must be ignored
+  RM_CHECK(got == want);
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float a = 1.0f + std::ldexp(1.0f, -13), c = -(1.0f + std::ldexp(1.0f, -12));
+  const std::vector<float> in{nan, a, a, c};
+  std::vector<float> out(2, -1.0f);
+  rm_math_probe(in.data(), out.data(), 1);   // thread 1 does nothing
+  RM_CHECK(out[0] == -1.0f);
+  rm_math_probe(in.data(), out.data(), 0);
+  RM_CHECK(out[0] == 1.0f);
+  RM_CHECK_MSG(out[1] == 0.0f, "CPU emulation must round the product before the add (strict FP flags)");
+}
+
+static void test_far_rows_vs_cpu() {
+  Rng r(31337);
+  const Box boxes[] = {
+      Box::orthogonal({0, 0, 0}, {9, 9, 9}, {true, true, true}),
+      Box::from_lammps({0, 0, 0}, {7.134, 7.0, 7.1}, {1.2, 0.8, 1.0}, {true, true, true}),
+      Box::orthogonal({-12, -12, -12}, {12, 12, 12}, {false, false, false}),
+      Box::orthogonal({0, 0, 0}, {1.3, 30, 30}, {true, false, false}),
+  };
+  const NeighborCutoffs cuts[] = {{10.0, 5.0, 7.5}, {6.0, 3.5, 4.0}};
+  std::size_t total_entries = 0, total_band = 0;
+  for (const Box& b : boxes)
+    for (const auto& cut : cuts) {
+      const AtomSet a = make_system(b, b.periodic[1] ? 40 : 25, r, 0.7, cut.required_shell());
+      a.validate(b);
+      const FarList cpu = build_far_list(a, cut);
+      const DeviceListInput in = make_device_list_input(a, b, cut, 1e-3);
+      FarRowsF32 rows = emulate_far_rows(in, 4096);
+      const RowComparison cmp = compare_rows_to_far_list(rows, cpu, a, cut, in.list_margin);
+      RM_CHECK_MSG(cmp.ok(), "emulated kernel rows violate the superset/bounded contract");
+      RM_CHECK(cmp.cpu_entries == cpu.entries());
+      total_entries += cmp.device_entries;
+      total_band += cmp.band_extra;
+      // determinism: identical inputs -> identical bytes
+      const FarRowsF32 again = emulate_far_rows(in, 4096);
+      RM_CHECK(again.nbr == rows.nbr && again.count == rows.count && again.r2 == rows.r2);
+    }
+  RM_CHECK(total_entries > 20000);
+  std::printf("  emulated rows: %zu entries compared, %zu legal band pairs\n", total_entries, total_band);
+
+  // the contract check itself must be able to fail
+  {
+    const Box b = Box::orthogonal({0, 0, 0}, {9, 9, 9}, {true, true, true});
+    const NeighborCutoffs cut{6.0, 3.5, 4.0};
+    const AtomSet a = make_system(b, 30, r, 1.0, cut.required_shell());
+    const FarList cpu = build_far_list(a, cut);
+    const DeviceListInput in = make_device_list_input(a, b, cut, 1e-3);
+    FarRowsF32 rows = emulate_far_rows(in, 4096);
+    RM_CHECK(compare_rows_to_far_list(rows, cpu, a, cut, in.list_margin).ok());
+    FarRowsF32 lost = rows;                                     // drop one entry
+    std::size_t row = 0;
+    while (lost.count[row] == 0) ++row;
+    --lost.count[row];
+    RM_CHECK(compare_rows_to_far_list(lost, cpu, a, cut, in.list_margin).missing >= 1);
+    FarRowsF32 far = rows;                                      // add an entry far outside the cutoff
+    std::size_t row2 = 0;
+    while (row2 + 1 < far.count.size() && far.count[row2] >= 4096) ++row2;
+    far.nbr[row2 * far.cap + far.count[row2]] = static_cast<std::int32_t>(a.nall() - 1);
+    far.r2[row2 * far.cap + far.count[row2]] = 1.0f;
+    ++far.count[row2];
+    const RowComparison fc = compare_rows_to_far_list(far, cpu, a, cut, in.list_margin);
+    RM_CHECK(!fc.ok());
+    FarRowsF32 badr2 = rows;
+    badr2.r2[row * badr2.cap] += 1.0f;
+    RM_CHECK(compare_rows_to_far_list(badr2, cpu, a, cut, in.list_margin).bad_r2 >= 1);
+    FarRowsF32 dup = rows;
+    std::size_t row3 = 0;
+    while (dup.count[row3] < 2) ++row3;
+    dup.nbr[row3 * dup.cap + 1] = dup.nbr[row3 * dup.cap];
+    RM_CHECK(compare_rows_to_far_list(dup, cpu, a, cut, in.list_margin).structural >= 1);
+  }
+}
+
+static void test_shared_systems() {
+  // the same geometries the Apple-machine tool uses (tools/m3_systems.hpp), through the emulated kernel
+  std::size_t n = 0;
+  for (const auto& sys : m3::systems(true)) {
+    const FarList cpu = build_far_list(sys.atoms, sys.cut);
+    const DeviceListInput in = make_device_list_input(sys.atoms, sys.box, sys.cut, 1e-3);
+    unsigned launches = 0;
+    const FarRowsF32 rows = build_far_rows_with_growth([&](std::uint32_t cap) { return emulate_far_rows(in, cap); }, 16, in.nall, 4, &launches);
+    const RowComparison c = compare_rows_to_far_list(rows, cpu, sys.atoms, sys.cut, in.list_margin);
+    RM_CHECK_MSG(c.ok(), sys.name);
+    RM_CHECK_MSG(c.cpu_entries > 0, sys.name);
+    std::printf("  %-32s nall %6zu  cpu entries %9zu  device %9zu  band %2zu  launches %u\n", sys.name.c_str(), sys.atoms.nall(), c.cpu_entries, c.device_entries, c.band_extra, launches);
+    ++n;
+  }
+  RM_CHECK(n == 7);
+}
+
+static void test_growth() {
+  Rng r(5);
+  const Box b = Box::orthogonal({0, 0, 0}, {9, 9, 9}, {true, true, true});
+  const NeighborCutoffs cut{6.0, 3.5, 4.0};
+  const AtomSet a = make_system(b, 60, r, 1.0, cut.required_shell());
+  const FarList cpu = build_far_list(a, cut);
+  const DeviceListInput in = make_device_list_input(a, b, cut, 1e-3);
+  unsigned launches = 0;
+  std::vector<std::uint32_t> caps;
+  const FarRowsF32 rows = build_far_rows_with_growth([&](std::uint32_t cap) { caps.push_back(cap); return emulate_far_rows(in, cap); }, 4, in.nall, 4, &launches);
+  RM_CHECK(launches == 2 && caps.size() == 2 && caps[0] == 4 && caps[1] >= rows.max_count() && caps[1] % 8 == 0);
+  RM_CHECK(compare_rows_to_far_list(rows, cpu, a, cut, in.list_margin).ok());
+  // a large enough first guess needs one launch
+  const FarRowsF32 one = build_far_rows_with_growth([&](std::uint32_t cap) { return emulate_far_rows(in, cap); }, 4096, in.nall, 4, &launches);
+  RM_CHECK(launches == 1 && one.cap == 4096);
+  // an overflowing kernel that never stops growing is reported
+  RM_EXPECT_THROW(build_far_rows_with_growth([&](std::uint32_t cap) { FarRowsF32 f = emulate_far_rows(in, cap); f.count[0] = cap + 1; return f; }, 8, in.nall, 3, nullptr), SystemError);
+  RM_EXPECT_THROW(build_far_rows_with_growth([&](std::uint32_t cap) { return emulate_far_rows(in, cap); }, 0xFFFFFFF0u, in.nall, 3, nullptr), SystemError);
+  // truncated rows still carry the true count, never more than cap entries are written
+  const FarRowsF32 trunc = emulate_far_rows(in, 3);
+  RM_CHECK(trunc.max_count() > 3);
+  for (std::uint32_t i = 0; i < trunc.nall; ++i)
+    for (std::uint32_t k = std::min<std::uint32_t>(trunc.count[i], 3); k < 3; ++k) RM_CHECK(trunc.nbr[i * 3 + k] == -1);
+}
+
+static void test_reduction_kernels() {
+  Rng r(77);
+  for (std::uint32_t n : {0u, 1u, 2u, 255u, 256u, 257u, 1000u, 4097u, 100000u})
+    for (std::uint32_t chunk : {1u, 7u, 64u, 256u, 5000u}) {
+      std::vector<float> v(n);
+      for (auto& e : v) e = static_cast<float>(r.u() - 0.5) * 1.0e4f;
+      const std::uint32_t nchunk = n == 0 ? 0 : (n + chunk - 1) / chunk;
+      std::vector<float> part(nchunk > 0 ? nchunk : 1, -7.0f), out(1, -7.0f);
+      RmReduceParams p{n, chunk};
+      for (std::uint32_t c = 0; c < nchunk + 3; ++c) rm_partial_sums(v.data(), part.data(), p, c);   // extra threads are ignored
+      rm_sum_partials(part.data(), out.data(), p, 1);                                               // only thread 0 acts
+      RM_CHECK(out[0] == -7.0f);
+      rm_sum_partials(part.data(), out.data(), p, 0);
+      const std::vector<float> want = fixed_order_partials_f32(v, chunk);
+      RM_CHECK(want.size() == nchunk);
+      for (std::uint32_t c = 0; c < nchunk; ++c) RM_CHECK(part[c] == want[c]);
+      RM_CHECK(out[0] == fixed_order_sum_f32(v, chunk));
+    }
+}
+
+int main() {
+  test_shader_source_lints();
+  test_saxpy_and_probe();
+  test_far_rows_vs_cpu();
+  test_shared_systems();
+  test_growth();
+  test_reduction_kernels();
+  if (rmtest::failures() != 0) {
+    std::fprintf(stderr, "%d check(s) failed\n", rmtest::failures());
+    return 1;
+  }
+  std::puts("metal_emulation: all checks passed (EMULATED on the CPU; not Metal)");
+  return 0;
+}
