@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "reaxmetal/forcefield.hpp"
+#include "reaxmetal/metal_backend.hpp"
 #include "reaxmetal/neighbor.hpp"
 #include "reaxmetal/pair_settings.hpp"
 
@@ -40,6 +41,7 @@ class PairReaxFFMetal : public Pair {
   std::vector<int> map_;                       // LAMMPS type (1..ntypes) -> force field element index, -1 = NULL
   std::vector<double> chi_, eta_, gamma_;      // extract() arrays, index 0..ntypes (index 0 unused)
   double cutmax_ = 0.0;
+  std::unique_ptr<reaxmetal::mtl::Context> ctx_;   // Metal device context (backend metal), created on first use
   void allocate();
 
   // ---- A2 (M3): the ghost-native view of the host data (LAMMPS_INTEGRATION section 4, rules C1-C3, C10) ----

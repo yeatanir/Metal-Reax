@@ -140,7 +140,6 @@ def main():
     host("compute runs (cpu64)", None)
     host("checkqeq no needs no fix", None, style_args="NULL checkqeq no", fixes=())
     host("qeq/shielded accepted", None, fixes=("fix q all qeq/shielded 1 10.0 1e-6 100 reaxff",))
-    host("backend metal not complete", "not implemented yet for the complete force field", style_args="NULL backend metal")
     host("backend invalid", "backend must be cpu64 or metal", style_args="NULL backend gpu")
     print(f"E3/E4 host checks done; failures so far {len(fails)}")
 

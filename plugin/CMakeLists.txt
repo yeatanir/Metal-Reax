@@ -33,7 +33,7 @@ target_compile_definitions(reaxmetal_adapter_plugin PRIVATE LAMMPS_EXCEPTIONS)
 if(NOT REAXMETAL_LAMMPS_STD_FORMAT)
   target_compile_options(reaxmetal_adapter_plugin PRIVATE -include "${CMAKE_CURRENT_SOURCE_DIR}/adapter/lammps_fmt_abi.h")
 endif()
-target_link_libraries(reaxmetal_adapter_plugin PRIVATE reaxmetal_core)
+target_link_libraries(reaxmetal_adapter_plugin PRIVATE reaxmetal_metal)   # reaxmetal_metal = the Metal backend (REAXMETAL_ENABLE_METAL=ON) or its 'not available' stub; pulls reaxmetal_core
 if(NOT REAXMETAL_LAMMPS_MPI)
   target_include_directories(reaxmetal_adapter_plugin PRIVATE "${REAXMETAL_LAMMPS_SOURCE_DIR}/STUBS")
 endif()
@@ -74,4 +74,10 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
   add_test(NAME lammps_int2 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
            --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
   set_tests_properties(lammps_int2 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  if(REAXMETAL_ENABLE_METAL)
+    # INT-2 with the Metal backend (FP32 on the GPU): judged by the owner-set C3 criteria
+    add_test(NAME lammps_int2_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal)
+    set_tests_properties(lammps_int2_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  endif()
 endif()

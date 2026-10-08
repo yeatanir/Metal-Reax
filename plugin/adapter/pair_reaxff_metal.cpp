@@ -23,6 +23,9 @@
 #include <unordered_map>
 
 #include "reaxmetal/bonded.hpp"
+#include "reaxmetal/bonded_device.hpp"
+#include "reaxmetal/metal_backend.hpp"
+#include "reaxmetal/nonbonded_device.hpp"
 #include "reaxmetal/capabilities.hpp"
 #include "reaxmetal/energy_terms.hpp"
 #include "reaxmetal/nonbonded.hpp"
@@ -301,8 +304,9 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
   }
   if (eflag_atom || vflag_atom)
     error->all(FLERR, "Pair style reaxff/metal: per-atom energy / virial output is not implemented yet");
-  if (settings_.backend != "cpu64")
-    error->all(FLERR, "Pair style reaxff/metal: backend '{}' is not implemented yet for the complete force field; use 'backend cpu64'", settings_.backend);
+  const bool use_metal = settings_.backend == "metal";
+  if (use_metal && !reaxmetal::mtl::compiled_with_metal())
+    error->all(FLERR, "Pair style reaxff/metal: backend metal requested but this plugin was built without Metal (needs macOS and -DREAXMETAL_ENABLE_METAL=ON); use 'backend cpu64'");
 
   using namespace reaxmetal;
   reaxmetal::BondedResult br;
@@ -312,15 +316,23 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     const Box box = host_box();
     a = host_atom_set(box);
     const NeighborCutoffs cut = cutoffs();
-    const FarList far = build_far_list(a, cut);
     std::vector<double> q(a.nlocal);
     for (std::size_t i = 0; i < a.nlocal; ++i) q[i] = atom->q[i];
     BondedOptions bo;
     bo.enobonds = settings_.enobonds;
     NonbondedOptions no;
     no.lgvdw = settings_.lgvdw;
-    br = compute_bonded_core(*ff_, settings_.control, a, far, bo);
-    nr = compute_nonbonded_core(*ff_, cut, a, far, q, no);
+    if (use_metal) {
+      // FP32 on the GPU (deterministic, no atomics); bookkeeping and the final sums in FP64 on the host. Charges come from the stock charge fix.
+      if (!ctx_) ctx_ = std::make_unique<mtl::Context>();
+      br = finish_bonded(ctx_->bonded(make_bonded_device_input(*ff_, settings_.control, a, box, bo)), a.nall());
+      const NonbondedDeviceInput nin = make_nonbonded_device_input(*ff_, cut, a, box, q, no, [&](const DeviceListInput &l) { return ctx_->far_rows(l); });
+      nr = finish_nonbonded(*ff_, a, q, ctx_->nonbonded(nin));
+    } else {
+      const FarList far = build_far_list(a, cut);
+      br = compute_bonded_core(*ff_, settings_.control, a, far, bo);
+      nr = compute_nonbonded_core(*ff_, cut, a, far, q, no);
+    }
   } catch (const std::exception &e) {
     error->all(FLERR, "Pair style reaxff/metal: {}", e.what());
   }

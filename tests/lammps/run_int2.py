@@ -49,6 +49,10 @@ def main():
     fx = Path(a.fixtures)
     tol = json.loads((ROOT / "tolerances" / "tolerances.json").read_text())["C1"]["primary"]["threshold"]
     rtol, fcomp, frms, qtol = tol["energy_slot_rel_to_max1"], tol["force_component_abs"], tol["force_rms"], tol["charge_abs"]
+    c3 = json.loads((ROOT / "tolerances" / "tolerances.json").read_text())["C3"]
+    metal = a.backend == "metal"   # Metal-32 is judged by the owner-set C3 criteria (energy per atom, force max / RMS, charge), not the FP64 parity thresholds of C1
+    if metal:
+        fcomp, frms, qtol = c3["force_max_component_kcal_mol_A"], c3["force_rms_kcal_mol_A"], c3["charge_max_abs_e"]
     env = dict(os.environ, DYLD_LIBRARY_PATH=str(Path(a.lmp).resolve().parents[1] / "lib"), LD_LIBRARY_PATH=str(Path(a.lmp).resolve().parents[1] / "lib"),
                LAMMPS_POTENTIALS=a.ffield_dir)
     fails, n, nwc = [], 0, 0
@@ -76,13 +80,17 @@ def main():
                 continue
             s_th, s_dump, o_th, o_dump = res
             n += 1
+            nat = len(case["atoms"])
             for i in range(14):
                 key = f"c_pp[{i + 1}]"
                 d = abs(o_th[key] - s_th[key]) / max(1.0, abs(s_th[key]))
                 worst["slot"] = max(worst["slot"], d)
-                if d > rtol: fails.append(f"{cf.stem}: slot {SLOTS[i]} stock {s_th[key]!r} ours {o_th[key]!r}")
+                if not metal and d > rtol: fails.append(f"{cf.stem}: slot {SLOTS[i]} stock {s_th[key]!r} ours {o_th[key]!r}")
+                if metal and abs(o_th[key] - s_th[key]) / nat > c3["energy_per_atom_abs_kcal_mol"]: fails.append(f"{cf.stem}: slot {SLOTS[i]} stock {s_th[key]!r} ours {o_th[key]!r}")
             dpe = abs(o_th["PotEng"] - s_th["PotEng"]) / max(1.0, abs(s_th["PotEng"])); worst["pe"] = max(worst["pe"], dpe)
-            if dpe > rtol: fails.append(f"{cf.stem}: PotEng stock {s_th['PotEng']!r} ours {o_th['PotEng']!r}")
+            worst["pe_atom"] = max(worst.get("pe_atom", 0.0), abs(o_th["PotEng"] - s_th["PotEng"]) / nat)
+            if not metal and dpe > rtol: fails.append(f"{cf.stem}: PotEng stock {s_th['PotEng']!r} ours {o_th['PotEng']!r}")
+            if metal and abs(o_th["PotEng"] - s_th["PotEng"]) / nat > c3["energy_per_atom_abs_kcal_mol"]: fails.append(f"{cf.stem}: PotEng stock {s_th['PotEng']!r} ours {o_th['PotEng']!r}")
             dq = abs(o_dump[:, 2] - s_dump[:, 2]).max(); worst["q"] = max(worst["q"], dq)
             if dq > qtol: fails.append(f"{cf.stem}: charges differ by {dq:.3e}")
             df = o_dump[:, 6:9] - s_dump[:, 6:9]
@@ -95,9 +103,9 @@ def main():
                 if fm > fcomp or fr > frms: fails.append(f"{cf.stem}: forces differ: max {fm:.3e} rms {fr:.3e}")
             sp, op = s_th["Press"], o_th["Press"]
             dp = abs(op - sp) / max(1e-6, abs(sp), 1e-3); worst["p"] = max(worst["p"], dp)
-            if abs(op - sp) > 1e-9 * max(1.0, abs(sp)): fails.append(f"{cf.stem}: pressure stock {sp!r} ours {op!r}")
+            if not metal and abs(op - sp) > 1e-9 * max(1.0, abs(sp)): fails.append(f"{cf.stem}: pressure stock {sp!r} ours {op!r}")
     for f in fails[:60]: print("FAIL", f)
-    print(f"worst: slots {worst['slot']:.2e} (limit {rtol:g}), PotEng {worst['pe']:.2e}, charges {worst['q']:.2e} (limit {qtol:g}), "
+    print(f"worst: slots {worst['slot']:.2e} (limit {rtol:g}), PotEng {worst['pe']:.2e} (per atom {worst.get('pe_atom', 0):.2e}), charges {worst['q']:.2e} (limit {qtol:g}), "
           f"forces max {worst['f']:.2e} (limit {fcomp:g}) rms {worst['frms']:.2e} (limit {frms:g}); all fixtures incl. ill-conditioned: {worst.get('fall', 0):.2e}, pressure rel {worst['p']:.2e}")
     print(f"INT-2 backend {a.backend}: {n} fixtures compared, {nwc} well conditioned, {len(fails)} failures")
     ok = not fails and n >= (1 if a.only else 50)
