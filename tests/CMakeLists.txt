@@ -17,6 +17,7 @@ reaxmetal_add_test(compat_flags)
 reaxmetal_add_test(ffield_parser)
 reaxmetal_add_test(pair_settings)
 reaxmetal_add_test(neighbor)
+reaxmetal_add_test(terms)
 
 # The Metal kernels executed as C++ (EMULATION: evidence about kernel logic, not about Metal; see the file header)
 add_executable(test_metal_emulation test_metal_emulation.cpp)
@@ -84,6 +85,9 @@ if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
     add_test(NAME bonded_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_bonded_fixtures.py
              --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --fd)
     set_tests_properties(bonded_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    add_test(NAME nonbonded_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_nonbonded_fixtures.py
+             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --fd)
+    set_tests_properties(nonbonded_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     if(RM_LIBLAMMPS)
       add_test(NAME lammps_ghosts COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/lammps/run_ghosts.py
                --lib ${RM_LIBLAMMPS} --tool $<TARGET_FILE:reaxmetal_neighbor_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR})

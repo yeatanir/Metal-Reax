@@ -42,6 +42,7 @@ add_library(reaxmetal_core STATIC
   src/core/sha256.cpp
   src/core/system.cpp
   src/cpu/bonded.cpp
+  src/cpu/nonbonded.cpp
   src/neighbor/neighbor.cpp
   src/io/ffield_parser.cpp
   src/io/control_parser.cpp

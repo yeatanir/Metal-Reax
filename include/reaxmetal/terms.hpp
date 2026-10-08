@@ -236,4 +236,96 @@ inline OverUnder<T> over_under(T sum_ovun1, T sum_ovun2, T Delta, T Delta_lp_tem
   return o;
 }
 
+// ---- nonbonded: taper, van der Waals (types 1/2/3, optional lg), shielded Coulomb, polarization -------------------------------
+// reaxff_init_md.cpp:72-106 (coefficients, computed in double on the host), reaxff_nonbonded.cpp:36-215 (pair), :36-57 (polarization).
+// ENGINE_SPEC 5.7-5.9. Constants as written upstream (truncated ones included): C_ele, KCALpMOL_to_EV, 0.33333333333333.
+inline constexpr double kCele = 332.06371;        // reaxff_defs.h: C_ele
+inline constexpr double kKcalpmolToEv = 23.02;    // reaxff_defs.h: KCALpMOL_to_EV (really eV -> kcal/mol, imprecise as upstream)
+
+struct TaperCoeffs { double c[8]; };
+inline TaperCoeffs taper_coeffs(double swa, double swb) {
+  const double d1 = swb - swa, d7 = std::pow(d1, 7.0);
+  const double swa2 = swa * swa, swa3 = swa * swa * swa, swb2 = swb * swb, swb3 = swb * swb * swb;
+  TaperCoeffs t{};
+  t.c[7] = 20.0 / d7;
+  t.c[6] = -70.0 * (swa + swb) / d7;
+  t.c[5] = 84.0 * (swa2 + 3.0 * swa * swb + swb2) / d7;
+  t.c[4] = -35.0 * (swa3 + 9.0 * swa2 * swb + 9.0 * swa * swb2 + swb3) / d7;
+  t.c[3] = 140.0 * (swa3 * swb + 3.0 * swa2 * swb2 + swa * swb3) / d7;
+  t.c[2] = -210.0 * (swa3 * swb2 + swa2 * swb3) / d7;
+  t.c[1] = 140.0 * swa3 * swb3 / d7;
+  t.c[0] = (-35.0 * swa3 * swb2 * swb2 + 21.0 * swa2 * swb3 * swb2 - 7.0 * swa * swb3 * swb3 + swb3 * swb3 * swb) / d7;
+  return t;
+}
+// Tap(r) and dTap(r) = (1/r) dTap/dr, by Horner in the order of the reference (CPU-64 reference form).
+template <class T>
+inline void taper_horner(const T* c, T r, T& Tap, T& dTap) {
+  Tap = c[7] * r + c[6];
+  Tap = Tap * r + c[5]; Tap = Tap * r + c[4]; Tap = Tap * r + c[3]; Tap = Tap * r + c[2]; Tap = Tap * r + c[1]; Tap = Tap * r + c[0];
+  dTap = 7 * c[7] * r + 6 * c[6];
+  dTap = dTap * r + 5 * c[5]; dTap = dTap * r + 4 * c[4]; dTap = dTap * r + 3 * c[3]; dTap = dTap * r + 2 * c[2];
+  dTap += c[1] / r;
+}
+// Algebraically identical form in t = (r - swa)/(swb - swa): Tap = 1 - 35t^4 + 84t^5 - 70t^6 + 20t^7 (no cancellation of O(10) terms in
+// float; ADR-007 stable form, used by the CPU-32 twin and the Metal kernels). dTap includes the 1/r factor like the Horner version.
+template <class T>
+inline void taper_stable(T swa, T swb, T r, T& Tap, T& dTap) {
+  const T d = swb - swa, t = (r - swa) / d, t2 = t * t, t3 = t2 * t, t4 = t2 * t2;
+  Tap = T(1) - t4 * (T(35) - T(84) * t + T(70) * t2 - T(20) * t3);
+  dTap = (t3 * (T(-140) + T(420) * t - T(420) * t2 + T(140) * t3)) / (d * r);
+}
+
+template <class T>
+struct NbPair {  // the TwoBody members the nonbonded terms use
+  T alpha, D, r_vdW, gamma_w, gamma, ecore, acore, rcore, lgcij, lgre;
+};
+template <class T>
+struct NbResult { T e_vdW, e_ele, CE; };  // CE = CEvd + CEclmb: gradient on i is +CE*dvec? (see bonded/nonbonded engine: f[i] += -CE*dvec)
+// vdw_type: 1 shielding, 2 inner wall, 3 both (gp.vdw_type); lg only when `lg` and vdw_type is 2 or 3 (nested as upstream, Q-06).
+template <class T>
+inline NbResult<T> nonbonded_pair(const NbPair<T>& p, int vdw_type, bool lg, T p_vdW1, T qi, T qj, T r, T Tap, T dTap) {
+  const T p_vdW1i = T(1.0) / p_vdW1;
+  T e_vdW, CEvd;
+  NbResult<T> o{};
+  if (vdw_type == 1 || vdw_type == 3) {
+    const T powr_vdW1 = std::pow(r, p_vdW1);
+    const T powgi_vdW1 = std::pow(T(1.0) / p.gamma_w, p_vdW1);
+    const T fn13 = std::pow(powr_vdW1 + powgi_vdW1, p_vdW1i);
+    const T exp1 = std::exp(p.alpha * (T(1.0) - fn13 / p.r_vdW));
+    const T exp2 = std::exp(T(0.5) * p.alpha * (T(1.0) - fn13 / p.r_vdW));
+    e_vdW = p.D * (exp1 - T(2.0) * exp2);
+    o.e_vdW += Tap * e_vdW;
+    const T dfn13 = std::pow(powr_vdW1 + powgi_vdW1, p_vdW1i - T(1.0)) * std::pow(r, p_vdW1 - T(2.0));
+    CEvd = dTap * e_vdW - Tap * p.D * (p.alpha / p.r_vdW) * (exp1 - exp2) * dfn13;
+  } else {
+    const T exp1 = std::exp(p.alpha * (T(1.0) - r / p.r_vdW));
+    const T exp2 = std::exp(T(0.5) * p.alpha * (T(1.0) - r / p.r_vdW));
+    e_vdW = p.D * (exp1 - T(2.0) * exp2);
+    o.e_vdW += Tap * e_vdW;
+    CEvd = dTap * e_vdW - Tap * p.D * (p.alpha / p.r_vdW) * (exp1 - exp2) / r;
+  }
+  if (vdw_type == 2 || vdw_type == 3) {
+    const T e_core = p.ecore * std::exp(p.acore * (T(1.0) - (r / p.rcore)));
+    o.e_vdW += Tap * e_core;
+    const T de_core = -(p.acore / p.rcore) * e_core;
+    CEvd += dTap * e_core + Tap * de_core / r;
+    if (lg) {
+      const T r_ij5 = std::pow(r, T(5.0)), r_ij6 = std::pow(r, T(6.0)), re6 = std::pow(p.lgre, T(6.0));
+      const T e_lg = -(p.lgcij / (r_ij6 + re6));
+      o.e_vdW += Tap * e_lg;
+      const T de_lg = -T(6.0) * e_lg * r_ij5 / (r_ij6 + re6);
+      CEvd += dTap * e_lg + Tap * de_lg / r;
+    }
+  }
+  const T dr3gamij_1 = (r * r * r + p.gamma);
+  const T dr3gamij_3 = std::pow(dr3gamij_1, T(0.33333333333333));
+  const T tmp = Tap / dr3gamij_3;
+  o.e_ele = T(kCele) * qi * qj * tmp;
+  const T CEclmb = T(kCele) * qi * qj * (dTap - Tap * r / dr3gamij_1) / dr3gamij_3;
+  o.CE = CEvd + CEclmb;
+  return o;
+}
+template <class T>
+inline T polarization(T chi, T eta, T q) { return T(kKcalpmolToEv) * (chi * q + (eta / T(2.)) * (q * q)); }
+
 }  // namespace reaxmetal::terms

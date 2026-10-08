@@ -11,6 +11,7 @@
 #include <string>
 
 #include "reaxmetal/bonded.hpp"
+#include "reaxmetal/nonbonded.hpp"
 
 using namespace reaxmetal;
 
@@ -20,6 +21,8 @@ int main(int argc, char** argv) {
   BondedOptions bo;
   double shell = -1.0;
   bool grad = false, lgvdw = false;
+  std::string grad_terms = "all";  // gradient output: bonded | nonbonded | all
+  std::vector<double> q;
   std::vector<std::string> elements;  // LAMMPS type t (1-based) <-> element elements[t-1], mapped through the ffield (pair_coeff rule)
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
@@ -29,6 +32,7 @@ int main(int argc, char** argv) {
     else if (a == "--hbond") ctl.hbond_cut = std::stod(val());
     else if (a == "--shell") shell = std::stod(val());
     else if (a == "--grad") grad = true;
+    else if (a == "--grad-terms") grad_terms = val();
     else if (a == "--lgvdw") lgvdw = true;
     else if (a == "--noenobonds") bo.enobonds = false;
     else if (a == "--elements") { std::istringstream es(val()); std::string e; while (std::getline(es, e, ',')) elements.push_back(e); }
@@ -68,6 +72,9 @@ int main(int argc, char** argv) {
           }
           tag.push_back(t); type.push_back(ty); x.insert(x.end(), r, r + 3);
         }
+        // optional "charges" section after the atom list: one value per owned atom
+        std::string tok;
+        if (in >> tok && tok == "charges") { double qv; while (q.size() < natoms && (in >> qv)) q.push_back(qv); }
         break;
       }
     }
@@ -79,10 +86,16 @@ int main(int argc, char** argv) {
     const BondedResult r = compute_bonded_core(ff, ctl, a, f, bo);
     std::printf("e_bond %.17g\ne_lp %.17g\ne_ov %.17g\ne_un %.17g\nbonds %zu\n", r.e[EnergyTerm::Bond], r.e[EnergyTerm::LonePair],
                 r.e[EnergyTerm::Over], r.e[EnergyTerm::Under], r.stats.bonds);
+    NonbondedResult nb;
+    if (q.size() == a.nlocal) {
+      NonbondedOptions no; no.lgvdw = lgvdw;
+      nb = compute_nonbonded_core(ff, cut, a, f, q, no);
+      std::printf("e_vdW %.17g\ne_ele %.17g\ne_pol %.17g\npairs %zu\n", nb.e[EnergyTerm::VdW], nb.e[EnergyTerm::Coulomb], nb.e[EnergyTerm::Polarization], nb.pairs);
+    }
     if (grad) {
       std::vector<double> g(3 * a.nlocal, 0.0);
       for (std::size_t i = 0; i < a.nall(); ++i)
-        for (std::size_t c = 0; c < 3; ++c) g[3 * static_cast<std::size_t>(a.owner[i]) + c] += r.grad[3 * i + c];
+        for (std::size_t c = 0; c < 3; ++c) g[3 * static_cast<std::size_t>(a.owner[i]) + c] += (grad_terms == "nonbonded" ? 0.0 : r.grad[3 * i + c]) + (nb.grad.empty() || grad_terms == "bonded" ? 0.0 : nb.grad[3 * i + c]);
       for (std::size_t i = 0; i < a.nlocal; ++i) std::printf("grad %lld %.17g %.17g %.17g\n", static_cast<long long>(a.tag[i]), g[3 * i], g[3 * i + 1], g[3 * i + 2]);
     }
   } catch (const std::exception& e) {
