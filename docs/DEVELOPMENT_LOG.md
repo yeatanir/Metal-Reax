@@ -121,3 +121,39 @@ experimental Q-09/Q-12; 5 FP32 policy modified (twin not the only criterion; ind
 ### Awaiting owner confirmation (proposals, not decisions)
 ADR-005 (shared term functions), ADR-015 (derived strict fix), the numeric acceptance criteria of NUMERICAL_POLICY §5.2 (frozen at M1 start), copyright-holder wording in `REUSE.toml`, whether ffields may be vendored, whether AMS reference charges can be provided.
 
+
+
+## M1 — LAMMPS reference oracle, fixtures, periodic-image accounting (2026-10-08)
+
+### Owner decisions applied at the start of M1
+ADR-005 (shared pure term functions, backend-specific traversal/reduction; equivalence test if sharing is unsafe) and ADR-015 (derived strict `qeq/reaxff/metal` at M5; M1 records QEq settings/diagnostics and **excludes unconverged calculations from the golden set**) approved; FP32 acceptance revised (C1 floor + strict parity, C2 characterisation only, C3 owner values on well-conditioned fixtures, originals kept as stretch); copyright = `SPDX-FileCopyrightText: 2026 Anirban Phukan` for original files with upstream notices preserved (ADR-018); hybrid fixture policy (ADR-017); cloud-first / Mac-later with status taxonomy (ADR-016).
+
+### What was built
+Hashed observation-only LAMMPS diagnostics patch + patch-aware builder (ADR-019); build matrix (gcc, clang, FMA-contracting, -O0, -O2/nofma, OpenMPI, Kokkos-Serial); reference runner with validity rules and an independent EEM residual; independent explicit-image non-bonded reference; 58 independently constructed fixtures (11 force fields, 10 elements); conditioning classifier; noise-floor, equivalence, periodic, ghost, Q-09/Q-12/Q-32/Q-34, finite-difference experiments; frozen tolerances; 58 golden references; CTest `tolerances_frozen`, `fixtures_frozen`, `patch_frozen`, `reaxref_selftest` (14 unit tests); acceptance gate; `tools/m1_reproduce.sh`.
+
+### Findings that change the plan (details: ENGINE_SPEC Q-32…Q-37, VALIDATION §6)
+1. **Image accounting is right** in pinned LAMMPS (pair counts, bonded multi-body across boundaries, QEq images, down to one atom per 1.30 Å) — "sum over all owned+ghost pairs" is *not* the rule; the engine replicates owner-computes + tag ordering (ENGINE_SPEC §3.1).
+2. **Three reference defects/hazards to reproduce or reject:** Q-32 (H-bond tag comparison drops self-donor images), Q-34 (analytic force ≠ gradient for heavy atoms with π bonds), Q-35 (QEq taper beyond the ghost shell silently truncated); plus Q-33 (near-linear ill-conditioning) and Q-37 (energy jump at `thb_cutsq`).
+3. Q-12 was mis-stated in M0 (π=ππ=1 for every pair): measured BO′ = (1,0,0) for H pairs, (1,1,1) for C–O/C–C.
+4. Q-27 "small-cell QEq restriction" is again not reproduced (triclinic, 2-D, 1-atom cells included).
+5. The pre-registered well-conditioned definition is not sufficient: exact-collinear fixtures give 1.5e-2 force noise between FMA and non-FMA builds → amendment proposed (ADR-020).
+
+### Gate deviation — please judge
+My gate G1 said "instrumented bitwise-equals stock on all fixtures". It holds for the strict-IEEE builds (gcc, clang: 58/58, diagnostics on and off) but **not** for the two FMA-contracting builds (11–12 fixtures, ≤1.3e-13 in forces). I split G1 into G1a (required, strict-IEEE) and G1b (reported) *after* seeing this result. The instrumented oracle is the strict-IEEE build; FMA builds are used only as stock noise-floor probes.
+
+### Mistakes made and corrected during M1
+* Single-element crystals (diamond, Au, Fe, graphene) have q ≈ 1e-15 by symmetry, so my first "periodic QEq" and ghost tests on them were vacuous; charged systems (water boxes, CH₄, polyethylene) were added and the supercell test compares across runs, not only across replicas.
+* The first Q-12 run failed on a directory name with a space; the first nonbonded/param checks used the LAMMPS type index instead of the force-field index (wrong for non-CHO orderings, caught by the FC fixtures); the first conditioning rule flagged saturated sp³ carbon as an `nlp` kink (only non-zero integer Δe/2 are kinks) and every large crystal for a pair distance at `bond_cut` (a distance edge counts only where it gates an interaction).
+* A tag-only FC fixture claimed Q-34; the FC force field does not trigger it (FD 1e-7) — retagged as a control.
+* An MPICH-based "multi-rank" run silently launched singleton ranks and printed identical results; discovered from the processor-grid line, discarded, redone with OpenMPI.
+* I edited a shell script while bash was executing it (spurious `=on: command not found`), and a driver step used a repo-relative path after `git -C` (experiment builds skipped); both fixed and the driver re-run.
+* A first Kokkos/MPI noise comparison included a case LAMMPS itself rejects for np≥2 (sub-domain < skin); such cases are now excluded for all builds and listed.
+
+### Verification (actual runs)
+Gate (`tools/reaxref/m1_gate.py`) — see VALIDATION §6. **CTest: 10/10 pass with g++ 13.3 and clang++ 18.1, 0 warnings.** Mutation check of the freeze: altering one tolerance value makes `tolerances_frozen` fail; altering a fixture makes `fixtures_frozen` fail (both restored). Reproduction driver run warm end-to-end (experiment builds included); a cold full rebuild of all 12 LAMMPS variants by the driver was **not** repeated from scratch (the early variants were built with the same scripts and flags manually).
+
+### Not run
+macOS/Metal anything; engine physics (none exists); AMS comparison; Kokkos OpenMP/GPU; fixtures >216 atoms for the floor; long-bond force fields for the ghost-shell rule; `qtpie`, `qeq/rel`.
+
+### Awaiting owner confirmation
+(1) the G1 split above; (2) conditioning amendment X1/X2 (ADR-020); (3) C3 neutrality/equalization-residual thresholds `2e-5 e/atom`, `2e-3 eV` (proposed in the frozen file; not derived from FP64 noise); (4) ADR-021: reproduce Q-32/Q-34 by default (and whether to report them upstream); (5) ADR-005/015 follow-through at M4/M5 as approved.

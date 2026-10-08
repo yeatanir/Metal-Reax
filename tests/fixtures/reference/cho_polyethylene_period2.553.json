@@ -1,0 +1,194 @@
+{
+ "case_id": "cho_polyethylene_period2.553",
+ "case_sha256": "46500250a9421e5393b9f79c396de75a2b2555f87b2a3a7fbb6833be57c8df07",
+ "charge_settings": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-11
+ },
+ "charges": [
+  -0.09290189149994435,
+  0.04762645788812643,
+  0.045138831971088395,
+  -0.08636103170220817,
+  0.04467731397604367,
+  0.041820319366894065
+ ],
+ "conditioning": {
+  "extended_flags": [],
+  "fails_pre_registered": [],
+  "well_conditioned_extended": true,
+  "well_conditioned_pre_registered": true
+ },
+ "energy": {
+  "slot_sum": -647.9114119636075,
+  "slots": {
+   "ea": -7.419511883494683,
+   "eb": -866.7374862901196,
+   "eco": -4.118435951618373,
+   "ecoa": 0.0,
+   "efi": 0.0,
+   "ehb": 0.0,
+   "elp": 0.0,
+   "emol": 0.0,
+   "ep": -2.8454482386256594,
+   "epen": 8.12978430974592e-05,
+   "eqeq": 1.7102303499298808,
+   "et": 10.447781909281954,
+   "ev": 13.613688114879775,
+   "ew": 207.4376887283161
+  },
+  "total_pe": -647.9114119636076
+ },
+ "energy_data_fields": {
+  "e_ang": 13.613688114879775,
+  "e_bond": -866.7374862901196,
+  "e_coa": 0.0,
+  "e_con": -4.118435951618373,
+  "e_ele": -2.8454482386256594,
+  "e_hb": 0.0,
+  "e_lp": 0.0,
+  "e_ov": -7.394213637970909,
+  "e_pen": 8.12978430974592e-05,
+  "e_pol": 1.7102303499298808,
+  "e_tor": 10.447781909281954,
+  "e_un": -0.025298245523773858,
+  "e_vdW": 207.4376887283161
+ },
+ "force_sum": [
+  -3.8191672047105385e-14,
+  -2.4868995751603507e-14,
+  -5.861977570020827e-14
+ ],
+ "forces": [
+  [
+   4.823800089297995,
+   -15.267498063081794,
+   89.24496530716267
+  ],
+  [
+   -7.153306211072101,
+   11.448842670821097,
+   31.156734819795968
+  ],
+  [
+   -9.909210985385661,
+   4.993648134055196,
+   22.10849683116521
+  ],
+  [
+   22.423952471769717,
+   -23.450923975821947,
+   -122.13003363155367
+  ],
+  [
+   -3.05523801022633,
+   3.8265555745224202,
+   -15.61528356999575
+  ],
+  [
+   -7.129997354383658,
+   18.449375659505,
+   -4.7648797565744925
+  ]
+ ],
+ "independent_eem": {
+  "equalization_residual_eV": 4.876987702573388e-12,
+  "mu_eV": 4.997638418740286,
+  "sum_q": 4.163336342344337e-17
+ },
+ "lammps_warnings_expected": [],
+ "positions": [
+  [
+   2.5320395065352588,
+   5.003806650716338,
+   5.439194390660209
+  ],
+  [
+   0.01203488468259721,
+   5.868261556657849,
+   6.0774954610754595
+  ],
+  [
+   0.029367604930066904,
+   4.0847843868504725,
+   6.04084189613929
+  ],
+  [
+   1.251457493986043,
+   5.0074422852469995,
+   4.597182987204275
+  ],
+  [
+   1.264449482360495,
+   5.866787133072663,
+   3.928998120749343
+  ],
+  [
+   1.2873442496881593,
+   4.083150056471449,
+   3.965062359454895
+  ]
+ ],
+ "provenance": {
+  "build": "inst-gcc: g++ 13.3 -O3 (CMake Release), no FMA contraction, serial, patch 0001",
+  "ffield": {
+   "name": "ffield.reax.cho",
+   "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+  },
+  "generator": "tools/reaxref/runner.py via run_suite.py",
+  "instrumentation_patch": "third_party/lammps/patches/0001-reaxmetal-diagnostics.patch",
+  "instrumentation_patch_sha256": "1c0be1857a340307cb6126fb9e99772ddba137b6592eed68524da8710c8c77bd",
+  "lammps_binary_sha256": "d810ba725ccb1f5e6559553a73dce5fccfe215f0a622385161b75e99711c71bb",
+  "lammps_pinned_commit": "8de817dd79bfe4525d5d39246a212d833e6dee07"
+ },
+ "qeq": {
+  "converged_to_tolerance": true,
+  "final_rel_residual_s": 5.415188793244816e-19,
+  "final_rel_residual_t": 2.5996809924489314e-12,
+  "imax": 500,
+  "iters_s": 8,
+  "iters_t": 7,
+  "tolerance": 1e-11
+ },
+ "schema": "reaxmetal.golden/1",
+ "sum_q": 4.163336342344337e-17,
+ "tallies": {
+  "angle.g0": 3,
+  "angle.g1": 6,
+  "angle.g2": 3,
+  "bond.og": 7,
+  "bond.oo": 9,
+  "bond.self": 2,
+  "coalition.g0": 3,
+  "coalition.g1": 6,
+  "coalition.g2": 3,
+  "conjugation.g0": 2,
+  "conjugation.g1": 8,
+  "conjugation.g2": 8,
+  "conjugation.g3": 8,
+  "coulomb.og": 99,
+  "coulomb.oo": 15,
+  "coulomb.self": 18,
+  "penalty.g0": 3,
+  "penalty.g1": 6,
+  "penalty.g2": 3,
+  "torsion.g0": 2,
+  "torsion.g1": 8,
+  "torsion.g2": 8,
+  "torsion.g3": 8,
+  "vdw.og": 99,
+  "vdw.oo": 15,
+  "vdw.self": 18
+ },
+ "types": [
+  1,
+  2,
+  2,
+  1,
+  2,
+  2
+ ],
+ "valid": true
+}

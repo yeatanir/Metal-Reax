@@ -74,7 +74,7 @@ def main():
     # ---------------------------------------------------------------- G2
     inst = compare_builds.load(runs / "inst-gcc")
     bad = []
-    thr = tol["C3"]["neutrality_and_equalization_residual"]
+    thr = {"equalization_residual_eV": tol["reference_validity"]["thresholds_set_a_priori"]["equalization_residual_eV"], "sum_q_abs_e": tol["reference_validity"]["thresholds_set_a_priori"]["abs_sum_q_e"]}
     for cid, r in inst.items():
         why = []
         if not r.get("valid"): why.append("invalid: " + "; ".join(r.get("invalid_reasons", [])))
@@ -123,7 +123,7 @@ def main():
     q9 = qk["Q09a_j_eq_l"]; q12 = qk["Q12_absent_bond_pair"]
     ok6 = (q9["S1"]["raw_cnt"] == "cnt=2" and q9["S1+S2+S3"]["raw_cnt"] == "cnt=6" and q9["additivity_S1+S2"]["max_abs_diff"] < 1e-9
            and q9["additivity_S1+S2+S3"]["max_abs_diff"] > 1.0 and "Q09b_j_ne_l" in qk
-           and all(r.get("BOp_s") == 1.0 for r in q12["C-O block removed"]))
+           and all(abs(r.get("BOp_s", 0) - 1.0) < 1e-12 and abs(r.get("BOp_pi", 0) - 1.0) < 1e-12 for r in q12["C-O block removed"]))
     G.add("G6.Q09+Q12", ok6, f"Q-09: raw cnt 2 per set (3 sets -> {q9['S1+S2+S3']['raw_cnt']}), 2-set additivity diff {q9['additivity_S1+S2']['max_abs_diff']:.1e}, 3-set diff {q9['additivity_S1+S2+S3']['max_abs_diff']:.1f} kcal/mol; "
           f"Q-12: C-O block removed -> BO' = {[(r['BOp_s'], r['BOp_pi'], r['BOp_pipi']) for r in q12['C-O block removed']][:1]} at all r")
 

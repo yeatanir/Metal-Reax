@@ -1,0 +1,152 @@
+{
+ "case_id": "cho_ch3_radical",
+ "case_sha256": "c15ffe4a87f567d73cd3de1b6d863a9197df47fccc95a1ddc3e852006b218e41",
+ "charge_settings": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "charges": [
+  -0.23991283811633812,
+  0.07997094603877947,
+  0.07997094603877913,
+  0.07997094603877958
+ ],
+ "conditioning": {
+  "extended_flags": [],
+  "fails_pre_registered": [],
+  "well_conditioned_extended": true,
+  "well_conditioned_pre_registered": true
+ },
+ "energy": {
+  "slot_sum": -352.3292567022679,
+  "slots": {
+   "ea": -11.438088089740049,
+   "eb": -441.48928826427107,
+   "eco": 0.0,
+   "ecoa": 0.0,
+   "efi": 0.0,
+   "ehb": 0.0,
+   "elp": 0.0,
+   "emol": 0.0,
+   "ep": -11.065886888934596,
+   "epen": 0.0,
+   "eqeq": 9.53400844059157,
+   "et": 0.0,
+   "ev": 0.12518894192035718,
+   "ew": 102.00480915816588
+  },
+  "total_pe": -352.32925670226797
+ },
+ "energy_data_fields": {
+  "e_ang": 0.12518894192035718,
+  "e_bond": -441.48928826427107,
+  "e_coa": 0.0,
+  "e_con": 0.0,
+  "e_ele": -11.065886888934596,
+  "e_hb": 0.0,
+  "e_lp": 0.0,
+  "e_ov": -9.750026502347774,
+  "e_pen": 0.0,
+  "e_pol": 9.53400844059157,
+  "e_tor": 0.0,
+  "e_un": -1.688061587392275,
+  "e_vdW": 102.00480915816588
+ },
+ "force_sum": [
+  1.2434497875801753e-14,
+  -6.328271240363392e-15,
+  0.0
+ ],
+ "forces": [
+  [
+   -8.334999357373363e-14,
+   1.68962066560141e-13,
+   0.0
+  ],
+  [
+   -0.7409837140690101,
+   -1.1363132657038477e-13,
+   0.0
+  ],
+  [
+   0.3704918570345016,
+   -0.6417107201743016,
+   0.0
+  ],
+  [
+   0.3704918570346043,
+   0.64171072017424,
+   0.0
+  ]
+ ],
+ "independent_eem": {
+  "equalization_residual_eV": 1.7763568394002505e-15,
+  "mu_eV": 5.082833706731359,
+  "sum_q": 5.551115123125783e-17
+ },
+ "lammps_warnings_expected": [],
+ "positions": [
+  [
+   0.0,
+   0.0,
+   0.0
+  ],
+  [
+   1.079,
+   0.0,
+   0.0
+  ],
+  [
+   -0.5394999999999998,
+   0.9344414106834094,
+   0.0
+  ],
+  [
+   -0.5395000000000004,
+   -0.934441410683409,
+   0.0
+  ]
+ ],
+ "provenance": {
+  "build": "inst-gcc: g++ 13.3 -O3 (CMake Release), no FMA contraction, serial, patch 0001",
+  "ffield": {
+   "name": "ffield.reax.cho",
+   "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+  },
+  "generator": "tools/reaxref/runner.py via run_suite.py",
+  "instrumentation_patch": "third_party/lammps/patches/0001-reaxmetal-diagnostics.patch",
+  "instrumentation_patch_sha256": "1c0be1857a340307cb6126fb9e99772ddba137b6592eed68524da8710c8c77bd",
+  "lammps_binary_sha256": "d810ba725ccb1f5e6559553a73dce5fccfe215f0a622385161b75e99711c71bb",
+  "lammps_pinned_commit": "8de817dd79bfe4525d5d39246a212d833e6dee07"
+ },
+ "qeq": {
+  "converged_to_tolerance": true,
+  "final_rel_residual_s": 1.3234849666105397e-16,
+  "final_rel_residual_t": 3.24110711684615e-16,
+  "imax": 500,
+  "iters_s": 3,
+  "iters_t": 3,
+  "tolerance": 1e-12
+ },
+ "schema": "reaxmetal.golden/1",
+ "sum_q": 5.551115123125783e-17,
+ "tallies": {
+  "angle.g0": 3,
+  "bond.oo": 6,
+  "coalition.g0": 3,
+  "conjugation.g0": 6,
+  "coulomb.oo": 6,
+  "penalty.g0": 3,
+  "torsion.g0": 6,
+  "vdw.oo": 6
+ },
+ "types": [
+  1,
+  2,
+  2,
+  2
+ ],
+ "valid": true
+}

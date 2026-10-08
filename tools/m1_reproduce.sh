@@ -102,6 +102,9 @@ step "7. tolerances"
 if [[ $refreeze -eq 1 ]]; then
   python3 "$R/make_tolerances.py" --noise "$REP/noise_floor.json" --conditioning "$REP/conditioning.json" --fd "$REP/fd_all.json" --runs "$RUNS/inst-gcc" \
     --cases tests/fixtures/cases --out tolerances --patch-sha256 "$(sha256sum third_party/lammps/patches/0001-reaxmetal-diagnostics.patch | cut -d' ' -f1)"
+  python3 "$R/make_golden.py" "$RUNS/inst-gcc" tests/fixtures/cases "$REP/conditioning.json" tests/fixtures/reference \
+    --build-desc "inst-gcc: g++ 13.3 -O3 (CMake Release), no FMA contraction, serial, patch 0001" --patch-sha256 "$(sha256sum third_party/lammps/patches/0001-reaxmetal-diagnostics.patch | cut -d' ' -f1)"
+  python3 "$R/hash_fixtures.py" tests/fixtures
 else
   echo "(frozen file kept; use --refreeze to regenerate)"
 fi

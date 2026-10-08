@@ -40,7 +40,9 @@ accumulation order and parallel decomposition are backend-specific.
   `|a−b|/min(|a|,|b|)`, `unittest/force-styles/test_main.h:37-44`) is unusable for symmetry-zero components.
 * Forces are compared in kcal/mol/Å, charges in e, energies in kcal/mol.
 
-### 3.2 CPU-64 vs pinned LAMMPS — provisional, to be replaced by a measured floor
+### 3.2 CPU-64 vs pinned LAMMPS — **measured and frozen in M1** (the placeholders below are superseded)
+**Result (VALIDATION §6 E-NOISE):** 10 builds/configurations; noise floor on the 43-fixture set B: energy slot 1.8e-10 (relative to max(1,|E|)), 3.4e-12 kcal/mol/atom total, charge 8.8e-12 e, force 9.1e-11 (RMS 4.2e-11) kcal/mol/Å; frozen C1 thresholds = ⌈10×floor⌉ in `tolerances/tolerances.json` (hash `tolerances/TOLERANCES.sha256`, enforced by CTest `tolerances_frozen`). Strict-IEEE gcc and clang builds are bit-identical. The protocol below was followed except that Kokkos-Serial (not GPU/OpenMP) was used for `reaxff/kk`.
+
 Provisional starting point: LAMMPS' own CI uses a relative epsilon of **2e-10** (QEq case, 1e-11…2e-10 across the
 three base variants) × 5 for Kokkos. These are **placeholders**, not requirements.
 
@@ -167,7 +169,7 @@ not a GPU tolerance. Intermediate-coefficient comparison (`Cdbo`, `CdDelta`, `dB
    (different `exp`/`pow` implementation, association order, race, buffer bug); it is reported, and it does not by itself fail or pass the backend.
 4. None of these can be satisfied by editing a tolerance after seeing Metal output.
 
-### 5.4 Freeze rule
+### 5.4 Freeze rule — **executed at M1** (`tolerances/tolerances.json`; the noise-floor-derived C1 values and the C3 numbers above are in it; its neutrality/residual entries for C3 are *proposed*, see ADR-020)
 `tolerances/` (hashed) contains §3 (C1 noise-floor-derived parity thresholds, produced in M1) and the §5.2 C3 numbers; a test fails if the hash recorded in VALIDATION.md differs. Evaluating a Metal run before the hash is recorded is a protocol violation.
 Reference LAMMPS-Kokkos `mixed`/`single` is **not** used as an accuracy reference (Q-25).
 

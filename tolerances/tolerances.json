@@ -1,0 +1,525 @@
+{
+ "C1": {
+  "alternative_if_amendment_rejected": {
+   "basis": "set A_well_conditioned_pre_registered (pre-registered definition only)",
+   "note": "dominated by the exactly collinear H-bond fixtures (|dF| ~ 1e-2 between FMA and non-FMA builds): a threshold derived this way would not detect real errors",
+   "observed_floor": {
+    "charge_abs": 8.768555326277294e-12,
+    "energy_slot_rel_to_max1": 4.955228113873214e-10,
+    "energy_total_per_atom_abs": 1.2012909185917428e-10,
+    "force_component_abs": 0.015039998961746903,
+    "force_rms": 0.005596338682181744
+   },
+   "ten_x": {
+    "charge_abs": 8.768555326277294e-11,
+    "energy_slot_rel_to_max1": 4.955228113873215e-09,
+    "energy_total_per_atom_abs": 1.2012909185917429e-09,
+    "force_component_abs": 0.15039998961746903,
+    "force_rms": 0.05596338682181744
+   },
+   "threshold": {
+    "charge_abs": 9e-11,
+    "energy_slot_rel_to_max1": 5e-09,
+    "energy_total_per_atom_abs": 2e-09,
+    "force_component_abs": 0.2,
+    "force_rms": 0.06
+   }
+  },
+  "basis_primary": "set B_well_conditioned_pre_registered_plus_proposed_X1_X2 (pre-registered well-conditioned + proposed X1/X2)",
+  "metric_form": "energy: |d| <= rtol*max(1,|ref|) per slot; |dE|/N <= energy_total_per_atom_abs; charge: |dq| <= charge_abs; force: per-component |dF| <= force_component_abs and RMS over atoms <= force_rms",
+  "primary": {
+   "observed_floor": {
+    "charge_abs": 8.768555326277294e-12,
+    "energy_slot_rel_to_max1": 1.7787973391020748e-10,
+    "energy_total_per_atom_abs": 3.402183884409843e-12,
+    "force_component_abs": 9.136869039139128e-11,
+    "force_rms": 4.2204583549012015e-11
+   },
+   "ten_x": {
+    "charge_abs": 8.768555326277294e-11,
+    "energy_slot_rel_to_max1": 1.7787973391020748e-09,
+    "energy_total_per_atom_abs": 3.402183884409843e-11,
+    "force_component_abs": 9.136869039139128e-10,
+    "force_rms": 4.2204583549012014e-10
+   },
+   "threshold": {
+    "charge_abs": 9e-11,
+    "energy_slot_rel_to_max1": 2e-09,
+    "energy_total_per_atom_abs": 4e-11,
+    "force_component_abs": 1e-09,
+    "force_rms": 5e-10
+   }
+  },
+  "role": "CPU-64 vs pinned LAMMPS: strict parity at 10x the measured reference noise floor",
+  "validity_range": "measured on fixtures of <= 216 atoms; re-measure before applying to larger systems (floor grows with system size)"
+ },
+ "C2": {
+  "role": "CPU-32 vs CPU-64: characterisation only (error distributions), not a gate"
+ },
+ "C3": {
+  "charge_max_abs_e": 0.0001,
+  "charge_rms_e": 2e-05,
+  "energy_per_atom_abs_kcal_mol": 0.001,
+  "energy_significant_category_rel": 1e-05,
+  "force_max_component_kcal_mol_A": 0.05,
+  "force_rms_kcal_mol_A": 0.005,
+  "md_nve_drift": "provisional (NUMERICAL_POLICY 5.2); not frozen numerically here",
+  "neutrality_and_equalization_residual": {
+   "basis": "|sum q|/N <= the owner's charge-RMS bound (2e-5 e); residual <= owner's max |dq| bound (1e-4 e) x ~20 eV/e (largest diagonal EEM hardness in the bundled force fields). NOT derived from the FP64 reference noise, which is ~1e-15 / ~1e-10 eV and would be meaningless for an FP32 backend.",
+   "equalization_residual_eV": 0.002,
+   "status": "PROPOSED -- awaiting owner confirmation (the owner left these to the M1 reference check)",
+   "sum_q_abs_per_atom_e": 2e-05
+  },
+  "role": "Metal-32 vs CPU-64 acceptance on well-conditioned fixtures (owner-set, NUMERICAL_POLICY 5.2)"
+ },
+ "conditioning": {
+  "classification": {
+   "ab_ammonia_borane": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "auo_au_fcc": {
+    "extended_flags": [],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [
+     "W5_Delta_lp"
+    ],
+    "pre_registered_well_conditioned": false
+   },
+   "budzien_ammonia": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_atom_C": {
+    "extended_flags": [],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [
+     "W2_threshold",
+     "W5_Delta_lp"
+    ],
+    "pre_registered_well_conditioned": false
+   },
+   "cho_atom_H": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_atom_O": {
+    "extended_flags": [],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [
+     "W2_threshold",
+     "W5_Delta_lp"
+    ],
+    "pre_registered_well_conditioned": false
+   },
+   "cho_benzene": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_benzene_pert": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_butadiene": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_butadiene_pert": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_ch3_radical": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_chain_1atom_period1.30": {
+    "extended_flags": [
+     "X1_NEAR_LINEAR"
+    ],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_chain_zigzag_period2.5": {
+    "extended_flags": [
+     "X1_NEAR_LINEAR"
+    ],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_co": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_co2": {
+    "extended_flags": [
+     "X1_NEAR_LINEAR"
+    ],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_co2_pert": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_cyclopropane": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_cyclopropane_pert": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_diamond_1x1x1": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_diamond_2x2x2": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_diamond_3x3x3": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_diamond_triclinic": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_ethane_eclipsed": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_ethane_pert": {
+    "extended_flags": [
+     "X2_PRODUCT"
+    ],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_ethane_staggered": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_ethene": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_ethyne": {
+    "extended_flags": [
+     "X1_NEAR_LINEAR"
+    ],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_formaldehyde": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_graphene": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_h2": {
+    "extended_flags": [],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [
+     "W4_min_distance"
+    ],
+    "pre_registered_well_conditioned": false
+   },
+   "cho_methane": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_methane_cell6.0": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_methane_pert": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_methanol": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_methanol_pert": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_o2": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_polyethylene_period2.553": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_water": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_water_box_8": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_water_cell6.2_hbond_self_image": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_water_dimer": {
+    "extended_flags": [
+     "X1_NEAR_LINEAR"
+    ],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_water_dimer_cell9.0": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_water_dimer_pert": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "cho_water_fixedq": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "fc_so2": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "fc_so2_pert": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "feoch_fe_bcc": {
+    "extended_flags": [],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [
+     "W5_Delta_lp"
+    ],
+    "pre_registered_well_conditioned": false
+   },
+   "lg_ethane_lgvdw": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "lg_water_dimer_lgvdw": {
+    "extended_flags": [
+     "X1_NEAR_LINEAR"
+    ],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "mattsson_ethane": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "mattsson_h2s": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "mattsson_so2": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "rdx_ammonia": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "rdx_co": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "rdx_ethyne": {
+    "extended_flags": [
+     "X1_NEAR_LINEAR"
+    ],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "rdx_methane": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   },
+   "voch_vo_rocksalt": {
+    "extended_flags": [],
+    "extended_well_conditioned": false,
+    "fails_pre_registered": [
+     "W5_Delta_lp"
+    ],
+    "pre_registered_well_conditioned": false
+   },
+   "znoh_znoh2": {
+    "extended_flags": [],
+    "extended_well_conditioned": true,
+    "fails_pre_registered": [],
+    "pre_registered_well_conditioned": true
+   }
+  },
+  "counts": {
+   "extended_well_conditioned": 44,
+   "pre_registered_well_conditioned": 52
+  },
+  "pre_registered_definition": "NUMERICAL_POLICY 5.2 (W1-W5 as implemented in tools/reaxref/conditioning.py)",
+  "proposed_amendment_pending_owner_confirmation": {
+   "X1_NEAR_LINEAR": "valence-angle triple with sin(theta) < 1e-3 (pinned kernel divides by sin(theta) clamped at 1e-5; ENGINE_SPEC Q-33)",
+   "X2_PRODUCT": "BO_ij*BO_jk within 1e-3 (relative) of thb_cutsq (energy discontinuity; VALIDATION E-FD-2)"
+  }
+ },
+ "finite_difference": {
+  "known_reference_quirk_fixtures_excluded_from_that_statistic": {
+   "cho_water_cell6.2_hbond_self_image": 1.975517704977392e-08,
+   "mattsson_so2": 16.500427784943327
+  },
+  "note": "the excluded fixtures reproduce ENGINE_SPEC Q-34 (analytic force != gradient of energy for heavy atoms with pi bonds) and Q-32 (H-bond self-image)",
+  "observed_max_abs_err_pinned_lammps_well_conditioned_fixtures": 1.9028963208711502e-05,
+  "protocol": "fixed-q central difference at h=1e-5 and 2e-5 A; components whose two estimates differ by > 1e-5 + 1e-6|F| are 'discontinuity suspects' and excluded from the smooth-point statistic",
+  "scope": "CPU-64 analytic forces vs central FD of the energy (kept separate from GPU tolerances, NUMERICAL_POLICY 5.2/6)",
+  "worst_case": "cho_cyclopropane_pert"
+ },
+ "fixtures": {
+  "cases_dir_hash_file": "tests/fixtures/FIXTURES.sha256",
+  "n_total": 58
+ },
+ "frozen_at": "M1 (before any engine or Metal result exists)",
+ "noise_floor": {
+  "builds": [
+   "stock-clang-native",
+   "stock-clang",
+   "stock-gcc-O0",
+   "stock-gcc-O2-nofma",
+   "stock-gcc-native",
+   "stock-gcc",
+   "stock-kokkos-serial",
+   "stock-mpi-np1",
+   "stock-mpi-np2",
+   "stock-mpi-np4"
+  ],
+  "pairwise_sets": {
+   "A_well_conditioned_pre_registered": 51,
+   "B_well_conditioned_pre_registered_plus_proposed_X1_X2": 43,
+   "C_not_in_B": 14,
+   "D_proposed_X1_X2_only": 8
+  }
+ },
+ "pins": {
+  "instrumentation_patch_sha256": "1c0be1857a340307cb6126fb9e99772ddba137b6592eed68524da8710c8c77bd",
+  "lammps_commit": "8de817dd79bfe4525d5d39246a212d833e6dee07"
+ },
+ "reference_validity": {
+  "abs_sum_q_max_observed": 1.968911145233676e-15,
+  "independent_equalization_residual_eV_max_observed": 8.635030468440164e-10,
+  "max_final_recursive_relative_residual_observed": 5.806850511063077e-11,
+  "qeq_reference_maxiter": 500,
+  "qeq_reference_tolerance": 1e-12,
+  "rule": "a reference calculation is VALID only if LAMMPS emitted no unexpected warning, the fix's recursive relative residual is <= the requested tolerance, the independent equalization residual and |sum q| are within the a-priori thresholds above, and exactly one force evaluation occurred. Invalid calculations never enter the golden dataset.",
+  "thresholds_set_a_priori": {
+   "abs_sum_q_e": 1e-09,
+   "equalization_residual_eV": 1e-08,
+   "note": "runner defaults chosen before any data; observed maxima below are 10-1000x smaller"
+  }
+ },
+ "rule": "Changing this file requires an owner-approved DEVELOPMENT_LOG entry stating a physical/numerical reason (NUMERICAL_POLICY 5.4). A mismatch is never closed by editing a tolerance or a reference.",
+ "schema": "reaxmetal.tolerances/1",
+ "stretch_targets": {
+  "reported_not_gated": true,
+  "source": "NUMERICAL_POLICY 5.5 (original M0.5 proposal)"
+ }
+}

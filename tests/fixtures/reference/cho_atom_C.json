@@ -1,0 +1,110 @@
+{
+ "case_id": "cho_atom_C",
+ "case_sha256": "dba92d1e7b845a569348f2c794a24c2ac05f731f98243465dbae00d8c049ab42",
+ "charge_settings": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "charges": [
+  0.0
+ ],
+ "conditioning": {
+  "extended_flags": [],
+  "fails_pre_registered": [
+   "W2_threshold",
+   "W5_Delta_lp"
+  ],
+  "well_conditioned_extended": false,
+  "well_conditioned_pre_registered": false
+ },
+ "energy": {
+  "slot_sum": -2.4959823225281283,
+  "slots": {
+   "ea": -2.4959823225281283,
+   "eb": 0.0,
+   "eco": 0.0,
+   "ecoa": 0.0,
+   "efi": 0.0,
+   "ehb": 0.0,
+   "elp": 0.0,
+   "emol": 0.0,
+   "ep": 0.0,
+   "epen": 0.0,
+   "eqeq": 0.0,
+   "et": 0.0,
+   "ev": 0.0,
+   "ew": 0.0
+  },
+  "total_pe": -2.4959823225281283
+ },
+ "energy_data_fields": {
+  "e_ang": 0.0,
+  "e_bond": 0.0,
+  "e_coa": 0.0,
+  "e_con": 0.0,
+  "e_ele": 0.0,
+  "e_hb": 0.0,
+  "e_lp": 0.0,
+  "e_ov": 0.0,
+  "e_pen": 0.0,
+  "e_pol": 0.0,
+  "e_tor": 0.0,
+  "e_un": -2.4959823225281283,
+  "e_vdW": 0.0
+ },
+ "force_sum": [
+  0.0,
+  0.0,
+  0.0
+ ],
+ "forces": [
+  [
+   0.0,
+   0.0,
+   0.0
+  ]
+ ],
+ "independent_eem": {
+  "equalization_residual_eV": 0.0,
+  "mu_eV": 5.8678,
+  "sum_q": 0.0
+ },
+ "lammps_warnings_expected": [],
+ "positions": [
+  [
+   0.0,
+   0.0,
+   0.0
+  ]
+ ],
+ "provenance": {
+  "build": "inst-gcc: g++ 13.3 -O3 (CMake Release), no FMA contraction, serial, patch 0001",
+  "ffield": {
+   "name": "ffield.reax.cho",
+   "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+  },
+  "generator": "tools/reaxref/runner.py via run_suite.py",
+  "instrumentation_patch": "third_party/lammps/patches/0001-reaxmetal-diagnostics.patch",
+  "instrumentation_patch_sha256": "1c0be1857a340307cb6126fb9e99772ddba137b6592eed68524da8710c8c77bd",
+  "lammps_binary_sha256": "d810ba725ccb1f5e6559553a73dce5fccfe215f0a622385161b75e99711c71bb",
+  "lammps_pinned_commit": "8de817dd79bfe4525d5d39246a212d833e6dee07"
+ },
+ "qeq": {
+  "converged_to_tolerance": true,
+  "final_rel_residual_s": 0.0,
+  "final_rel_residual_t": 0.0,
+  "imax": 500,
+  "iters_s": 2,
+  "iters_t": 2,
+  "tolerance": 1e-12
+ },
+ "schema": "reaxmetal.golden/1",
+ "sum_q": 0.0,
+ "tallies": {},
+ "types": [
+  1
+ ],
+ "valid": true
+}

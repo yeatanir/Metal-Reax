@@ -245,3 +245,9 @@ Apple M5 Max (18 CPU / 40 GPU cores, 64 GB), macOS 26.3.1, SDK 26.2, Apple clang
 | I-6 | triclinic + QEq small cell | `REF-QEQ-CELL` (M1) |
 | I-7 | Metal compile without Xcode, metal-cpp against CLT SDK | first task of M3 on the Mac |
 | I-8 | `fix qeq/rel/reaxff` with `Pair`-derived style untested | low priority (Deferred) |
+
+## M1 addenda (executed)
+* **Single-rank contract (C8) verified with a real MPI build** (OpenMPI 4.1.6, probe plugin built with `REAXMETAL_LAMMPS_MPI=ON`): `mpirun -np 1` runs; `-np 2` and `-np 4` abort with `Pair style reaxff/metal supports a single MPI rank only`. (macOS/Apple MPI not tested.)
+* **QEq taper vs ghost shell:** the adapter must refuse a QEq taper radius larger than `max(nonb_cut, hbond_cut, bond_cut) + skin` — the stock fix truncates silently (ENGINE_SPEC Q-35, capability `eem.taper_within_ghost_shell`).
+* **Ghost shell:** results were identical for shells 7.5–14 Å on the tested systems; the 2·`bond_cut` warning of `pair_reaxff.cpp:373` is conservative for ordinary bond lengths (ENGINE_SPEC §3.1).
+* **Image rules the host must preserve:** tags are the tie-break for equal-image pairs; a host that renumbers tags or merges images changes results (Q-32 shows the reference itself already misbehaves for self-images in H-bonds).

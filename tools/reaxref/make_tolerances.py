@@ -79,16 +79,20 @@ def main():
         "C3": {"role": "Metal-32 vs CPU-64 acceptance on well-conditioned fixtures (owner-set, NUMERICAL_POLICY 5.2)",
                "energy_per_atom_abs_kcal_mol": 1e-3, "energy_significant_category_rel": 1e-5,
                "force_rms_kcal_mol_A": 5e-3, "force_max_component_kcal_mol_A": 5e-2, "charge_max_abs_e": 1e-4, "charge_rms_e": 2e-5,
-               "neutrality_and_equalization_residual": {"sum_q_abs_e": ceil1(10 * max(sumq)), "equalization_residual_eV": ceil1(10 * max(res_eV)),
-                                                        "basis": "10 x the maximum over all 58 reference fixtures of the independent check (M1); the check method is tools/reaxref/runner.py:eem_residual"},
+               "neutrality_and_equalization_residual": {
+                   "status": "PROPOSED -- awaiting owner confirmation (the owner left these to the M1 reference check)",
+                   "sum_q_abs_per_atom_e": 2e-5, "equalization_residual_eV": 2e-3,
+                   "basis": "|sum q|/N <= the owner's charge-RMS bound (2e-5 e); residual <= owner's max |dq| bound (1e-4 e) x ~20 eV/e (largest diagonal EEM hardness in the bundled force fields). "
+                            "NOT derived from the FP64 reference noise, which is ~1e-15 / ~1e-10 eV and would be meaningless for an FP32 backend."},
                "md_nve_drift": "provisional (NUMERICAL_POLICY 5.2); not frozen numerically here"},
         "stretch_targets": {"source": "NUMERICAL_POLICY 5.5 (original M0.5 proposal)", "reported_not_gated": True},
         "reference_validity": {
+            "thresholds_set_a_priori": {"equalization_residual_eV": 1e-8, "abs_sum_q_e": 1e-9, "note": "runner defaults chosen before any data; observed maxima below are 10-1000x smaller"},
             "qeq_reference_tolerance": 1e-12, "qeq_reference_maxiter": 500,
             "max_final_recursive_relative_residual_observed": max(rel_s),
             "independent_equalization_residual_eV_max_observed": max(res_eV), "abs_sum_q_max_observed": max(sumq),
             "rule": "a reference calculation is VALID only if LAMMPS emitted no unexpected warning, the fix's recursive relative residual is <= the requested tolerance, "
-                    "the independent equalization residual and |sum q| are within the C3 neutrality/residual thresholds above, and exactly one force evaluation occurred. "
+                    "the independent equalization residual and |sum q| are within the a-priori thresholds above, and exactly one force evaluation occurred. "
                     "Invalid calculations never enter the golden dataset."},
         "finite_difference": {"scope": "CPU-64 analytic forces vs central FD of the energy (kept separate from GPU tolerances, NUMERICAL_POLICY 5.2/6)",
                               "protocol": "fixed-q central difference at h=1e-5 and 2e-5 A; components whose two estimates differ by > 1e-5 + 1e-6|F| are 'discontinuity suspects' and excluded from the smooth-point statistic",
