@@ -55,7 +55,7 @@ done
 suite stock-gcc-O0 "$M/stock-gcc-O0/install/bin/lmp" nodiag
 suite stock-gcc-O2-nofma "$M/stock-gcc-O2-nofma/install/bin/lmp" nodiag
 if [[ $mk -eq 1 && -x "$M/stock-mpi/install/bin/lmp" ]]; then
-  for np in 1 2 4; do suite "stock-mpi-np$np" "$M/stock-mpi/install/bin/lmp" nodiag --launcher "mpiexec -np $np"; done
+  for np in 1 2 4; do suite "stock-mpi-np$np" "$M/stock-mpi/install/bin/lmp" nodiag --launcher "${MPI_RUN:-mpirun.openmpi --allow-run-as-root --oversubscribe} -np $np"; done
 fi
 if [[ $mk -eq 1 && -x "$M/stock-kokkos-serial/install/bin/lmp" ]]; then
   suite stock-kokkos-serial "$M/stock-kokkos-serial/install/bin/lmp" nodiag --lmp-args "-k on t 1 -sf kk"
