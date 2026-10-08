@@ -275,12 +275,14 @@ DeviceListInput make_device_list_input(const AtomSet& atoms, const Box& box, con
   in.nlocal = static_cast<std::uint32_t>(atoms.nlocal);
   in.origin = box.origin;
   in.x.resize(3 * atoms.nall());
+  in.x_lo.resize(3 * atoms.nall());
   double maxabs = 0.0;
   for (std::size_t i = 0; i < atoms.nall(); ++i)
     for (std::size_t c = 0; c < 3; ++c) {
       const double r = atoms.x[3 * i + c] - box.origin[c];
       maxabs = std::max(maxabs, std::fabs(r));
       in.x[3 * i + c] = static_cast<float>(r);
+      in.x_lo[3 * i + c] = static_cast<float>(r - static_cast<double>(in.x[3 * i + c]));
     }
   // float coordinates carry <= 0.5 ulp = 0.5*FLT_EPSILON*|r| error each; a distance error is below 4*FLT_EPSILON*maxabs.
   in.list_margin = std::max(margin, 8.0 * static_cast<double>(FLT_EPSILON) * maxabs);

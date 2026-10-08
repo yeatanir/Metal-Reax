@@ -20,13 +20,18 @@
   device const int* tb_i [[buffer(9)]], device const int* thb_idx [[buffer(10)]], device const float* thb_sets [[buffer(11)]],              \
   device const float* fb_f [[buffer(12)]], device const int* fb_has [[buffer(13)]], device const float* hb_f [[buffer(14)]],                \
   device const float* gp [[buffer(15)]], device float* wf [[buffer(16)]], device int* wi [[buffer(17)]],                                      \
-  constant RmBParams& p [[buffer(18)]], uint a [[thread_position_in_grid]]
+  device const float* xlo [[buffer(18)]], constant RmBParams& p [[buffer(19)]], uint a [[thread_position_in_grid]]
 
 #define SFi(f, at, s) wf[(uint)(f) * p.NB + (at) * p.B + (s)]
 #define AFi(f, at) wf[p.o_atom + (uint)(f) * p.N + (at)]
 #define SIi(f, at, s) wi[(uint)(f) * p.NB + (at) * p.B + (s)]
 #define AIi(f, at) wi[p.o_iatom + (uint)(f) * p.N + (at)]
 #define RMEXP(v) reaxmetal::terms::safe_exp<float>(v)
+
+// coordinate difference x_j - x_a (component c) from the hi/lo position pair: exact for close atoms, so the error is relative to the distance
+inline float rm_dx(device const float* x, device const float* xlo, uint j, uint a, uint c) {
+  return (x[3 * j + c] - x[3 * a + c]) + (xlo[3 * j + c] - xlo[3 * a + c]);
+}
 
 inline uint rm_nslots(device const int* wi, constant RmBParams& p, uint at) {
   const int nb = wi[p.o_iatom + (uint)RM_AI_NB * p.N + at];
@@ -63,7 +68,6 @@ kernel void rm_b_build(RM_B_ARGS) {
   if (ta >= 0) {
     const uint c = atom_cell[a];
     const uint cx = c % p.ncx, cy = (c / p.ncx) % p.ncy, cz = c / (p.ncx * p.ncy);
-    const float xa0 = x[3 * a], xa1 = x[3 * a + 1], xa2 = x[3 * a + 2];
     const uint z0 = (cz > 0) ? cz - 1 : 0, z1 = (cz + 1 < p.ncz) ? cz + 1 : p.ncz - 1;
     const uint y0 = (cy > 0) ? cy - 1 : 0, y1 = (cy + 1 < p.ncy) ? cy + 1 : p.ncy - 1;
     const uint x0 = (cx > 0) ? cx - 1 : 0, x1 = (cx + 1 < p.ncx) ? cx + 1 : p.ncx - 1;
@@ -76,7 +80,7 @@ kernel void rm_b_build(RM_B_ARGS) {
             if (j == a) continue;
             const int tj = type[j];
             if (tj < 0) continue;
-            const float dx = x[3 * j] - xa0, dy = x[3 * j + 1] - xa1, dz = x[3 * j + 2] - xa2;
+            const float dx = rm_dx(x, xlo, j, a, 0), dy = rm_dx(x, xlo, j, a, 1), dz = rm_dx(x, xlo, j, a, 2);
             const float d = sqrt(dx * dx + dy * dy + dz * dz);
             if (!(d <= p.bond_cut)) continue;
             const uint ti = (uint)ta, tjj = (uint)tj;
@@ -108,7 +112,7 @@ kernel void rm_b_prime(RM_B_ARGS) {
   for (uint s = 0; s < n; ++s) {
     const uint j = (uint)SIi(RM_SI_NBR, a, s);
     const uint ti = (uint)ta, tj = (uint)type[j];
-    const float dx = x[3 * j] - x[3 * a], dy = x[3 * j + 1] - x[3 * a + 1], dz = x[3 * j + 2] - x[3 * a + 2];
+    const float dx = rm_dx(x, xlo, j, a, 0), dy = rm_dx(x, xlo, j, a, 1), dz = rm_dx(x, xlo, j, a, 2);
     const float d = sqrt(dx * dx + dy * dy + dz * dz);
     const reaxmetal::terms::PairParams<float> pp = rm_pair(tb_f, ti * p.ntypes + tj);
     const bool s_ok = sb_f[ti * RM_B_SB_F + 5] > 0.0f && sb_f[tj * RM_B_SB_F + 5] > 0.0f;
@@ -494,7 +498,7 @@ kernel void rm_b_torsion(RM_B_ARGS) {
         if (sin_jkl >= 0.0f && sin_jkl <= MIN_SINE) tan_jkl_i = cos_jkl / MIN_SINE;
         else if (sin_jkl <= 0.0f && sin_jkl >= -MIN_SINE) tan_jkl_i = cos_jkl / -MIN_SINE;
         else tan_jkl_i = cos_jkl / sin_jkl;
-        const float lix = x[3 * i] - x[3 * l], liy = x[3 * i + 1] - x[3 * l + 1], liz = x[3 * i + 2] - x[3 * l + 2];
+        const float lix = rm_dx(x, xlo, i, l, 0), liy = rm_dx(x, xlo, i, l, 1), liz = rm_dx(x, xlo, i, l, 2);
         const float r_li = sqrt(lix * lix + liy * liy + liz * liz);
 
         // Calculate_Omega (reaxff_torsion_angles.cpp:36-125)
@@ -604,7 +608,7 @@ kernel void rm_h_build(RM_B_ARGS) {
             if (k == a) continue;
             const int tk = type[k];
             if (tk < 0 || sb_i[(uint)tk * RM_B_SB_I + 2] != 2) continue;
-            const float dx = x[3 * k] - x[3 * a], dy = x[3 * k + 1] - x[3 * a + 1], dz = x[3 * k + 2] - x[3 * a + 2];
+            const float dx = rm_dx(x, xlo, k, a, 0), dy = rm_dx(x, xlo, k, a, 1), dz = rm_dx(x, xlo, k, a, 2);
             const float d = sqrt(dx * dx + dy * dy + dz * dz);
             if (!(d <= p.hbond_cut)) continue;
             if (cnt < p.H) wi[p.o_hi + a * p.H + cnt] = (int)k;
@@ -627,7 +631,7 @@ kernel void rm_b_hbond(RM_B_ARGS) {
   for (uint h = 0; h < nh; ++h) {
     const uint k = (uint)wi[p.o_hi + j * p.H + h];
     const uint tk = (uint)type[k];
-    const float jkx = x[3 * k] - x[3 * j], jky = x[3 * k + 1] - x[3 * j + 1], jkz = x[3 * k + 2] - x[3 * j + 2];
+    const float jkx = rm_dx(x, xlo, k, j, 0), jky = rm_dx(x, xlo, k, j, 1), jkz = rm_dx(x, xlo, k, j, 2);
     const float r_jk = sqrt(jkx * jkx + jky * jky + jkz * jkz);
     float fkx = 0.0f, fky = 0.0f, fkz = 0.0f;
     for (uint pi = 0; pi < n; ++pi) {

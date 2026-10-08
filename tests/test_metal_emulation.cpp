@@ -281,7 +281,7 @@ static void emulate_nonbonded(const NonbondedDeviceInput& in, NonbondedDeviceOut
   RmNbParams p{};
   p.nlocal = nlocal; p.cap = cap; p.ntypes = in.ntypes; p.vdw_type = in.vdw_type; p.lg = in.lg; p.p_vdW1 = in.p_vdW1; p.swa = in.swa; p.swb = in.swb;
   for (std::uint32_t i = 0; i < nlocal; ++i)
-    rm_nb_pairs(in.list.x.data(), in.type.data(), in.tag.data(), in.q.data(), in.pair_table.data(), in.rows.nbr.data(), in.rows.count.data(), pf.data(), out.row_e.data(), p, i);
+    rm_nb_pairs(in.list.x.data(), in.type.data(), in.tag.data(), in.q.data(), in.pair_table.data(), in.rows.nbr.data(), in.rows.count.data(), pf.data(), out.row_e.data(), in.list.x_lo.data(), p, i);
   RmNbGatherParams g{nall, nlocal, cap};
   for (std::uint32_t k = 0; k < nall; ++k)
     rm_nb_gather(pf.data(), in.rows.count.data(), in.column.start.data(), in.column.items.data(), out.grad.data(), g, k);
@@ -364,7 +364,7 @@ struct EmuBondedBackend final : BondedBackend {
     for (std::uint32_t t = 0; t < threads; ++t)
       kernel(in->list.x.data(), in->type.data(), in->tag.data(), in->list.grid.atom_cell.data(), in->list.grid.cell_start.data(), in->list.grid.cell_items.data(),
              in->sb_f.data(), in->sb_i.data(), in->tb_f.data(), in->tb_i.data(), in->thb_idx.data(), in->thb_sets.data(), in->fb_f.data(), in->fb_has.data(), in->hb_f.data(),
-             in->gp.data(), wf.data(), wi.data(), p, t);
+             in->gp.data(), wf.data(), wi.data(), in->list.x_lo.data(), p, t);
   }
   void run(std::span<const BondedStep> steps) override {
     for (const BondedStep& st : steps) {

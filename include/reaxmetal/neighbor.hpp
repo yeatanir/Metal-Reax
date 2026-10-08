@@ -88,7 +88,8 @@ PairCounts count_nonbonded_pairs(const AtomSet& atoms, const FarList& list, cons
 struct DeviceListInput {
   std::uint32_t nall = 0, nlocal = 0;
   Vec3 origin{};
-  std::vector<float> x;                     // 3 * nall, x - origin
+  std::vector<float> x;                     // 3 * nall, x - origin (hi part)
+  std::vector<float> x_lo;                  // 3 * nall, (x - origin) - double(x_hi): the kernels form dvec = (hi_j - hi_i) + (lo_j - lo_i), accurate to FP32 epsilon of the DISTANCE, not of the coordinate
   CellGrid grid;
   float rc2_owned = 0, rc2_ghost = 0;       // squared row cutoffs (float)
   double list_margin = 0;                   // cutoffs were enlarged by this much before squaring

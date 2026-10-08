@@ -18,7 +18,8 @@ kernel void rm_nb_pairs(device const float* x [[buffer(0)]],
                         device const uint* count [[buffer(6)]],
                         device float* pf [[buffer(7)]],
                         device float* row_e [[buffer(8)]],
-                        constant RmNbParams& p [[buffer(9)]],
+                        device const float* xlo [[buffer(9)]],
+                        constant RmNbParams& p [[buffer(10)]],
                         uint i [[thread_position_in_grid]]) {
   if (i >= p.nlocal) return;
   float ev = 0.0f;
@@ -30,9 +31,9 @@ kernel void rm_nb_pairs(device const float* x [[buffer(0)]],
       const uint j = (uint)nbr[i * p.cap + e];
       const int tj = type[j];
       if (tj < 0) continue;
-      const float dx = x[3 * j] - x[3 * i];
-      const float dy = x[3 * j + 1] - x[3 * i + 1];
-      const float dz = x[3 * j + 2] - x[3 * i + 2];
+      const float dx = (x[3 * j] - x[3 * i]) + (xlo[3 * j] - xlo[3 * i]);   // hi/lo coordinates: error relative to the distance
+      const float dy = (x[3 * j + 1] - x[3 * i + 1]) + (xlo[3 * j + 1] - xlo[3 * i + 1]);
+      const float dz = (x[3 * j + 2] - x[3 * i + 2]) + (xlo[3 * j + 2] - xlo[3 * i + 2]);
       const float r = sqrt(dx * dx + dy * dy + dz * dz);
       if (!(r <= p.swb)) continue;
       // owner-computes rule (reaxff_nonbonded.cpp:104-117)

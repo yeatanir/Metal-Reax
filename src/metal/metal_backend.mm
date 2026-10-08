@@ -140,7 +140,7 @@ namespace {
 struct MetalBondedBackend final : BondedBackend {
   Context::Impl* m;
   std::vector<id<MTLBuffer>> in_bufs;    // x type tag atom_cell cell_start cell_items sb_f sb_i tb_f tb_i thb_idx thb_sets fb_f fb_has hb_f gp
-  id<MTLBuffer> wf = nil, wi = nil;
+  id<MTLBuffer> wf = nil, wi = nil, xlo = nil;
   RmBParams p{};
   double gpu = 0.0;
   explicit MetalBondedBackend(Context::Impl* impl) : m(impl) {}
@@ -148,6 +148,7 @@ struct MetalBondedBackend final : BondedBackend {
     auto up = [&](const auto& v) { return m->buffer_from(v.data(), v.size() * sizeof(v[0])); };
     in_bufs = {up(in.list.x), up(in.type), up(in.tag), up(in.list.grid.atom_cell), up(in.list.grid.cell_start), up(in.list.grid.cell_items), up(in.sb_f),
                up(in.sb_i), up(in.tb_f), up(in.tb_i), up(in.thb_idx), up(in.thb_sets), up(in.fb_f), up(in.fb_has), up(in.hb_f), up(in.gp)};
+    xlo = up(in.list.x_lo);
     wf = m->buffer(L.wf_size * sizeof(float));
     wi = m->buffer(L.wi_size * sizeof(std::int32_t));
     std::memset([wf contents], 0, L.wf_size * sizeof(float));
@@ -167,7 +168,8 @@ struct MetalBondedBackend final : BondedBackend {
       d.buffers = in_bufs;
       d.buffers.push_back(wf);
       d.buffers.push_back(wi);
-      set_params(d, p, 18);
+      d.buffers.push_back(xlo);
+      set_params(d, p, 19);
       list.push_back(d);
     }
     m->run(list);
@@ -307,12 +309,13 @@ NonbondedDeviceOutput Context::nonbonded(const NonbondedDeviceInput& in) {
   id<MTLBuffer> bcs = m.buffer_from(in.column.start.data(), in.column.start.size() * sizeof(std::uint32_t));
   id<MTLBuffer> bci = m.buffer_from(in.column.items.data(), in.column.items.size() * sizeof(std::uint32_t));
   id<MTLBuffer> bgrad = m.buffer(out.grad.size() * sizeof(float));
+  id<MTLBuffer> bxlo = m.buffer_from(in.list.x_lo.data(), in.list.x_lo.size() * sizeof(float));
   RmNbParams p{};
   p.nlocal = static_cast<std::uint32_t>(nlocal); p.cap = static_cast<std::uint32_t>(cap); p.ntypes = in.ntypes;
   p.vdw_type = in.vdw_type; p.lg = in.lg; p.p_vdW1 = in.p_vdW1; p.swa = in.swa; p.swb = in.swb;
   Dispatch d1 = m.make("rm_nb_pairs", nlocal);
-  d1.buffers = {bx, btype, btag, bq, btab, bnbr, bcount, bpf, brow};
-  set_params(d1, p, 9);
+  d1.buffers = {bx, btype, btag, bq, btab, bnbr, bcount, bpf, brow, bxlo};
+  set_params(d1, p, 10);
   RmNbGatherParams g{static_cast<std::uint32_t>(nall), static_cast<std::uint32_t>(nlocal), static_cast<std::uint32_t>(cap)};
   Dispatch d2 = m.make("rm_nb_gather", nall);
   d2.buffers = {bpf, bcount, bcs, bci, bgrad};
