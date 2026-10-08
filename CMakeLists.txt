@@ -14,6 +14,7 @@ endif()
 
 option(REAXMETAL_BUILD_LAMMPS_PLUGIN "Build the LAMMPS plugin(s); needs REAXMETAL_LAMMPS_SOURCE_DIR (pinned LAMMPS src/)" OFF)
 set(REAXMETAL_LAMMPS_SOURCE_DIR "" CACHE PATH "src/ directory of the pinned LAMMPS tree (tools/fetch_lammps.sh --full)")
+set(REAXMETAL_FFIELD_DIR "" CACHE PATH "directory with the bundled ffield.reax.* files (potentials/ of the pinned LAMMPS tree); enables the ffield_tables test")
 set(REAXMETAL_LAMMPS_PREFIX "" CACHE PATH "install prefix of the stock pinned LAMMPS build (tools/build_lammps_reference.sh); enables the lammps_probe CTest")
 option(REAXMETAL_BUILD_TESTS "Build the CTest suite" ON)
 # Metal is only available on Apple platforms. The Metal backend does not exist yet (M3);
@@ -32,12 +33,21 @@ add_library(reaxmetal_core STATIC
   src/core/capabilities.cpp
   src/core/compat_flags.cpp
   src/core/energy_terms.cpp
-  src/core/pins.cpp)
+  src/core/pins.cpp
+  src/core/sha256.cpp
+  src/io/ffield_parser.cpp
+  src/io/control_parser.cpp
+  src/io/table_dump.cpp)
+set_target_properties(reaxmetal_core PROPERTIES POSITION_INDEPENDENT_CODE ON)  # linked into the LAMMPS plugin (a shared module)
 target_include_directories(reaxmetal_core PUBLIC include)
 target_compile_features(reaxmetal_core PUBLIC cxx_std_20)
 reaxmetal_apply_warnings(reaxmetal_core)
 # Reference-quality FP: no contraction, no fast-math (docs/NUMERICAL_POLICY.md section 2).
 reaxmetal_apply_strict_fp(reaxmetal_core)
+
+add_executable(reaxmetal_ffield_dump tools/ffield_dump.cpp)
+target_link_libraries(reaxmetal_ffield_dump PRIVATE reaxmetal_core)
+reaxmetal_apply_warnings(reaxmetal_ffield_dump)
 
 if(REAXMETAL_BUILD_TESTS)
   enable_testing()
