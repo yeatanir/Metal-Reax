@@ -69,6 +69,22 @@ struct Context::Impl {
     if (b == nil) throw MetalError("could not allocate a " + std::to_string(bytes) + " byte shared buffer");
     return b;
   }
+  // persistent buffers for the per-step pipelines: a slot keeps its buffer while it is big enough (no reallocation, no page faults per step)
+  std::map<std::string, id<MTLBuffer>> slots;
+  std::uint32_t last_bond_cap = 0, last_hbond_cap = 0;
+  id<MTLBuffer> slot(const std::string& name, NSUInteger bytes) {
+    id<MTLBuffer> b = slots[name];
+    if (b == nil || [b length] < bytes || [b length] > 4 * (bytes > 16 ? bytes : 16)) {
+      b = buffer(bytes);
+      slots[name] = b;
+    }
+    return b;
+  }
+  id<MTLBuffer> slot_from(const std::string& name, const void* data, NSUInteger bytes) {
+    id<MTLBuffer> b = slot(name, bytes);
+    if (bytes > 0) std::memcpy([b contents], data, bytes);
+    return b;
+  }
   id<MTLBuffer> buffer_from(const void* data, NSUInteger bytes) {
     id<MTLBuffer> b = buffer(bytes);
     if (bytes > 0) std::memcpy([b contents], data, bytes);
@@ -145,12 +161,13 @@ struct MetalBondedBackend final : BondedBackend {
   double gpu = 0.0;
   explicit MetalBondedBackend(Context::Impl* impl) : m(impl) {}
   void setup(const BondedDeviceInput& in, const BondedLayout& L) override {
-    auto up = [&](const auto& v) { return m->buffer_from(v.data(), v.size() * sizeof(v[0])); };
+    int slot_no = 0;
+    auto up = [&](const auto& v) { return m->slot_from("bonded_in" + std::to_string(slot_no++), v.data(), v.size() * sizeof(v[0])); };
     in_bufs = {up(in.list.x), up(in.type), up(in.tag), up(in.list.grid.atom_cell), up(in.list.grid.cell_start), up(in.list.grid.cell_items), up(in.sb_f),
                up(in.sb_i), up(in.tb_f), up(in.tb_i), up(in.thb_idx), up(in.thb_sets), up(in.fb_f), up(in.fb_has), up(in.hb_f), up(in.gp)};
     xlo = up(in.list.x_lo);
-    wf = m->buffer(L.wf_size * sizeof(float));
-    wi = m->buffer(L.wi_size * sizeof(std::int32_t));
+    wf = m->slot("bonded_wf", L.wf_size * sizeof(float));
+    wi = m->slot("bonded_wi", L.wi_size * sizeof(std::int32_t));
     std::memset([wf contents], 0, L.wf_size * sizeof(float));
     std::memset([wi contents], 0, L.wi_size * sizeof(std::int32_t));
     p = RmBParams{};
@@ -328,7 +345,10 @@ NonbondedDeviceOutput Context::nonbonded(const NonbondedDeviceInput& in) {
 
 BondedDeviceOutput Context::bonded(const BondedDeviceInput& in) {
   MetalBondedBackend be(impl_.get());
-  BondedDeviceOutput out = run_bonded_pipeline(be, in);
+  // start from the capacities the previous call needed (a system keeps its bond count), so steady state needs no regrow pass
+  BondedDeviceOutput out = run_bonded_pipeline(be, in, impl_->last_bond_cap ? impl_->last_bond_cap : 8, impl_->last_hbond_cap ? impl_->last_hbond_cap : 8);
+  impl_->last_bond_cap = out.bond_cap;
+  impl_->last_hbond_cap = out.hbond_cap;
   impl_->gpu_seconds = be.gpu_seconds();
   return out;
 }

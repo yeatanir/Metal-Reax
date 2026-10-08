@@ -18,7 +18,10 @@
 #include "utils.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <unordered_map>
 
@@ -46,8 +49,20 @@ PairReaxFFMetal::PairReaxFFMetal(LAMMPS *lmp) : Pair(lmp)
   for (int i = 0; i < nextra; ++i) pvector[i] = 0.0;
 }
 
+void PairReaxFFMetal::prof(const char *name, double seconds)
+{
+  for (auto &e : profile_)
+    if (e.first == name) { e.second += seconds; return; }
+  profile_.emplace_back(name, seconds);
+}
+
 PairReaxFFMetal::~PairReaxFFMetal()
 {
+  if (std::getenv("REAXMETAL_PROFILE") && !profile_.empty()) {
+    std::fprintf(stderr, "ReaxMetal profile (seconds, whole run):");
+    for (const auto &e : profile_) std::fprintf(stderr, " %s=%.4f", e.first.c_str(), e.second);
+    std::fprintf(stderr, "\n");
+  }
   delete[] pvector;
   if (allocated) {
     memory->destroy(setflag);
@@ -312,9 +327,13 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
   reaxmetal::BondedResult br;
   reaxmetal::NonbondedResult nr;
   AtomSet a;
+  using clk = std::chrono::steady_clock;
+  auto t0 = clk::now();
+  auto lap = [&](const char *name) { const auto t1 = clk::now(); prof(name, std::chrono::duration<double>(t1 - t0).count()); t0 = t1; };
   try {
     const Box box = host_box();
     a = host_atom_set(box);
+    lap("host_view");
     const NeighborCutoffs cut = cutoffs();
     std::vector<double> q(a.nlocal);
     for (std::size_t i = 0; i < a.nlocal; ++i) q[i] = atom->q[i];
@@ -325,9 +344,17 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     if (use_metal) {
       // FP32 on the GPU (deterministic, no atomics); bookkeeping and the final sums in FP64 on the host. Charges come from the stock charge fix.
       if (!ctx_) ctx_ = std::make_unique<mtl::Context>();
-      br = finish_bonded(ctx_->bonded(make_bonded_device_input(*ff_, settings_.control, a, box, bo)), a.nall());
+      const BondedDeviceInput bin = make_bonded_device_input(*ff_, settings_.control, a, box, bo);
+      lap("bonded_pack");
+      const BondedDeviceOutput bout = ctx_->bonded(bin);
+      lap("bonded_device");
+      br = finish_bonded(bout, a.nall());
       const NonbondedDeviceInput nin = make_nonbonded_device_input(*ff_, cut, a, box, q, no, [&](const DeviceListInput &l) { return ctx_->far_rows(l); });
-      nr = finish_nonbonded(*ff_, a, q, ctx_->nonbonded(nin));
+      lap("nonbonded_pack_rows");
+      const NonbondedDeviceOutput nout = ctx_->nonbonded(nin);
+      lap("nonbonded_device");
+      nr = finish_nonbonded(*ff_, a, q, nout);
+      lap("finish");
     } else {
       const FarList far = build_far_list(a, cut);
       br = compute_bonded_core(*ff_, settings_.control, a, far, bo);
