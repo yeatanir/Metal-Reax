@@ -1,0 +1,89 @@
+{
+ "atoms": [
+  {
+   "el": "C",
+   "xyz": [
+    3.00493587991258,
+    2.9861797076382324,
+    3.0062252626702035
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    3.5813765912873388,
+    3.63451396387603,
+    3.6044488074257335
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    3.5803301423929828,
+    2.381474088925182,
+    2.415300532684011
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    2.4204350387655635,
+    3.5938606466483196,
+    2.3539891368386834
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    2.3681291463211327,
+    2.3530261334184037,
+    3.660167043036104
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   6.0,
+   6.0,
+   6.0
+  ],
+  "lo": [
+   0,
+   0,
+   0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-11
+ },
+ "description": "one CH4 in a 6.0 A periodic cube (charged, many images)",
+ "elements": [
+  "C",
+  "H",
+  "O"
+ ],
+ "ffield": {
+  "name": "ffield.reax.cho",
+  "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+ },
+ "id": "cho_methane_cell6.0",
+ "periodic": [
+  true,
+  true,
+  true
+ ],
+ "perturbation": {
+  "amplitude": 0.05,
+  "seed": 312
+ },
+ "tags": [
+  "images",
+  "periodic",
+  "perturbed",
+  "polar",
+  "small-cell"
+ ]
+}

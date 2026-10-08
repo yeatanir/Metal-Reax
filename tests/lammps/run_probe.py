@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Anirban Phukan
 """M0.5 integration probe harness (stdlib only). Runs the pinned stock LAMMPS with the reaxff/metal probe plugin.
 
   python3 -I run_probe.py --lmp <bin/lmp> --plugin <reaxmetalprobeplugin.so> --potentials <lammps>/potentials --work <dir>

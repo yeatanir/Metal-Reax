@@ -1,0 +1,101 @@
+{
+ "atoms": [
+  {
+   "el": "C",
+   "xyz": [
+    -0.020960493464741013,
+    5.003806650716338,
+    5.439194390660209
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    0.01203488468259721,
+    5.868261556657849,
+    6.0774954610754595
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    0.029367604930066904,
+    4.0847843868504725,
+    6.04084189613929
+   ]
+  },
+  {
+   "el": "C",
+   "xyz": [
+    1.251457493986043,
+    5.0074422852469995,
+    4.597182987204275
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    1.264449482360495,
+    5.866787133072663,
+    3.928998120749343
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    1.2873442496881593,
+    4.083150056471449,
+    3.965062359454895
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   2.553,
+   10.0,
+   10.0
+  ],
+  "lo": [
+   0,
+   0,
+   0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-11
+ },
+ "description": "all-trans polyethylene, 2 CH2 per 2.553 A period: charged, bonded across the boundary",
+ "elements": [
+  "C",
+  "H",
+  "O"
+ ],
+ "ffield": {
+  "name": "ffield.reax.cho",
+  "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+ },
+ "id": "cho_polyethylene_period2.553",
+ "neighbor": {
+  "skin": 1.0
+ },
+ "periodic": [
+  true,
+  false,
+  false
+ ],
+ "perturbation": {
+  "amplitude": 0.03,
+  "seed": 311
+ },
+ "tags": [
+  "chain",
+  "images",
+  "periodic",
+  "perturbed",
+  "polar",
+  "small-cell"
+ ]
+}

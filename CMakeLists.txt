@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Anirban Phukan
 cmake_minimum_required(VERSION 3.24)
 project(ReaxMetal VERSION 0.0.1 LANGUAGES CXX)
 

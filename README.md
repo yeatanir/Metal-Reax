@@ -35,6 +35,15 @@ cmake --build build -j && ctest --test-dir build --output-on-failure      # incl
 ```
 macOS/Metal: **not yet attempted**; see `docs/LAMMPS_INTEGRATION.md` §11.
 
+## M1 — LAMMPS reference oracle and fixtures (Linux; needs the pinned LAMMPS tree, python3 + numpy)
+```
+tools/m1_reproduce.sh <work-root>          # fetch pinned LAMMPS, build the compiler matrix, run 58 fixtures on every build,
+                                           # equivalence / noise floor / conditioning / experiments / FD, then the M1 gate
+python3 tools/reaxref/runner.py tests/fixtures/cases/cho_water.json --lmp <lmp> --ffield-dir <ff> --out <dir>   # one case
+ctest --test-dir build                      # includes tolerances_frozen, fixtures_frozen, patch_frozen, reaxref_selftest
+```
+Results are recorded in `docs/VALIDATION.md` (M1 results) and `docs/DEVELOPMENT_LOG.md`; frozen thresholds in `tolerances/`.
+
 ## Reproduce the audit input
 ```
 tools/fetch_lammps.sh /path/to/new/empty/dir     # shallow sparse clone, verifies commit, tag and all 142 audited-file hashes

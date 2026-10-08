@@ -1,0 +1,74 @@
+{
+ "atoms": [
+  {
+   "el": "C",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    1.079,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    -0.5394999999999998,
+    0.9344414106834094,
+    0.0
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    -0.5395000000000004,
+    -0.934441410683409,
+    0.0
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   16.079,
+   15.934441410683409,
+   15.0
+  ],
+  "lo": [
+   -15.5395,
+   -15.934441410683409,
+   -15.0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "description": "CH3 planar radical (under-coordination)",
+ "elements": [
+  "C",
+  "H",
+  "O"
+ ],
+ "ffield": {
+  "name": "ffield.reax.cho",
+  "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+ },
+ "id": "cho_ch3_radical",
+ "periodic": [
+  false,
+  false,
+  false
+ ],
+ "tags": [
+  "molecule",
+  "undercoord"
+ ]
+}

@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Anirban Phukan
+# Verify a "<sha256>  <relative path>" manifest against the files on disk. Usage:
+#   cmake -DMANIFEST=<file> -DBASE=<dir> [-DEXPECT_MIN=<n>] -P check_hash_file.cmake
+# Fails (non-zero exit) on any mismatch, missing file, or fewer than EXPECT_MIN entries. Used to freeze tolerances and fixtures.
+file(STRINGS "${MANIFEST}" lines)
+set(n 0)
+foreach(line IN LISTS lines)
+  if(line STREQUAL "" OR line MATCHES "^#")
+    continue()
+  endif()
+  string(REGEX MATCH "^([0-9a-f]+)  (.+)$" m "${line}")
+  if(NOT m)
+    message(FATAL_ERROR "malformed manifest line: ${line}")
+  endif()
+  set(want "${CMAKE_MATCH_1}")
+  set(rel "${CMAKE_MATCH_2}")
+  if(NOT EXISTS "${BASE}/${rel}")
+    message(FATAL_ERROR "missing file listed in manifest: ${rel}")
+  endif()
+  file(SHA256 "${BASE}/${rel}" got)
+  if(NOT got STREQUAL want)
+    message(FATAL_ERROR "HASH MISMATCH ${rel}: expected ${want}, got ${got}. Frozen files change only with an owner-approved DEVELOPMENT_LOG entry.")
+  endif()
+  math(EXPR n "${n}+1")
+endforeach()
+if(DEFINED EXPECT_MIN AND n LESS EXPECT_MIN)
+  message(FATAL_ERROR "manifest ${MANIFEST} lists only ${n} files, expected at least ${EXPECT_MIN}")
+endif()
+message(STATUS "verified ${n} files against ${MANIFEST}")

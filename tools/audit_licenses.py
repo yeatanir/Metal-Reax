@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Anirban Phukan
 """Per-file license-notice audit of the upstream LAMMPS files this project derives from, links against, or tests with.
 
 usage: audit_licenses.py <lammps-tree> > third_party/lammps/LICENSE_AUDIT.tsv

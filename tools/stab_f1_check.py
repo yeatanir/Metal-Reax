@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Anirban Phukan
 """M0.5 value-equivalence check of the proposed stable form of the bond-order overcoordination factor f1
 (docs/NUMERICAL_POLICY.md 4.4). VALUES ONLY -- derivative coefficients are NOT checked here (M4 deliverable).
 reference (reaxff_bond_orders.cpp:321-329):  f2=a_i+a_j, f3=-(1/p2)ln(.5(b_i+b_j)), f1=.5[(v_i+f2)/(v_i+f2+f3)+(v_j+f2)/(v_j+f2+f3)]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 // Provenance enforcement (owner decision: GPL-2.0-only, per-file SPDX, no assumption that upstream files share terms):
-//  1. every source/script file we author carries an SPDX identifier;
+//  1. every source/script file we author carries an SPDX identifier and the owner's copyright attribution (ADR-018);
 //  2. any file that says "Adapted-from:" must (a) retain an upstream notice block and (b) be listed in THIRD_PARTY_NOTICES.md;
 //  3. LICENSE is the GPL-2.0 text and equals LICENSES/GPL-2.0-only.txt and third_party/lammps/COPYING.
 #include <filesystem>
@@ -30,6 +31,8 @@ int main() {
       const std::string rel = fs::relative(e.path(), root).generic_string();
       RM_CHECK_MSG(text.substr(0, 800).find("SPDX-License-Identifier: GPL-2.0") != std::string::npos,
                    "missing SPDX identifier: " + rel);
+      RM_CHECK_MSG(text.substr(0, 1000).find("SPDX-FileCopyrightText: 2026 Anirban Phukan") != std::string::npos,
+                   "missing copyright attribution (owner decision ADR-018): " + rel);
       if (text.find("Adapted-from:") != std::string::npos && rel != "tests/test_license_headers.cpp") {
         ++adapted;
         RM_CHECK_MSG(text.find("Sandia Corporation") != std::string::npos || text.find("Purdue University") != std::string::npos,

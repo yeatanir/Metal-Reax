@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: GPL-2.0-only  (provisional project license -- see docs/ARCHITECTURE_DECISIONS.md ADR-010)
+// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 #pragma once
 #include <string_view>
 

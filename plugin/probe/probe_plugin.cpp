@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only
+ * SPDX-FileCopyrightText: 2026 Anirban Phukan
  * SPIKE / SCAFFOLDING (M0.5). Registration follows doc/src/Developer_plugins.rst (pinned LAMMPS). */
 #include "lammpsplugin.h"
 #include "version.h"

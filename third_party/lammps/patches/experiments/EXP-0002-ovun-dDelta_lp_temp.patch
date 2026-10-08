@@ -1,0 +1,23 @@
+diff --git a/src/REAXFF/reaxff_multi_body.cpp b/src/REAXFF/reaxff_multi_body.cpp
+index 99108dfe6bcb1d8bf12163d4a8a0b648bc4489de..ebbd37064a6f8d72c68015a9b88d9b6257ff9f10 100644
+--- a/src/REAXFF/reaxff_multi_body.cpp
++++ b/src/REAXFF/reaxff_multi_body.cpp
+@@ -229,14 +229,16 @@ namespace ReaxFF {
+                 [system->my_atoms[pbond->nbr].type]);
+ 
+       bo_ij->Cdbo += CEover1 * twbp->p_ovun1 * twbp->De_s;// OvCoor-1st
+-      workspace->CdDelta[j] += CEover4 * (1.0 - dfvl*workspace->dDelta_lp[j]) *
++      workspace->CdDelta[j] += CEover4 * (1.0 - dfvl*workspace->dDelta_lp_temp[j]) *    // EXPERIMENT EXP-0002: derivative of Delta_lp_temp, as the energy uses
++        
+         (bo_ij->BO_pi + bo_ij->BO_pi2); // OvCoor-3a
+       bo_ij->Cdbopi += CEover4 *
+         (workspace->Delta[j] - dfvl*workspace->Delta_lp_temp[j]); // OvCoor-3b
+       bo_ij->Cdbopi2 += CEover4 *
+         (workspace->Delta[j] - dfvl*workspace->Delta_lp_temp[j]);  // OvCoor-3b
+ 
+-      workspace->CdDelta[j] += CEunder4 * (1.0 - dfvl*workspace->dDelta_lp[j]) *
++      workspace->CdDelta[j] += CEunder4 * (1.0 - dfvl*workspace->dDelta_lp_temp[j]) *    // EXPERIMENT EXP-0002: derivative of Delta_lp_temp, as the energy uses
++        
+         (bo_ij->BO_pi + bo_ij->BO_pi2);   // UnCoor - 2a
+       bo_ij->Cdbopi += CEunder4 *
+         (workspace->Delta[j] - dfvl*workspace->Delta_lp_temp[j]);  // UnCoor-2b

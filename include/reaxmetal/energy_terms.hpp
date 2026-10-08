@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 #pragma once
 // Registry of every ReaxFF energy contribution this engine must compute, and its mapping onto the
 // 14-slot `pvector` that pinned LAMMPS exposes through `compute pair reaxff`

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 #include "reaxmetal/capabilities.hpp"
 
 #include <array>
@@ -37,11 +38,14 @@ constexpr std::array kFeatures{
     Feature{"ffield.torsion_compact", P, "M2", "ffield 4-body entry 0-X-Y-0", "order-dependent overwrite, see ENGINE_SPEC 2.5"},
     Feature{"ffield.hbond_block", P, "M2", "ffield hydrogen-bond block", "may be absent (LAMMPS warns)"},
     Feature{"ffield.control_file", P, "M2", "pair_style reaxff <control file>", "cutoff keywords only"},
-    Feature{"ffield.strict_missing_pairs", P, "M2", "(no LAMMPS equivalent)", "reject, do not zero-fill, absent 2-body pairs"},
+    Feature{"ffield.strict_missing_pairs", P, "M2", "(no LAMMPS equivalent)", "reject, do not zero-fill, absent 2-body pairs (Q-12: zero-fill creates a phantom bond of BO'=1 at every r <= bond_cut)"},
+    Feature{"ffield.reject_three_body_overrun", P, "M2", "(no LAMMPS equivalent)", "reject >2 parameter sets for a j==l angle triple (Q-09: LAMMPS doubles the slot count and reads past prm[4])"},
     // ---- LAMMPS-compat flags (element knowledge expressed as data, ADR-003) -----------------------
     Feature{"compat.c2_correction", P, "M4", "strcmp(name,\"C\") in Atom_Energy", "per-type flag derived at load time"},
     Feature{"compat.triple_bond_stabilisation", P, "M4", "gp.l[37]==2 or mass pair 12.0000/15.9990", "per-pair flag"},
     Feature{"compat.light_element_split", P, "M4", "mass > 21 / mass < 21 tests", "per-type flag"},
+    Feature{"compat.hbond_donor_image_exclusion", P, "M4", "orig_id[i] != orig_id[k] in Hydrogen_Bonds", "reproduce by default (Q-32): acceptor that is a periodic image of the donor is dropped; identity-based variant needs owner decision"},
+    Feature{"compat.ovun_heavy_neighbor_force", P, "M6", "dDelta_lp[j] where the energy uses Delta_lp_temp[j] (Atom_Energy force loop)", "reproduce LAMMPS forces by default (Q-34: analytic force != gradient of the reported energy for heavy atoms with pi bonds); corrected variant is opt-in"},
     // ---- LAMMPS integration (M0.5) ----------------------------------------------------------------
     Feature{"lammps.pair_style_reaxff_metal", P, "M2", "pair_style reaxff/metal", "thin Pair-derived adapter; parameters via our parser"},
     Feature{"lammps.plugin_loadable", P, "M2", "plugin load <reaxmetal plugin>", "DSO built against the pinned LAMMPS; version-matched"},
@@ -54,6 +58,7 @@ constexpr std::array kFeatures{
     // ---- EEM charge model (naming: EEM == the standard ReaxFF charge model; not a different physics) ---
     Feature{"eem.external_cpu_fix", P, "M2", "fix qeq/reaxff | fix qeq/shielded (stock CPU)", "first prototype: stock fix drives q through extract()"},
     Feature{"eem.charge_verification", P, "M5", "(no LAMMPS equivalent)", "adapter checks the EEM residual so strictness holds with the stock fix"},
+    Feature{"eem.taper_within_ghost_shell", P, "M5", "(no LAMMPS equivalent)", "error if the QEq taper radius exceeds the ghost shell: stock fix silently truncates (Q-35)"},
     Feature{"eem.strict_convergence", P, "M5", "(no LAMMPS equivalent)", "default: non-convergence is an error/status, never silently accepted"},
     Feature{"eem.compat_warn_continue", P, "M5", "fix qeq/reaxff default (warn and continue)", "explicit opt-in only"},
     Feature{"eem.gpu_resident", P, "M5", "(no LAMMPS equivalent)", "GPU-resident EEM solve, subject to numerical validation"},

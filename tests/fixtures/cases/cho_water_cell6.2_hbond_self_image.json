@@ -1,0 +1,75 @@
+{
+ "atoms": [
+  {
+   "el": "O",
+   "xyz": [
+    3.01318224226857,
+    2.9964274640245483,
+    3.027927764601249
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    3.747203509572153,
+    3.011196236774349,
+    3.5682745703124383
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    2.203617058421544,
+    3.018671495091791,
+    3.537668693493933
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   6.2,
+   6.2,
+   6.2
+  ],
+  "lo": [
+   0,
+   0,
+   0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-11
+ },
+ "description": "ONE H2O in a 6.2 A periodic cube: the acceptor O is a periodic image of the donor O; pinned LAMMPS drops that H-bond (tag comparison, Q-32)",
+ "elements": [
+  "C",
+  "H",
+  "O"
+ ],
+ "ffield": {
+  "name": "ffield.reax.cho",
+  "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+ },
+ "id": "cho_water_cell6.2_hbond_self_image",
+ "periodic": [
+  true,
+  true,
+  true
+ ],
+ "perturbation": {
+  "amplitude": 0.05,
+  "seed": 313
+ },
+ "tags": [
+  "hbond",
+  "images",
+  "known-reference-quirk",
+  "periodic",
+  "perturbed",
+  "polar",
+  "small-cell"
+ ]
+}

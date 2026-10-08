@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 // Rule 4: unsupported variants/charge models are detected explicitly. Rule 5: nothing is silently dropped.
 #include <set>
 #include <string>

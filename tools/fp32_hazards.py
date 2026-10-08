@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Anirban Phukan
 """M0 arithmetic checks behind docs/NUMERICAL_POLICY.md section 4 (reproducible: `python3 -I tools/fp32_hazards.py`).
 
 Pure arithmetic on parameter values taken from third_party LAMMPS `ffield.reax.cho` (p_boc1=gp[0]=50.0,

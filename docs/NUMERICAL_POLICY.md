@@ -124,14 +124,56 @@ The reference semantics inside the safe domain is unchanged; any intentional beh
 
 ## 5. Acceptance criteria for FP32 (revised in M0.5 — owner modification of the original "3× twin envelope" rule)
 
-### 5.1 Three separate comparisons (never merged)
+### 5.1 Three separate comparisons (never merged)  — roles revised in §5.2
 | ID | Comparison | Role |
 |---|---|---|
 | C1 | CPU-64 ↔ pinned LAMMPS (in-LAMMPS A/B, plus hashed fixtures) | validates the reference implementation (§3) |
 | C2 | CPU-32 twin ↔ CPU-64 | **characterises** floating-point behaviour: error *distribution* (max, 99.9 %, 99 %, median; per atom/bond/term class) — a feasibility measurement, not an acceptance test |
 | C3 | Metal-32 ↔ CPU-64 (and end-to-end Metal-32 ↔ stock LAMMPS via A/B) | **acceptance** of the GPU backend |
 
-### 5.2 Independent acceptance criteria — fixed *before* any Metal result is evaluated
+### 5.2 Acceptance criteria — **owner-revised (M1 review)**, fixed *before* any Metal result is evaluated
+Three comparisons stay distinct (§5.1). Their roles after the revision:
+* **C1 CPU-64 ↔ pinned LAMMPS** — determine the reference numerical **noise floor** and enforce **strict parity** (§3; measured in M1).
+* **C2 CPU-32 ↔ CPU-64** — *characterise* precision errors (error distributions); **not** an automatic pass/fail gate.
+* **C3 Metal-32 ↔ CPU-64** — judged by the **independent accuracy criteria below**, on **well-conditioned fixtures**.
+
+**Well-conditioned fixture** (a definition fixed now, not tuned later): QEq converged and independently verified (§3.3, VALIDATION M1 gate); no interaction within `1e-4` (relative) of a hard threshold
+of ENGINE_SPEC §8; no atom with total `BO′` within `1e-3` of `bo_cut`; minimum interatomic distance ≥ 0.8 Å; `|Δlp| < 1.0`. Fixtures that violate any of these are **reported separately** (threshold-discontinuity and
+poorly-conditioned classes, §5.6) and never mixed into the C3 statistics.
+
+**C3 initial acceptance targets (owner-set):**
+
+| Class | Metric | Initial bound |
+|---|---|---|
+| Energy | `|ΔE|/N` for each category and the total (max over fixtures) | `≤ 1e-3 kcal/mol/atom` |
+| Energy, significant categories | relative `|ΔE|/|E|` for categories with `|E_cat|/N ≥ 1 kcal/mol` | `≤ 1e-5` |
+| Forces | RMS of `|ΔF_i|` | `≤ 5e-3 kcal/mol/Å` |
+| Forces | max component error | `≤ 5e-2 kcal/mol/Å` |
+| Charges | max `|Δq|` | `≤ 1e-4 e` |
+| Charges | RMS `|Δq|` | `≤ 2e-5 e` |
+| Charge neutrality / QEq | `|Σq|` and the **equalization residual** (spread of `χ_i + Σ_j H_ij q_j`) verified **independently** of the solver that produced `q` | thresholds frozen at the end of M1 (the M1 reference check defines the method and noise level) |
+| MD stability | LAMMPS-hosted NVE drift (§5.2 of the M0.5 text, retained **provisionally** until the CPU reference protocol exists) | `≤ max(2 × stock-LAMMPS slope under identical protocol, 2e-4 kcal/mol/atom/ps)`, no NaN/Inf |
+
+**Kept separate from C3:** finite-difference validation of the CPU-64 analytical forces/derivatives (§6; per-component relative `≤ 1e-6` at best step, FD tests of stable formulations `≤ 1e-7`) — a property of the *implementation*,
+not a GPU tolerance. Intermediate-coefficient comparison (`Cdbo`, `CdDelta`, `dBOp`) Metal↔CPU-64 is **reported** (L2 per class) and is not a gate for the first working backend.
+
+**Never relax a tolerance automatically to hide a mismatch.** Criteria and methodology are frozen (hashed) before Metal testing starts; changes need an owner-approved log entry stating a physical reason.
+
+### 5.3 How the CPU-32 twin is used
+1. **Characterisation (C2)**: the twin's error distributions (max, 99.9 %, 99 %, median per class) are measured and reported; they are **not** an automatic pass/fail gate.
+2. **Feasibility information**: if the twin itself would violate a §5.2 criterion, the criterion is *not* relaxed silently; the response is (in order) a better formulation (§4.4), mixed
+   precision for the offending accumulation/term (e.g. FP64 reductions, compensated sums), or an explicit owner decision recorded in the log.
+3. **Anomaly detection** for Metal (diagnostic, owner-revised): a Metal result that passes §5.2 but sits far outside the twin's envelope (proposal: `> 3×` its 99.9 % value per class) is flagged as an *anomaly to be explained*
+   (different `exp`/`pow` implementation, association order, race, buffer bug); it is reported, and it does not by itself fail or pass the backend.
+4. None of these can be satisfied by editing a tolerance after seeing Metal output.
+
+### 5.4 Freeze rule
+`tolerances/` (hashed) contains §3 (C1 noise-floor-derived parity thresholds, produced in M1) and the §5.2 C3 numbers; a test fails if the hash recorded in VALIDATION.md differs. Evaluating a Metal run before the hash is recorded is a protocol violation.
+Reference LAMMPS-Kokkos `mixed`/`single` is **not** used as an accuracy reference (Q-25).
+
+### 5.5 High-accuracy stretch targets (original M0.5 proposal, preserved verbatim in intent)
+These were the first proposal; the owner moved them to **stretch targets** after the M1 review (they are ambitious for a first FP32 backend). They are tracked and *reported* for every C3 run so progress toward them is visible, but are **not** acceptance gates.
+
 They are derived from **physical requirements** (the energy scale of the dynamics, the accuracy of the force field, conservation), **not** from the twin or GPU output.
 Numbers below are **proposals for the owner's confirmation**; they are frozen together with §3 at the start of M1 (hashed file), and changed afterwards only with an
 owner-approved log entry stating a *physical* reason.
@@ -148,16 +190,9 @@ owner-approved log entry stating a *physical* reason.
 | MD statistics | NVT run (LAMMPS thermostat) | `T` and potential-energy distributions equal to stock within statistical error; trajectory divergence is **not** a criterion (chaos) |
 | Decisions | hard-threshold crossings (§4.1 item 5) | counted and listed; each mismatch's energy jump bounded by the analytic jump size; fraction of interactions within one FP32 rounding of a threshold reported |
 
-### 5.3 How the CPU-32 twin is used
-1. **Feasibility check**: if the twin itself violates a physical criterion of §5.2, that criterion is *not* relaxed silently; the response is (in order) a better formulation (§4.4), mixed
-   precision for the offending accumulation/term (e.g. FP64 reductions, compensated sums), or an explicit owner decision recorded in the log.
-2. **Consistency check** for Metal: results must satisfy §5.2 **and** be consistent with the twin's error distribution (proposal: within `3×` the twin's 99.9 % envelope per class);
-   a Metal result that passes §5.2 but sits far outside the twin envelope is an *anomaly to be explained* (different `exp`/`pow` implementation, association order, race, buffer bug), not a pass by default.
-3. Neither check can be satisfied by editing a tolerance after seeing Metal output.
-
-### 5.4 Freeze rule
-`tolerances/` (hashed) contains §3 and §5.2 numbers; a test fails if the hash recorded in VALIDATION.md differs. Evaluating a Metal run before the hash is recorded is a protocol violation.
-Reference LAMMPS-Kokkos `mixed`/`single` is **not** used as an accuracy reference (Q-25).
+### 5.6 Separately reported classes (never merged into C3 pass/fail)
+(i) **Threshold discontinuities**: interactions within rounding of a hard threshold (ENGINE_SPEC §8): count, listed, energy-jump bound. (ii) **Poorly conditioned configurations**: fixtures failing the well-conditioned definition of §5.2
+(near-bond-breaking, collapsed ions, QEq near non-convergence, extreme `Δlp`): reported with their own error statistics. Both classes are expected to show larger FP32 errors; they inform formulation work (§4.4), not the first-backend gate.
 
 ## 6. Finite-difference and conservation checks (numerical meaning)
 

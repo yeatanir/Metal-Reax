@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 #include "reaxmetal/compat_flags.hpp"
 
 #include <cctype>

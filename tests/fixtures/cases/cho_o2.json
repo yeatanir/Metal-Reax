@@ -1,0 +1,59 @@
+{
+ "atoms": [
+  {
+   "el": "O",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "el": "O",
+   "xyz": [
+    0.0,
+    0.0,
+    1.208
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   15.0,
+   15.0,
+   16.208
+  ],
+  "lo": [
+   -15.0,
+   -15.0,
+   -15.0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "description": "O2",
+ "elements": [
+  "C",
+  "H",
+  "O"
+ ],
+ "ffield": {
+  "name": "ffield.reax.cho",
+  "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+ },
+ "id": "cho_o2",
+ "periodic": [
+  false,
+  false,
+  false
+ ],
+ "tags": [
+  "diatomic",
+  "lonepair",
+  "molecule"
+ ]
+}

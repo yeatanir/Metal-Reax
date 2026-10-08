@@ -1,0 +1,76 @@
+{
+ "atoms": [
+  {
+   "el": "C",
+   "xyz": [
+    0.0,
+    0.0,
+    -0.6
+   ]
+  },
+  {
+   "el": "C",
+   "xyz": [
+    0.0,
+    0.0,
+    0.6
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    0.0,
+    0.0,
+    -1.6600000000000001
+   ]
+  },
+  {
+   "el": "H",
+   "xyz": [
+    0.0,
+    0.0,
+    1.6600000000000001
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   15.0,
+   15.0,
+   16.66
+  ],
+  "lo": [
+   -15.0,
+   -15.0,
+   -16.66
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "description": "gp[37]==2 force field: stabilisation applies to every bond with BO>=1",
+ "elements": [
+  "C",
+  "H",
+  "O",
+  "N"
+ ],
+ "ffield": {
+  "name": "ffield.reax.rdx",
+  "sha256": "b6ced12fc2ba1512b7081cfae79550e8f14402d0fc955f4d29b8366678c4cd0a"
+ },
+ "id": "rdx_ethyne",
+ "periodic": [
+  false,
+  false,
+  false
+ ],
+ "tags": [
+  "gp37",
+  "molecule",
+  "triple-bond"
+ ]
+}

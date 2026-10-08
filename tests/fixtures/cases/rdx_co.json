@@ -1,0 +1,62 @@
+{
+ "atoms": [
+  {
+   "el": "C",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "el": "O",
+   "xyz": [
+    0.0,
+    0.0,
+    1.128
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   15.0,
+   15.0,
+   16.128
+  ],
+  "lo": [
+   -15.0,
+   -15.0,
+   -15.0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "description": "CO under gp[37]==2",
+ "elements": [
+  "C",
+  "H",
+  "O",
+  "N"
+ ],
+ "ffield": {
+  "name": "ffield.reax.rdx",
+  "sha256": "b6ced12fc2ba1512b7081cfae79550e8f14402d0fc955f4d29b8366678c4cd0a"
+ },
+ "id": "rdx_co",
+ "periodic": [
+  false,
+  false,
+  false
+ ],
+ "tags": [
+  "co-branch",
+  "diatomic",
+  "gp37",
+  "molecule",
+  "triple-bond"
+ ]
+}

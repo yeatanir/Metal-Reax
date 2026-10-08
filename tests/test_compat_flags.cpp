@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 // Explicit regression tests for every LAMMPS element/mass compatibility predicate (M0 approval #2): boundaries,
 // exceptions, and the exact-equality behaviour. Expected values are derived from the cited upstream expressions,
 // NOT from running this engine.

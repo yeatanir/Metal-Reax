@@ -1,0 +1,592 @@
+diff --git a/src/REAXFF/fix_qeq_reaxff.cpp b/src/REAXFF/fix_qeq_reaxff.cpp
+index 43e9cf6f70c1fe434ba541d62e76dfebb1373093..2d2cfa7673c416d707154506d7b56591b3baed3c 100644
+--- a/src/REAXFF/fix_qeq_reaxff.cpp
++++ b/src/REAXFF/fix_qeq_reaxff.cpp
+@@ -21,6 +21,8 @@
+ 
+ #include "fix_qeq_reaxff.h"
+ 
++#include "reaxff_diag.h"
++
+ #include "atom.h"
+ #include "citeme.h"
+ #include "comm.h"
+@@ -623,6 +625,7 @@ void FixQEqReaxFF::pre_force(int /*vflag*/)
+ 
+   init_matvec();
+ 
++  ReaxMetalDiag::qeq_begin(imax, tolerance);
+   matvecs_s = CG(b_s, s);       // CG on s - parallel
+   matvecs_t = CG(b_t, t);       // CG on t - parallel
+   matvecs = matvecs_s + matvecs_t;
+@@ -783,6 +786,7 @@ int FixQEqReaxFF::CG(double *b, double *x)
+ 
+   b_norm = parallel_norm(b, nn);
+   sig_new = parallel_dot(r, d, nn);
++  const double rm_rel0 = ReaxMetalDiag::on() ? sqrt(sig_new) / b_norm : 0.0;
+ 
+   for (i = 1; i < imax && sqrt(sig_new) / b_norm > tolerance; ++i) {
+     comm->forward_comm(this); //Dist_vector(d);
+@@ -809,6 +813,8 @@ int FixQEqReaxFF::CG(double *b, double *x)
+     vector_sum(d, 1., p, beta, d, nn);
+   }
+ 
++  if (ReaxMetalDiag::on()) ReaxMetalDiag::qeq_cg(i, rm_rel0, sqrt(sig_new) / b_norm);
++
+   if ((i >= imax) && maxwarn && (comm->me == 0))
+     error->warning(FLERR, "Fix qeq/reaxff CG convergence failed after {} iterations at step {}",
+                    i,update->ntimestep);
+diff --git a/src/REAXFF/reaxff_bond_orders.cpp b/src/REAXFF/reaxff_bond_orders.cpp
+index d827e3753d6a55bed96ee1b9e9da4a5136bcfc05..061a18c17b4ab0b33a37e96f05426cb0450ff3b5 100644
+--- a/src/REAXFF/reaxff_bond_orders.cpp
++++ b/src/REAXFF/reaxff_bond_orders.cpp
+@@ -31,6 +31,7 @@
+ #include "pair.h"
+ 
+ #include <cmath>
++#include "reaxff_diag.h"
+ 
+ namespace ReaxFF {
+   void Add_dBond_to_Forces(reax_system *system, int i, int pj, storage *workspace, reax_list **lists)
+@@ -262,6 +263,16 @@ namespace ReaxFF {
+     p_boc1 = system->reax_param.gp.l[0];
+     p_boc2 = system->reax_param.gp.l[1];
+ 
++    if (ReaxMetalDiag::on()) {    // observation only: copy BO' (uncorrected) out before BO() overwrites it
++      auto &bp = ReaxMetalDiag::st().bo_prime;
++      bp.assign(bonds->num_intrs > 0 ? bonds->num_intrs : 0, {0.0, 0.0, 0.0});
++      for (int ii = 0; ii < system->N; ++ii)
++        for (int pp = Start_Index(ii, bonds); pp < End_Index(ii, bonds); ++pp) {
++          const bond_order_data *b = &(bonds->select.bond_list[pp].bo_data);
++          bp[pp] = {b->BO_s, b->BO_pi, b->BO_pi2};
++        }
++    }
++
+     /* Calculate Deltaprime, Deltaprime_boc values */
+     for (i = 0; i < system->N; ++i) {
+       type_i = system->my_atoms[i].type;
+diff --git a/src/REAXFF/reaxff_bonds.cpp b/src/REAXFF/reaxff_bonds.cpp
+index c3e4b787c7bd7803afdb8eb0cdea0360ce96e670..6ed135e057bdef01267760c2d202994193726019 100644
+--- a/src/REAXFF/reaxff_bonds.cpp
++++ b/src/REAXFF/reaxff_bonds.cpp
+@@ -30,6 +30,7 @@
+ #include "pair.h"
+ 
+ #include <cmath>
++#include "reaxff_diag.h"
+ 
+ namespace ReaxFF {
+   void Bonds(reax_system *system, simulation_data *data, storage *workspace, reax_list **lists)
+@@ -93,6 +94,8 @@ namespace ReaxFF {
+           -twbp->De_s * bo_ij->BO_s * exp_be12
+           -twbp->De_p * bo_ij->BO_pi
+           -twbp->De_pp * bo_ij->BO_pi2;
++        ReaxMetalDiag::tally("bond", ReaxMetalDiag::pair_class(i, j, system->my_atoms[i].orig_id,
++                             system->my_atoms[j].orig_id, natoms), ebond);
+ 
+         /* tally energy into global or per-atom energy accumulators */
+         if (system->pair_ptr->eflag_either)
+@@ -116,6 +119,8 @@ namespace ReaxFF {
+ 
+             estriph = gp10 * exphu * hulpov * (exphua1 + exphub1);
+             data->my_en.e_bond += estriph;
++            ReaxMetalDiag::tally("bond_triple_stab", ReaxMetalDiag::pair_class(i, j,
++                                 system->my_atoms[i].orig_id, system->my_atoms[j].orig_id, natoms), estriph);
+ 
+             decobdbo = gp10 * exphu * hulpov * (exphua1 + exphub1) *
+               (gp3 - 2.0 * gp7 * (bo_ij->BO-2.50));
+diff --git a/src/REAXFF/reaxff_diag.h b/src/REAXFF/reaxff_diag.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..0a3c94707a99af5587f4e8923c357813cddb8bed
+--- /dev/null
++++ b/src/REAXFF/reaxff_diag.h
+@@ -0,0 +1,122 @@
++// ReaxMetal diagnostics instrumentation for the REAXFF package.
++// Added by ReaxMetal patch 0001 (third_party/lammps/patches/). This file is NOT part of upstream LAMMPS.
++// SPDX-License-Identifier: GPL-2.0-only
++// SPDX-FileCopyrightText: 2026 Anirban Phukan
++//
++// Design contract (verified by tools/check_instrumented_equivalence.py):
++//   * Observation only. No physics variable is read-modified-written; every hook copies values out.
++//   * Fully inert unless the environment variable REAXMETAL_DIAG_DIR names an existing directory.
++//     With it unset, the only cost is one cached boolean test per hook.
++//   * Output is plain text, one file per Compute_Forces call, doubles printed with %.17g (lossless).
++#ifndef REAXMETAL_REAXFF_DIAG_H
++#define REAXMETAL_REAXFF_DIAG_H
++
++#include <array>
++#include <cstdio>
++#include <cstdlib>
++#include <map>
++#include <string>
++#include <vector>
++
++namespace ReaxMetalDiag {
++
++struct Tally {
++  long long count = 0;
++  double energy = 0.0;
++};
++
++struct State {
++  bool checked = false;
++  bool on = false;
++  std::string dir;
++  long call = 0;                                  // Compute_Forces call counter (0-based)
++  std::map<std::string, Tally> tallies;           // key "<term>.<class>"
++  std::vector<std::array<double, 3>> bo_prime;    // BO'(s, pi, pipi) per bond-list slot, snapshotted at BO() entry
++  std::vector<std::array<double, 3>> atom_e;      // per-owned-atom (e_lp, e_ov, e_un)
++  // QEq diagnostics for the most recent pre_force
++  struct Qeq {
++    bool valid = false;
++    int imax = 0;
++    double tolerance = 0.0;
++    int iters_s = 0, iters_t = 0;
++    double rel0_s = 0, rel0_t = 0, relf_s = 0, relf_t = 0;
++    int ncg = 0;
++  } qeq;
++};
++
++inline State &st()
++{
++  static State s;
++  if (!s.checked) {
++    s.checked = true;
++    const char *d = std::getenv("REAXMETAL_DIAG_DIR");
++    if (d && *d) {
++      s.on = true;
++      s.dir = d;
++    }
++  }
++  return s;
++}
++inline bool on() { return st().on; }
++
++// pair-class names: oo = owned-owned, og = owned-ghost, self = a bond/pair between an atom and its own periodic image
++inline const char *pair_class(int i, int j, long long tag_i, long long tag_j, int nowned)
++{
++  if (tag_i == tag_j) return "self";
++  return (i < nowned && j < nowned) ? "oo" : "og";
++}
++
++inline void tally(const char *term, const char *cls, double e)
++{
++  if (!on()) return;
++  Tally &t = st().tallies[std::string(term) + "." + cls];
++  t.count += 1;
++  t.energy += e;
++}
++// multi-body terms are classified by how many of their atoms are ghosts: g0 (all owned) ... g4
++inline void tally_ghosts(const char *term, int nghost, double e)
++{
++  if (!on()) return;
++  char buf[8];
++  std::snprintf(buf, sizeof buf, "g%d", nghost);
++  tally(term, buf, e);
++}
++
++inline void atom_energy(int i, int slot, double e)
++{
++  if (!on()) return;
++  State &s = st();
++  if ((int) s.atom_e.size() <= i) s.atom_e.resize(i + 1, {0.0, 0.0, 0.0});
++  s.atom_e[i][slot] += e;
++}
++
++// ---- QEq hooks (called from FixQEqReaxFF) --------------------------------------------------
++inline void qeq_begin(int imax, double tol)
++{
++  if (!on()) return;
++  State &s = st();
++  s.qeq = State::Qeq();
++  s.qeq.valid = true;
++  s.qeq.imax = imax;
++  s.qeq.tolerance = tol;
++}
++inline void qeq_cg(int iters, double rel0, double relf)
++{
++  if (!on()) return;
++  State::Qeq &q = st().qeq;
++  if (q.ncg == 0) { q.iters_s = iters; q.rel0_s = rel0; q.relf_s = relf; }
++  else            { q.iters_t = iters; q.rel0_t = rel0; q.relf_t = relf; }
++  ++q.ncg;
++}
++
++inline void reset_call()
++{
++  State &s = st();
++  s.tallies.clear();
++  s.bo_prime.clear();
++  s.atom_e.clear();
++}
++
++}    // namespace ReaxMetalDiag
++
++#endif
+diff --git a/src/REAXFF/reaxff_ffield.cpp b/src/REAXFF/reaxff_ffield.cpp
+index 45c7141ea23f391f505c9334b12cc61011792586..a431e4167bd99391ea5aab6fdba098161ef91985 100644
+--- a/src/REAXFF/reaxff_ffield.cpp
++++ b/src/REAXFF/reaxff_ffield.cpp
+@@ -33,7 +33,10 @@
+ #include "utils.h"
+ 
+ #include <cmath>
++#include <cstdio>
+ #include <cstring>
++
++#include "reaxff_diag.h"
+ #include <exception>
+ #include <string>
+ 
+@@ -55,6 +58,72 @@ public:
+ 
+ namespace ReaxFF {
+ 
++
++  // ---- ReaxMetal diagnostics: dump the parsed parameter tables exactly as stored (inert unless REAXMETAL_DIAG_DIR set)
++  static void diag_dump_params(reax_interaction *reax)
++  {
++    if (!ReaxMetalDiag::on()) return;
++    const std::string path = ReaxMetalDiag::st().dir + "/params.txt";
++    FILE *fp = std::fopen(path.c_str(), "w");
++    if (!fp) return;
++    const int n = reax->num_atom_types;
++    std::fprintf(fp, "#ntypes %d vdw_type %d n_global %d\n", n, reax->gp.vdw_type, reax->gp.n_global);
++    std::fprintf(fp, "G");
++    for (int i = 0; i < reax->gp.n_global; ++i) std::fprintf(fp, " %.17g", reax->gp.l[i]);
++    std::fprintf(fp, "\n");
++    for (int i = 0; i < n; ++i) {
++      const single_body_parameters &s = reax->sbp[i];
++      std::fprintf(fp, "S %d %.4s %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %d "
++                   "%.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g\n",
++                   i, s.name, s.r_s, s.valency, s.mass, s.r_vdw, s.epsilon, s.gamma, s.r_pi, s.valency_e, s.nlp_opt,
++                   s.alpha, s.gamma_w, s.valency_boc, s.p_ovun5, s.p_hbond, s.chi, s.eta, s.r_pi_pi, s.p_lp2,
++                   s.b_o_131, s.b_o_132, s.b_o_133, s.bcut_acks2, s.p_ovun2, s.p_val3, s.valency_val, s.p_val5,
++                   s.rcore2, s.ecore2);
++      std::fprintf(fp, "S2 %d %.17g %.17g %.17g\n", i, s.acore2, s.lgcij, s.lgre);
++    }
++    for (int i = 0; i < n; ++i)
++      for (int j = 0; j < n; ++j) {
++        const two_body_parameters &t = reax->tbp[i][j];
++        std::fprintf(fp, "T %d %d %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g "
++                     "%.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g\n", i, j,
++                     t.p_bo1, t.p_bo2, t.p_bo3, t.p_bo4, t.p_bo5, t.p_bo6, t.r_s, t.r_p, t.r_pp, t.p_boc3, t.p_boc4,
++                     t.p_boc5, t.p_be1, t.p_be2, t.De_s, t.De_p, t.De_pp, t.p_ovun1, t.D, t.alpha, t.r_vdW,
++                     t.gamma_w, t.rcore, t.ecore, t.acore, t.lgcij, t.lgre);
++        std::fprintf(fp, "T2 %d %d %.17g %.17g %.17g\n", i, j, t.gamma, t.v13cor, t.ovc);
++      }
++    for (int i = 0; i < n; ++i)
++      for (int j = 0; j < n; ++j)
++        for (int k = 0; k < n; ++k) {
++          const three_body_header &h = reax->thbp[i][j][k];
++          // cnt is printed raw; only slots that exist in the fixed-size array are read (cnt > REAX_MAX_3BODY_PARAM
++          // means the parser wrote past the array -- see ENGINE_SPEC Q-09)
++          const int m = h.cnt < REAX_MAX_3BODY_PARAM ? (h.cnt > 0 ? h.cnt : 0) : REAX_MAX_3BODY_PARAM;
++          std::fprintf(fp, "H3 %d %d %d cnt=%d", i, j, k, h.cnt);
++          for (int c = 0; c < REAX_MAX_3BODY_PARAM; ++c)
++            std::fprintf(fp, " %.17g %.17g %.17g %.17g %.17g %.17g %.17g", h.prm[c].theta_00, h.prm[c].p_val1,
++                         h.prm[c].p_val2, h.prm[c].p_val4, h.prm[c].p_val7, h.prm[c].p_pen1, h.prm[c].p_coa1);
++          std::fprintf(fp, " stored=%d\n", m);
++        }
++    for (int i = 0; i < n; ++i)
++      for (int j = 0; j < n; ++j)
++        for (int k = 0; k < n; ++k) {
++          const hbond_parameters &h = reax->hbp[i][j][k];
++          std::fprintf(fp, "HB %d %d %d %.17g %.17g %.17g %.17g\n", i, j, k, h.r0_hb, h.p_hb1, h.p_hb2, h.p_hb3);
++        }
++    for (int i = 0; i < n; ++i)
++      for (int j = 0; j < n; ++j)
++        for (int k = 0; k < n; ++k)
++          for (int l = 0; l < n; ++l) {
++            const four_body_header &h = reax->fbp[i][j][k][l];
++            std::fprintf(fp, "H4 %d %d %d %d cnt=%d", i, j, k, l, h.cnt);
++            for (int c = 0; c < REAX_MAX_4BODY_PARAM; ++c)
++              std::fprintf(fp, " %.17g %.17g %.17g %.17g %.17g", h.prm[c].V1, h.prm[c].V2, h.prm[c].V3,
++                           h.prm[c].p_tor1, h.prm[c].p_cot1);
++            std::fprintf(fp, "\n");
++          }
++    std::fclose(fp);
++  }
++
+   void Read_Force_Field(const char *filename, reax_interaction *reax,
+                         control_params *control, MPI_Comm world)
+   {
+@@ -617,6 +686,8 @@ namespace ReaxFF {
+     MPI_Bcast(&(reax->hbp[0][0][0]),sizeof(hbond_parameters)*n*n*n,MPI_CHAR,0,world);
+     MPI_Bcast(&(reax->fbp[0][0][0][0]),sizeof(four_body_header)*n*n*n*n,MPI_CHAR,0,world);
+ 
++    diag_dump_params(reax);
++
+     // apply global parameters to global control settings
+ 
+     control->bo_cut    = 0.01 * reax->gp.l[29];
+diff --git a/src/REAXFF/reaxff_forces.cpp b/src/REAXFF/reaxff_forces.cpp
+index a12779fd1b3cb283cc207c93d704bb6296f7f297..a4278b39155f5e14ef32de34d08a45e2e3180769 100644
+--- a/src/REAXFF/reaxff_forces.cpp
++++ b/src/REAXFF/reaxff_forces.cpp
+@@ -28,8 +28,11 @@
+ #include "reaxff_api.h"
+ 
+ #include <cmath>
++#include <cstdio>
+ #include <cstring>
+ 
++#include "reaxff_diag.h"
++
+ #include "error.h"
+ #include "utils.h"
+ 
+@@ -369,11 +372,81 @@ namespace ReaxFF {
+ 
+   }
+ 
++
++  // ---- ReaxMetal diagnostics: write one text file per Compute_Forces call (inert unless REAXMETAL_DIAG_DIR is set)
++  static void diag_dump_call(reax_system *system, control_params *control, simulation_data *data,
++                             storage *workspace, reax_list **lists)
++  {
++    using namespace ReaxMetalDiag;
++    State &s = st();
++    char path[4096];
++    std::snprintf(path, sizeof path, "%s/call_%06ld.txt", s.dir.c_str(), s.call);
++    FILE *fp = std::fopen(path, "w");
++    if (!fp) return;
++    const int n = system->n, N = system->N;
++    reax_list *bonds = (*lists) + BONDS;
++    const energy_data &e = data->my_en;
++    std::fprintf(fp, "#meta call=%ld step=%lld n=%d N=%d numH=%d\n", s.call, (long long) data->step, n, N, system->numH);
++    std::fprintf(fp, "#control bond_cut=%.17g nonb_cut=%.17g nonb_low=%.17g hbond_cut=%.17g bo_cut=%.17g "
++                 "thb_cut=%.17g thb_cutsq=%.17g tabulate=%d lgflag=%d enobondsflag=%d\n",
++                 control->bond_cut, control->nonb_cut, control->nonb_low, control->hbond_cut, control->bo_cut,
++                 control->thb_cut, control->thb_cutsq, control->tabulate, control->lgflag, control->enobondsflag);
++    std::fprintf(fp, "#energy e_bond=%.17g e_ov=%.17g e_un=%.17g e_lp=%.17g e_ang=%.17g e_pen=%.17g e_coa=%.17g "
++                 "e_hb=%.17g e_tor=%.17g e_con=%.17g e_vdW=%.17g e_ele=%.17g e_pol=%.17g\n",
++                 e.e_bond, e.e_ov, e.e_un, e.e_lp, e.e_ang, e.e_pen, e.e_coa, e.e_hb, e.e_tor, e.e_con,
++                 e.e_vdW, e.e_ele, e.e_pol);
++    if (s.qeq.valid) {
++      const State::Qeq &q = s.qeq;
++      std::fprintf(fp, "#qeq imax=%d tolerance=%.17g iters_s=%d iters_t=%d rel0_s=%.17g rel0_t=%.17g "
++                   "relf_s=%.17g relf_t=%.17g\n", q.imax, q.tolerance, q.iters_s, q.iters_t, q.rel0_s, q.rel0_t,
++                   q.relf_s, q.relf_t);
++    } else {
++      std::fprintf(fp, "#qeq none\n");
++    }
++    std::fprintf(fp, "#atoms idx tag type owned x y z q Hindex num_bonds\n");
++    for (int i = 0; i < N; ++i) {
++      const reax_atom &a = system->my_atoms[i];
++      std::fprintf(fp, "A %d %lld %d %d %.17g %.17g %.17g %.17g %d %d\n", i, (long long) a.orig_id, a.type,
++                   i < n ? 1 : 0, a.x[0], a.x[1], a.x[2], a.q, a.Hindex, a.num_bonds);
++    }
++    std::fprintf(fp, "#atomvars idx total_bond_order Deltap Deltap_boc Delta Delta_lp Delta_e Delta_boc Delta_val "
++                 "nlp vlpex Clp e_lp e_ov e_un\n");
++    for (int i = 0; i < N; ++i) {
++      double el[3] = {0, 0, 0};
++      if (i < (int) s.atom_e.size()) { el[0] = s.atom_e[i][0]; el[1] = s.atom_e[i][1]; el[2] = s.atom_e[i][2]; }
++      std::fprintf(fp, "V %d %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g\n", i,
++                   workspace->total_bond_order[i], workspace->Deltap[i], workspace->Deltap_boc[i],
++                   workspace->Delta[i], workspace->Delta_lp[i], workspace->Delta_e[i], workspace->Delta_boc[i],
++                   workspace->Delta_val[i], workspace->nlp[i], workspace->vlpex[i], workspace->Clp[i],
++                   el[0], el[1], el[2]);
++    }
++    std::fprintf(fp, "#bonds i j tag_i tag_j d BOp_s BOp_pi BOp_pipi BO BO_s BO_pi BO_pi2\n");
++    for (int i = 0; i < N; ++i)
++      for (int pj = Start_Index(i, bonds); pj < End_Index(i, bonds); ++pj) {
++        const bond_data &b = bonds->select.bond_list[pj];
++        std::array<double, 3> bp = {0.0, 0.0, 0.0};
++        if (pj < (int) s.bo_prime.size()) bp = s.bo_prime[pj];
++        std::fprintf(fp, "B %d %d %lld %lld %.17g %.17g %.17g %.17g %.17g %.17g %.17g %.17g\n", i, b.nbr,
++                     (long long) system->my_atoms[i].orig_id, (long long) system->my_atoms[b.nbr].orig_id, b.d,
++                     bp[0], bp[1], bp[2], b.bo_data.BO, b.bo_data.BO_s, b.bo_data.BO_pi, b.bo_data.BO_pi2);
++      }
++    std::fprintf(fp, "#forces idx fx fy fz   (workspace->f on all N atoms, before reverse communication)\n");
++    for (int i = 0; i < N; ++i)
++      std::fprintf(fp, "F %d %.17g %.17g %.17g\n", i, workspace->f[i][0], workspace->f[i][1], workspace->f[i][2]);
++    std::fprintf(fp, "#tallies key count energy\n");
++    for (const auto &kv : s.tallies)
++      std::fprintf(fp, "T %s %lld %.17g\n", kv.first.c_str(), kv.second.count, kv.second.energy);
++    std::fprintf(fp, "#end\n");
++    std::fclose(fp);
++    s.qeq.valid = false;
++  }
++
+   void Compute_Forces(reax_system *system, control_params *control,
+                       simulation_data *data, storage *workspace,
+                       reax_list **lists)
+   {
+ 
++    ReaxMetalDiag::reset_call();
+     Init_Forces_noQEq(system, control, data, workspace, lists);
+ 
+     /********* bonded interactions ************/
+@@ -384,5 +457,10 @@ namespace ReaxFF {
+ 
+     /*********** total force ***************/
+     Compute_Total_Force(system, workspace, lists);
++
++    if (ReaxMetalDiag::on()) {
++      diag_dump_call(system, control, data, workspace, lists);
++      ReaxMetalDiag::st().call++;
++    }
+   }
+ }
+diff --git a/src/REAXFF/reaxff_hydrogen_bonds.cpp b/src/REAXFF/reaxff_hydrogen_bonds.cpp
+index 0389db783292dd69fc2033f1a8bcc8bdb8e05243..9d7d5c635e50b2772ed027c51b935662ec8188cb 100644
+--- a/src/REAXFF/reaxff_hydrogen_bonds.cpp
++++ b/src/REAXFF/reaxff_hydrogen_bonds.cpp
+@@ -28,6 +28,7 @@
+ #include "reaxff_api.h"
+ 
+ #include <cmath>
++#include "reaxff_diag.h"
+ 
+ #include "pair.h"
+ 
+@@ -120,6 +121,7 @@ namespace ReaxFF {
+ 
+               data->my_en.e_hb += e_hb =
+                 hbp->p_hb1 * (1.0 - exp_hb2) * exp_hb3 * sin_xhz4;
++              ReaxMetalDiag::tally_ghosts("hbond", (i >= system->n) + (k >= system->n), e_hb);
+ 
+               CEhb1 = hbp->p_hb1 * hbp->p_hb2 * exp_hb2 * exp_hb3 * sin_xhz4;
+               CEhb2 = -hbp->p_hb1/2.0 * (1.0 - exp_hb2) * exp_hb3 * cos_xhz1;
+diff --git a/src/REAXFF/reaxff_multi_body.cpp b/src/REAXFF/reaxff_multi_body.cpp
+index 855d82623f46ab5655c90e1f4174a2ab9d8cc616..99108dfe6bcb1d8bf12163d4a8a0b648bc4489de 100644
+--- a/src/REAXFF/reaxff_multi_body.cpp
++++ b/src/REAXFF/reaxff_multi_body.cpp
+@@ -30,6 +30,7 @@
+ #include "pair.h"
+ 
+ #include <cmath>
++#include "reaxff_diag.h"
+ #include <cstring>
+ 
+ namespace ReaxFF {
+@@ -85,6 +86,7 @@ namespace ReaxFF {
+     if (numbonds > 0 || control->enobondsflag)
+       data->my_en.e_lp += e_lp =
+         p_lp2 * workspace->Delta_lp[i] * inv_expvd2;
++    ReaxMetalDiag::atom_energy(i, 0, e_lp);
+ 
+     dElp = p_lp2 * inv_expvd2 +
+       75 * p_lp2 * workspace->Delta_lp[i] * expvd2 * SQR(inv_expvd2);
+@@ -112,6 +114,8 @@ namespace ReaxFF {
+ 
+           if (vov3 > 3.) {
+             data->my_en.e_lp += e_lph = p_lp3 * SQR(vov3-3.0);
++            ReaxMetalDiag::tally("lonepair_extra_C2", "oo", e_lph);
++            ReaxMetalDiag::atom_energy(i, 0, e_lph);
+ 
+             deahu2dbo = 2.*p_lp3*(vov3 - 3.);
+             deahu2dsbo = 2.*p_lp3*(vov3 - 3.)*(-1. - 0.16*pow(Di, 3.));
+@@ -165,6 +169,7 @@ namespace ReaxFF {
+     CEover1 = Delta_lpcorr * DlpVi * inv_exp_ovun2;
+ 
+     data->my_en.e_ov += e_ov = sum_ovun1 * CEover1;
++    ReaxMetalDiag::atom_energy(i, 1, e_ov);
+ 
+     CEover2 = sum_ovun1 * DlpVi * inv_exp_ovun2 *
+       (1.0 - Delta_lpcorr * (DlpVi + p_ovun2 * exp_ovun2 * inv_exp_ovun2));
+@@ -193,6 +198,7 @@ namespace ReaxFF {
+     if (numbonds > 0 || control->enobondsflag)
+       data->my_en.e_un += e_un =
+         -p_ovun5 * (1.0 - exp_ovun6) * inv_exp_ovun2n * inv_exp_ovun8;
++    ReaxMetalDiag::atom_energy(i, 2, e_un);
+ 
+     CEunder1 = inv_exp_ovun2n *
+       (p_ovun5 * p_ovun6 * exp_ovun6 * inv_exp_ovun8 +
+diff --git a/src/REAXFF/reaxff_nonbonded.cpp b/src/REAXFF/reaxff_nonbonded.cpp
+index e0a8d092b2a0df254ff1b77f6df85f89fe866c00..6ccac2def4e0025c20e9906c2e4c599f22307efc 100644
+--- a/src/REAXFF/reaxff_nonbonded.cpp
++++ b/src/REAXFF/reaxff_nonbonded.cpp
+@@ -30,6 +30,7 @@
+ #include "pair.h"
+ 
+ #include <cmath>
++#include "reaxff_diag.h"
+ 
+ namespace ReaxFF {
+   void Compute_Polarization_Energy(reax_system *system, simulation_data *data, storage *workspace)
+@@ -117,6 +118,7 @@ namespace ReaxFF {
+ 
+         if (flag) {
+ 
++          const double rm_vdw0 = data->my_en.e_vdW, rm_ele0 = data->my_en.e_ele;
+           r_ij = nbr_pj->d;
+           twbp = &(system->reax_param.tbp[system->my_atoms[i].type]
+                    [system->my_atoms[j].type]);
+@@ -208,6 +210,11 @@ namespace ReaxFF {
+                                        f_tmp,delij[0],delij[1],delij[2]);
+           }
+ 
++          {
++            const char *rm_cls = ReaxMetalDiag::pair_class(i, j, orig_i, system->my_atoms[j].orig_id, natoms);
++            ReaxMetalDiag::tally("vdw", rm_cls, data->my_en.e_vdW - rm_vdw0);
++            ReaxMetalDiag::tally("coulomb", rm_cls, data->my_en.e_ele - rm_ele0);
++          }
+           rvec_ScaledAdd(workspace->f[i], -(CEvd + CEclmb), nbr_pj->dvec);
+           rvec_ScaledAdd(workspace->f[j], +(CEvd + CEclmb), nbr_pj->dvec);
+         }
+diff --git a/src/REAXFF/reaxff_torsion_angles.cpp b/src/REAXFF/reaxff_torsion_angles.cpp
+index 29233a56dc68bdeed3751c8a1f77073a52b466e3..244cb0a48766ebb5a75242fd6414354f1d2a1b9d 100644
+--- a/src/REAXFF/reaxff_torsion_angles.cpp
++++ b/src/REAXFF/reaxff_torsion_angles.cpp
+@@ -30,6 +30,7 @@
+ #include "pair.h"
+ 
+ #include <cmath>
++#include "reaxff_diag.h"
+ 
+ namespace ReaxFF {
+   double Calculate_Omega(rvec dvec_ij, double r_ij, rvec dvec_jk, double r_jk,
+@@ -286,6 +287,7 @@ namespace ReaxFF {
+                                  fbp->V3 * (1.0 + cos3omega));
+ 
+                     data->my_en.e_tor += e_tor = fn10 * sin_ijk * sin_jkl * CV;
++                    ReaxMetalDiag::tally_ghosts("torsion", (i >= natoms) + (j >= natoms) + (k >= natoms) + (l >= natoms), e_tor);
+ 
+                     dfn11 = (-p_tor3 * exp_tor3_DjDk +
+                              (p_tor3 * exp_tor3_DjDk - p_tor4 * exp_tor4_DjDk) *
+@@ -320,6 +322,7 @@ namespace ReaxFF {
+                     data->my_en.e_con += e_con =
+                       fbp->p_cot1 * fn12 *
+                       (1.0 + (SQR(cos_omega) - 1.0) * sin_ijk * sin_jkl);
++                    ReaxMetalDiag::tally_ghosts("conjugation", (i >= natoms) + (j >= natoms) + (k >= natoms) + (l >= natoms), e_con);
+ 
+                     Cconj = -2.0 * fn12 * fbp->p_cot1 * p_cot2 *
+                       (1.0 + (SQR(cos_omega) - 1.0) * sin_ijk * sin_jkl);
+diff --git a/src/REAXFF/reaxff_valence_angles.cpp b/src/REAXFF/reaxff_valence_angles.cpp
+index b46f09d23a11d089687f7ffe0dc16c3c792ec491..2fa13792066c105db87f5c102ce29077e251d5d5 100644
+--- a/src/REAXFF/reaxff_valence_angles.cpp
++++ b/src/REAXFF/reaxff_valence_angles.cpp
+@@ -28,6 +28,7 @@
+ #include "reaxff_api.h"
+ 
+ #include <cmath>
++#include "reaxff_diag.h"
+ 
+ #include "pair.h"
+ #include "error.h"
+@@ -274,6 +275,7 @@ namespace ReaxFF {
+ 
+                   data->my_en.e_ang += e_ang =
+                     f7_ij * f7_jk * f8_Dj * expval12theta;
++                  ReaxMetalDiag::tally_ghosts("angle", (i >= system->n) + (k >= system->n) + (j >= system->n), e_ang);
+                   /* END ANGLE ENERGY*/
+ 
+                   /* PENALTY ENERGY */
+@@ -295,6 +297,7 @@ namespace ReaxFF {
+ 
+                   data->my_en.e_pen += e_pen =
+                     p_pen1 * f9_Dj * exp_pen2ij * exp_pen2jk;
++                  ReaxMetalDiag::tally_ghosts("penalty", (i >= system->n) + (k >= system->n) + (j >= system->n), e_pen);
+ 
+                   CEpen1 = e_pen * Cf9j / f9_Dj;
+                   temp   = -2.0 * p_pen2 * e_pen;
+@@ -315,6 +318,7 @@ namespace ReaxFF {
+                     exp(-p_coa3 * SQR(workspace->total_bond_order[k]-BOA_jk)) *
+                     exp(-p_coa4 * SQR(BOA_ij - 1.5)) *
+                     exp(-p_coa4 * SQR(BOA_jk - 1.5));
++                  ReaxMetalDiag::tally_ghosts("coalition", (i >= system->n) + (k >= system->n) + (j >= system->n), e_coa);
+ 
+                   CEcoa1 = -2 * p_coa4 * (BOA_ij - 1.5) * e_coa;
+                   CEcoa2 = -2 * p_coa4 * (BOA_jk - 1.5) * e_coa;

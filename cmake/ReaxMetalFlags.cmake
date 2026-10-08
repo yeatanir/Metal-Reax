@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Anirban Phukan
 # Compiler flag helpers. Kept in one place so NUMERICAL_POLICY.md can point at a single source of truth.
 
 function(reaxmetal_apply_warnings target)

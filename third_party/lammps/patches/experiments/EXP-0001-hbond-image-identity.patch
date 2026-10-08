@@ -1,0 +1,13 @@
+diff --git a/src/REAXFF/reaxff_hydrogen_bonds.cpp b/src/REAXFF/reaxff_hydrogen_bonds.cpp
+index 9d7d5c635e50b2772ed027c51b935662ec8188cb..5a078468b910e51b80f43d82ed2bdb8896de448c 100644
+--- a/src/REAXFF/reaxff_hydrogen_bonds.cpp
++++ b/src/REAXFF/reaxff_hydrogen_bonds.cpp
+@@ -96,7 +96,7 @@ namespace ReaxFF {
+             pbond_ij = &(bonds->select.bond_list[pi]);
+             i = pbond_ij->nbr;
+ 
+-            if (system->my_atoms[i].orig_id != system->my_atoms[k].orig_id) {
++            if (i != k) {    // EXPERIMENT EXP-0001: compare atom/image identity, not tags
+               bo_ij = &(pbond_ij->bo_data);
+               type_i = system->my_atoms[i].type;
+               if (type_i < 0) continue;

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Anirban Phukan
 """M0.5 exploratory check (NOT a validation test): is LAMMPS `fix qeq/reaxff` equal to an independent dense EEM solve
 with *explicit periodic images* in a cell smaller than the taper cutoff?
 

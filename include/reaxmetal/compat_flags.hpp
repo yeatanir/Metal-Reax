@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 #pragma once
 // Compatibility flags: the pinned LAMMPS ReaxFF kernels contain element-name and mass-threshold branches (ENGINE_SPEC
 // Q-06). Owner decision (M0 approval #2): reproduce them EXACTLY as per-type / per-pair metadata computed once when

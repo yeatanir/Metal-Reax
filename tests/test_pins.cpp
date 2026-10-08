@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 // The compiled-in pins must equal third_party/lammps/PIN.txt, which in turn must carry full-length SHAs.
 #include <cctype>
 

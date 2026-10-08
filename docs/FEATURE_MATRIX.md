@@ -48,7 +48,8 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `ffield.torsion_compact` | Planned | M2 | `ffield 4-body entry 0-X-Y-0` | order-dependent overwrite (ENGINE_SPEC 2.5) |
 | `ffield.hbond_block` | Planned | M2 | `ffield hydrogen-bond block` | may be absent; LAMMPS warns and disables |
 | `ffield.control_file` | Planned | M2 | `pair_style reaxff <control file>` | cutoff keywords only |
-| `ffield.strict_missing_pairs` | Planned | M2 | `(no LAMMPS equivalent)` | we **reject** absent 2-body pairs; LAMMPS zero-fills (ENGINE_SPEC Q-12) |
+| `ffield.strict_missing_pairs` | Planned | M2 | `(no LAMMPS equivalent)` | we **reject** absent 2-body pairs; LAMMPS zero-fills creating a phantom bond with BO'=1 at every r <= bond_cut (ENGINE_SPEC Q-12, executed in M1) |
+| `ffield.reject_three_body_overrun` | Planned | M2 | `(no LAMMPS equivalent)` | reject >2 parameter sets for a j==l angle triple (ENGINE_SPEC Q-09: LAMMPS doubles the slot count and reads past prm[4]; executed in M1) |
 
 ## 3. LAMMPS-compat flags (element knowledge expressed as data — ADR-003)
 
@@ -57,6 +58,8 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `compat.c2_correction` | Planned | M4 | `strcmp(name,"C") in Atom_Energy` | per-type flag derived at load time; kernels never see element names |
 | `compat.triple_bond_stabilisation` | Planned | M4 | `gp.l[37]==2 or mass pair 12.0000/15.9990` | per-pair flag |
 | `compat.light_element_split` | Planned | M4 | `mass > 21 / mass < 21 tests` | per-type flag |
+| `compat.hbond_donor_image_exclusion` | Planned | M4 | `orig_id[i] != orig_id[k] in Hydrogen_Bonds` | reproduce by default (Q-32): acceptor that is a periodic image of the donor is dropped; identity-based variant needs owner decision |
+| `compat.ovun_heavy_neighbor_force` | Planned | M6 | `dDelta_lp[j] where the energy uses Delta_lp_temp[j] (Atom_Energy force loop)` | reproduce LAMMPS forces by default (Q-34: analytic force != gradient of the reported energy for heavy atoms with pi bonds); corrected variant is opt-in |
 
 ## 4. `pair_style reaxff` options
 
@@ -159,6 +162,7 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 |---|---|---|---|---|
 | `eem.external_cpu_fix` | Planned | M2 | `fix qeq/reaxff \| fix qeq/shielded (stock CPU)` | first prototype: stock fix drives q through extract() |
 | `eem.charge_verification` | Planned | M5 | `(no LAMMPS equivalent)` | adapter checks the EEM residual so strictness holds with the stock fix |
+| `eem.taper_within_ghost_shell` | Planned | M5 | `(no LAMMPS equivalent)` | error if the QEq taper radius exceeds the ghost shell: the stock fix silently truncates (ENGINE_SPEC Q-35) |
 | `eem.strict_convergence` | Planned | M5 | `(no LAMMPS equivalent)` | default: non-convergence is an error/status, never silently accepted |
 | `eem.compat_warn_continue` | Planned | M5 | `fix qeq/reaxff default (warn and continue)` | explicit opt-in only |
 | `eem.gpu_resident` | Planned | M5 | `(no LAMMPS equivalent)` | GPU-resident EEM solve, subject to numerical validation |

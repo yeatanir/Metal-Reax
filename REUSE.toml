@@ -5,12 +5,12 @@ SPDX-PackageName = "ReaxMetal"
 [[annotations]]
 path = ["docs/**", "README.md", "THIRD_PARTY_NOTICES.md", ".gitignore", "tests/lammps/in.*", "fixtures/**", "src/**/README.md", "third_party/lammps/PIN.txt"]
 precedence = "aggregate"
-SPDX-FileCopyrightText = "2026 ReaxMetal contributors"
+SPDX-FileCopyrightText = "2026 Anirban Phukan"
 SPDX-License-Identifier = "GPL-2.0-only"
 
 # Verbatim upstream material kept for provenance; NOT ReaxMetal-authored.
 [[annotations]]
 path = ["third_party/lammps/COPYING", "third_party/lammps/SOURCE_HASHES.sha256", "third_party/lammps/LICENSE_AUDIT.tsv"]
 precedence = "aggregate"
-SPDX-FileCopyrightText = "Sandia Corporation and LAMMPS contributors (COPYING); metadata files: 2026 ReaxMetal contributors"
+SPDX-FileCopyrightText = "COPYING: Free Software Foundation (GPL text, as distributed by LAMMPS); SOURCE_HASHES/LICENSE_AUDIT metadata: 2026 Anirban Phukan; upstream file contents are NOT claimed"
 SPDX-License-Identifier = "GPL-2.0-only"

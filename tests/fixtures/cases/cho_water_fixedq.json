@@ -1,0 +1,69 @@
+{
+ "atoms": [
+  {
+   "el": "O",
+   "q": -0.8,
+   "xyz": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  {
+   "el": "H",
+   "q": 0.4,
+   "xyz": [
+    0.7569503272636612,
+    0.0,
+    0.585882276618295
+   ]
+  },
+  {
+   "el": "H",
+   "q": 0.4,
+   "xyz": [
+    -0.7569503272636612,
+    0.0,
+    0.585882276618295
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   15.756950327263661,
+   15.0,
+   15.585882276618294
+  ],
+  "lo": [
+   -15.756950327263661,
+   -15.0,
+   -15.0
+  ]
+ },
+ "charge": {
+  "model": "fixed"
+ },
+ "description": "H2O with fixed hand-set charges, no charge fix (checkqeq no)",
+ "elements": [
+  "C",
+  "H",
+  "O"
+ ],
+ "ffield": {
+  "name": "ffield.reax.cho",
+  "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+ },
+ "id": "cho_water_fixedq",
+ "pair": {
+  "checkqeq": "no"
+ },
+ "periodic": [
+  false,
+  false,
+  false
+ ],
+ "tags": [
+  "fixed-charge",
+  "molecule"
+ ]
+}

@@ -137,3 +137,17 @@ patch kept in this repository and hash-pinned. Open question Q1 in the M0 report
 (ffields, regression YAML, plugin-example build files; tree-level GPLv2 only). `lammpsplugin.h` and `library.h` carry the plain LAMMPS GPL notice (not LGPL). Decision: ADR-010 (GPL-2.0-only, approved).
 
 **External (non-pinned, secondary) sources used for the EEM discussion:** AMS ReaxFF documentation (scm.com) — *page fetch blocked by the sandbox proxy; only web-search summaries seen*; LAMMPS manual pages in the pinned tree; a LAMMPS-forum thread (secondhand). None is treated as specification.
+
+## M1 additions — reference harness and instrumentation (this repository's own code; upstream files only *patched*)
+| Item | Role |
+|---|---|
+| `third_party/lammps/patches/0001-reaxmetal-diagnostics.patch` (+ `PATCHES.sha256`) | adds `src/REAXFF/reaxff_diag.h` and observation hooks in `reaxff_{ffield,bond_orders,bonds,multi_body,valence_angles,torsion_angles,hydrogen_bonds,nonbonded,forces}.cpp`, `fix_qeq_reaxff.cpp`; hunks keep the upstream (Sandia / PuReMD) notices |
+| `third_party/lammps/patches/experiments/EXP-0001-hbond-image-identity.patch` | `orig_id[i] != orig_id[k]` → `i != k` (confirms Q-32) |
+| `third_party/lammps/patches/experiments/EXP-0002-ovun-dDelta_lp_temp.patch` | `dDelta_lp[j]` → `dDelta_lp_temp[j]` in the over/under force loop (confirms Q-34) |
+| `tools/build_lammps_instrumented.sh`, `tools/build_reference_matrix.sh` | patched / multi-compiler builds (gcc, clang, FMA, -O0, MPI, Kokkos-serial) |
+| `tools/reaxref/runner.py` | case → LAMMPS input → `result.json` (14 slots, q, F, diagnostics, provenance, validity rules, independent EEM residual) |
+| `tools/reaxref/{geometries,fixtures}.py`, `tests/fixtures/` | independently constructed geometries; 58 cases; force-field manifest (names + SHA-256) |
+| `tools/reaxref/ref_nonbonded.py`, `check_nonbonded.py` | independent explicit-image vdW / Coulomb / E_pol reference and pair-count check |
+| `tools/reaxref/{conditioning,noise_floor,make_tolerances,compare_builds}.py` | conditioning classifier, noise floor, frozen tolerances, bitwise comparison |
+| `tools/reaxref/exp_*.py`, `fd_check.py` | periodic-image, ghost-range, Q-09/Q-12/Q-32/Q-34 and finite-difference experiments |
+| `tools/reaxref/m1_gate.py`, `tools/m1_reproduce.sh` | acceptance gate and end-to-end reproduction |

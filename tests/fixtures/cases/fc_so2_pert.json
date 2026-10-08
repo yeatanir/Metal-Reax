@@ -1,0 +1,76 @@
+{
+ "atoms": [
+  {
+   "el": "S",
+   "xyz": [
+    0.005249069870133502,
+    0.040969061469569745,
+    0.030009129077332455
+   ]
+  },
+  {
+   "el": "O",
+   "xyz": [
+    1.2096068262115436,
+    0.011910374332431972,
+    0.6950005546460372
+   ]
+  },
+  {
+   "el": "O",
+   "xyz": [
+    -1.2716374283896597,
+    0.0004663511941800716,
+    0.7367765694321528
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   16.209606826211544,
+   15.04096906146957,
+   15.736776569432152
+  ],
+  "lo": [
+   -16.27163742838966,
+   -14.99953364880582,
+   -14.969990870922668
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "description": "SO2 (FC) perturbed",
+ "elements": [
+  "S",
+  "O"
+ ],
+ "expected_warnings": [
+  "Changed valency_val to valency_boc for X"
+ ],
+ "ffield": {
+  "name": "ffield.reax.FC",
+  "sha256": "db41eb3874e43d97fff3fdad16fddba44722854786b61753994aa2ee79971e4d"
+ },
+ "id": "fc_so2_pert",
+ "periodic": [
+  false,
+  false,
+  false
+ ],
+ "perturbation": {
+  "amplitude": 0.06,
+  "seed": 109
+ },
+ "tags": [
+  "S",
+  "heavy-branch",
+  "molecule",
+  "perturbed",
+  "pi-bond",
+  "polar"
+ ]
+}

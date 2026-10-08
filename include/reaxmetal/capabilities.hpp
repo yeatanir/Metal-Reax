@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 #pragma once
 // Machine-readable capability matrix. docs/FEATURE_MATRIX.md is the human-readable twin; the `docs_sync`
 // test fails if the two disagree. Architectural rule 4: unsupported variants and charge models are

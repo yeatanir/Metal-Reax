@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only
+ * SPDX-FileCopyrightText: 2026 Anirban Phukan
  *
  * SPIKE / SCAFFOLDING (M0.5) -- NOT the production adapter. Contains no ReaxFF physics.
  * Purpose: empirically record the LAMMPS host contract (ghosts, neighbor lists, newton, virial, charge-fix

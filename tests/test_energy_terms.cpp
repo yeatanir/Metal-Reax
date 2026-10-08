@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 // The term registry must cover every ReaxFF energy contribution exactly once in the LAMMPS pvector.
 #include <set>
 #include <string>

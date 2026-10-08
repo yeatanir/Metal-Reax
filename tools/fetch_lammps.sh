@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-2.0-only
+# SPDX-FileCopyrightText: 2026 Anirban Phukan
 # Fetch the pinned LAMMPS tree (sparse, shallow) and verify it against the pins.
 #   usage: tools/fetch_lammps.sh [--full] <empty-or-new-destination-dir>
 #     --full  complete shallow checkout (needed to BUILD LAMMPS); default is the sparse audit subset

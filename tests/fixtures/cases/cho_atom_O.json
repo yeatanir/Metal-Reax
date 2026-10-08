@@ -1,0 +1,50 @@
+{
+ "atoms": [
+  {
+   "el": "O",
+   "xyz": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   15.0,
+   15.0,
+   15.0
+  ],
+  "lo": [
+   -15.0,
+   -15.0,
+   -15.0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "description": "isolated O atom (enobonds default)",
+ "elements": [
+  "C",
+  "H",
+  "O"
+ ],
+ "ffield": {
+  "name": "ffield.reax.cho",
+  "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+ },
+ "id": "cho_atom_O",
+ "periodic": [
+  false,
+  false,
+  false
+ ],
+ "tags": [
+  "isolated-atom",
+  "lonepair"
+ ]
+}

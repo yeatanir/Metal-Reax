@@ -1,4 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-only
+ * SPDX-FileCopyrightText: 2026 Anirban Phukan
  * SPIKE / SCAFFOLDING (M0.5) -- see header. Contains no ReaxFF physics: all energies and forces are zero
  * (except the optional `ghostforce yes` probe, which adds a unit x-force to EVERY atom incl. ghosts so the
  * reverse-communication fold-back can be measured). The ffield parse below extracts only chi/eta/gamma and is

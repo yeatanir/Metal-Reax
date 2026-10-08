@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 // Intentionally tiny: the pins are header constants; this TU keeps the library non-header-only so the
 // build graph (and strict-FP flags) are exercised from M0 onward.
 #include "reaxmetal/pins.hpp"

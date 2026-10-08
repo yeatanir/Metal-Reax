@@ -23,3 +23,9 @@ No third-party **source code** is included in this repository except one structu
 Other plugin files (`probe_plugin.cpp`, `pair_reaxff_metal_probe.cpp`, `plugin/CMakeLists.txt`) follow the documented plugin API
 (`doc/src/Developer_plugins.rst`) and the structure of `examples/plugins/{morse2plugin.cpp,CMakeLists.txt}`; they link against and
 derive from the GPL-2.0 LAMMPS `Pair` interface and are therefore GPL-2.0 (see `third_party/lammps/LICENSE_AUDIT.tsv`).
+
+## Copyright of original files
+Original ReaxMetal files: `SPDX-FileCopyrightText: 2026 Anirban Phukan`, `GPL-2.0-only`. Upstream notices in adapted files are kept verbatim and are **not** reassigned (ADR-018).
+
+## M1 patches against LAMMPS
+`third_party/lammps/patches/*.patch` are modifications of GPL-2.0 LAMMPS / PuReMD-derived source files (instrumentation hooks; two throwaway behaviour experiments). The patch text is a derivative work of those files and is distributed under their terms (GPL-2.0); the new file `reaxff_diag.h` in patch 0001 is original (SPDX header inside the patch). The patches are applied to a private clone at build time; no upstream source is vendored in this repository.

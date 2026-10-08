@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 // docs/FEATURE_MATRIX.md must list every feature id with the same status word as the code table, and
 // every mandated document must exist. A claim in the docs that the code does not carry (or vice versa)
 // is exactly the kind of silent drift this project forbids.

@@ -1,0 +1,72 @@
+{
+ "atoms": [
+  {
+   "el": "S",
+   "xyz": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "el": "O",
+   "xyz": [
+    1.2298105748585788,
+    0,
+    0.7316604061762615
+   ]
+  },
+  {
+   "el": "O",
+   "xyz": [
+    -1.2298105748585788,
+    0,
+    0.7316604061762615
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   16.22981057485858,
+   15.0,
+   15.731660406176262
+  ],
+  "lo": [
+   -16.22981057485858,
+   -15.0,
+   -15.0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "description": "SO2 with the mattsson set: its S-O bond block has De=0 (bond order active, bond energy zero); exercises the mass>21 over/under branch (Q-34)",
+ "elements": [
+  "C",
+  "H",
+  "O",
+  "N",
+  "S"
+ ],
+ "ffield": {
+  "name": "ffield.reax.mattsson",
+  "sha256": "46d5eb6af8cfc7aa5dbcae893d43e653904f39ddc947e9670335e7735bc5391c"
+ },
+ "id": "mattsson_so2",
+ "periodic": [
+  false,
+  false,
+  false
+ ],
+ "tags": [
+  "S",
+  "heavy-branch",
+  "known-reference-quirk",
+  "molecule",
+  "pi-bond",
+  "polar"
+ ]
+}

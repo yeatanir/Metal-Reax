@@ -1,0 +1,56 @@
+{
+ "atoms": [
+  {
+   "el": "C",
+   "xyz": [
+    0.5,
+    5.0,
+    5.0
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   1.3,
+   20.0,
+   20.0
+  ],
+  "lo": [
+   0,
+   0,
+   0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "description": "one C per 1.30 A period along x: every bond/angle/torsion partner is an image of the SAME atom (self-image accounting)",
+ "elements": [
+  "C",
+  "H",
+  "O"
+ ],
+ "ffield": {
+  "name": "ffield.reax.cho",
+  "sha256": "c5240c07e664dde5626fcdb740be1bdbe5e7e34d919902603db0bf962fea9aee"
+ },
+ "id": "cho_chain_1atom_period1.30",
+ "neighbor": {
+  "skin": 1.0
+ },
+ "periodic": [
+  true,
+  false,
+  false
+ ],
+ "tags": [
+  "chain",
+  "images",
+  "periodic",
+  "self-image",
+  "small-cell"
+ ]
+}

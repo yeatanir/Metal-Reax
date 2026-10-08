@@ -1,0 +1,71 @@
+{
+ "atoms": [
+  {
+   "el": "S",
+   "xyz": [
+    0,
+    0,
+    0
+   ]
+  },
+  {
+   "el": "O",
+   "xyz": [
+    1.2298105748585788,
+    0,
+    0.7316604061762615
+   ]
+  },
+  {
+   "el": "O",
+   "xyz": [
+    -1.2298105748585788,
+    0,
+    0.7316604061762615
+   ]
+  }
+ ],
+ "cell": {
+  "hi": [
+   16.22981057485858,
+   15.0,
+   15.731660406176262
+  ],
+  "lo": [
+   -16.22981057485858,
+   -15.0,
+   -15.0
+  ]
+ },
+ "charge": {
+  "maxiter": 500,
+  "model": "qeq/reaxff",
+  "swb": 10.0,
+  "tolerance": 1e-12
+ },
+ "description": "SO2 with the FC set (non-zero S-O De): heavy S with pi bonds to light O; control for Q-34 (here the analytic force IS consistent with the energy, FD 1e-7)",
+ "elements": [
+  "S",
+  "O"
+ ],
+ "expected_warnings": [
+  "Changed valency_val to valency_boc for X"
+ ],
+ "ffield": {
+  "name": "ffield.reax.FC",
+  "sha256": "db41eb3874e43d97fff3fdad16fddba44722854786b61753994aa2ee79971e4d"
+ },
+ "id": "fc_so2",
+ "periodic": [
+  false,
+  false,
+  false
+ ],
+ "tags": [
+  "S",
+  "heavy-branch",
+  "molecule",
+  "pi-bond",
+  "polar"
+ ]
+}

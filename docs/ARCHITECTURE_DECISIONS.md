@@ -48,7 +48,7 @@ trigger. All list capacities are explicit and **overflow is detected and reporte
 reference's `safezone/mincap` heuristics, which can fail with "bondchk failed". Sufficiency of LAMMPS' ghost shell for
 the oracle is established by REF-GHOST (VALIDATION).
 
-## ADR-005 — Shared term functions, independent drivers  · *Proposed*
+## ADR-005 — Shared term functions, independent drivers  · *Decided — owner approved (M1 review)*
 **Decision.** The *pure* term functions (BO correction & derivative coefficients, atom terms, angle, torsion,
 H-bond, pair vdW/Coulomb) are written once, templated on scalar, in an MSL-compatible C++ subset header
 (no exceptions/RTTI/STL; address-space macros). CPU-64 and CPU-32 instantiate them; the Metal kernels include the same
@@ -176,8 +176,55 @@ deferred with explicit errors: ACKS2, QTPIE, `qeq/rel`, external fields, alterna
 warns and continues like LAMMPS; an unconverged solution is never silently accepted. Barostats: enabled through LAMMPS once the pair style reports validated global virial (`lammps.virial_fdotr`, M6); until then pressure-controlled runs are refused.
 The stock fix cannot report convergence (Q-28), hence ADR-015. AMS equivalence is *not claimed* (LAMMPS_INTEGRATION §7.2).
 
-## ADR-015 — Plugin class structure: `Pair`-derived style; derived QEq fix for strictness  · *Proposed (needs owner OK)*
+## ADR-015 — Plugin class structure: `Pair`-derived style; derived QEq fix for strictness  · *Decided — owner approved; implement at M5 (not before)*
 **Decision.** `reaxff/metal` derives from **`Pair`** (verified to work with the stock charge fixes, LAMMPS_INTEGRATION §3.3). For strict EEM, a second plugin style `fix qeq/reaxff/metal` **subclasses `FixQEqReaxFF`** (protected state accessible; REAXFF package required in the host — it is the oracle build anyway)
 and verifies the true residual after the base solve (LAMMPS_INTEGRATION §7.4); later replaceable by a GPU-resident own fix.
 **Alternatives.** Derive the pair from `PairReaxFF` (rejected: drags in the PuReMD host machinery and heuristics, not needed [V]); a built-in package patch to LAMMPS (rejected for now: keeps the stock tree pristine, ADR-001); adapter-side residual check with user-repeated parameters (fragile).
 **Risk.** The derived fix depends on `protected` layout of one pinned LAMMPS version → it is pinned to `stable_30Sep2026` and compile-checked; moving the pin means revisiting it.
+
+### Amendments recorded after the M1 review
+**ADR-005 (approved, with conditions).** Pure mathematical term functions are shared across CPU-64, CPU-32 and Metal-32 *wherever practical*; traversal, neighbor construction, reductions and accumulation stay backend-specific and independent. Sharing prevents drift but **does not prove the formulas
+correct**, so three independent checks are mandatory: (1) term outputs against the pinned LAMMPS reference (M1 instrumentation provides them); (2) analytical derivatives against finite differences; (3) CPU-32 vs CPU-64, then Metal-32 against both.
+**Restriction:** the CPU implementation's mathematical correctness is never compromised to fit Metal syntax; a function that cannot be shared cleanly (or whose sharing would introduce unsafe Metal behaviour) gets **two implementations with an explicit equivalence test**.
+**ADR-015 (approved, M5).** No derived-fix work before M5. **M1 consequence:** the reference harness records QEq tolerance, `maxiter`, iteration counts and warnings for every fixture, computes an independent equalization residual, and **rejects any fixture whose convergence is unverified or that emitted a solver warning** — an unconverged reference calculation is *invalid* and never enters the golden dataset.
+Reference charge formulation = standard LAMMPS-compatible ReaxFF EEM/QEq. AMS EEM cross-validation is a separate optional task, not a blocker.
+
+## ADR-016 — Development environments, verification-status taxonomy, branch policy  · *Decided (owner, M1 review)*
+Development is **cloud Claude Code on Linux first; the M5 Max later**. Planned split:
+
+| Milestone | Cloud Claude Code (Linux) | M5 Max MacBook Pro |
+|---|---|---|
+| M1 LAMMPS oracle | full development and testing | not needed |
+| M2 generic parser | full development and testing | not needed |
+| M3 Metal backend | write shaders, host code, static tests | compile, execute, debug |
+| M4 bond orders | CPU FP64/FP32 tests; Metal source development | GPU numerical tests |
+| M5 EEM + nonbonded | CPU/reference tests | Metal QEq tests |
+| M6 full forces | CPU/reference tests | GPU force validation |
+| M7 LAMMPS dynamics | CPU NVE/NVT and integration tests | full Metal MD |
+| M8 performance | benchmark harness and analysis | M5 Max profiling |
+
+**Status taxonomy (mandatory in every report, per backend):** *written* (source exists) → *compiled* (built by a named compiler on a named platform) → *executed* (ran, with recorded output) → *validated* (executed and met the frozen criteria). Metal code is at most *written* until it is compiled and run on macOS hardware; **CPU and Metal verification statuses are tracked separately** and a Metal milestone is never closed from the cloud.
+**Branch policy:** M3 is **not** a permanent blocker for M4–M6 CPU physics. If Metal is unavailable, CPU physics proceeds on its own line of work (separate CPU-physics branch when the Metal side has unmerged/unverified code) while the GPU verification gates stay open. When M3 begins, a **Mac validation checklist** is produced. Cloud work must not stall waiting for hardware.
+M1/M2 are **not** blocked by Metal or Xcode.
+
+## ADR-017 — Fixture and data policy  · *Decided (owner, M1 review)*
+Hybrid: **commit** small, independently generated geometry fixtures and numerical reference outputs with complete provenance (case spec, ffield name + SHA-256, LAMMPS commit/patch/build identifiers, solver settings, convergence diagnostics, hashes).
+**Public LAMMPS potential files** are vendored only if redistribution is permitted; the M0.5 audit found **no per-file notice** on them (35 such files), so they are **fetched at a pinned version with SHA-256 verification** and not committed. **No proprietary or uncertain-license AMS force fields or private parameterisations are ever committed**; optional gitignored local fixtures
+(`fixtures/local/`) are supported by the runner. AMS EEM cross-validation waits for a reference calculation from the owner.
+
+## ADR-018 — Copyright attribution  · *Decided (owner, M1 review)*
+Original ReaxMetal files carry `SPDX-FileCopyrightText: 2026 Anirban Phukan` (assuming no university or third party holds those rights) beside `SPDX-License-Identifier: GPL-2.0-only`. **Actual upstream copyright notices and license information are preserved verbatim for derived files and are never reassigned to the project owner**
+(e.g. the structural adaptation in `plugin/probe/pair_reaxff_metal_probe.h` keeps the Sandia notice). The `license_headers` test checks the attribution line.
+
+## ADR-019 — Reference oracle = pinned LAMMPS + a hashed, observation-only diagnostics patch  · *Implemented (M1)*
+The oracle is the pinned `stable_30Sep2026` tree. Instrumentation is **one patch** (`third_party/lammps/patches/0001-reaxmetal-diagnostics.patch`, SHA-256 in `PATCHES.sha256`, applied to a private clone by `tools/build_lammps_instrumented.sh`; the pristine tree is never modified and the builder refuses a tree whose diff hash differs).
+The hooks only *copy values out* (parameter tables after parsing, BO′ before correction, per-atom Δ/nlp/Clp, bond lists, force-stage `workspace->f`, per-class interaction tallies, QEq iteration counts and recursive residuals) and are inert unless `REAXMETAL_DIAG_DIR` is set.
+**Oracle configuration:** strict IEEE builds (no FMA contraction: gcc and clang on baseline x86-64 are bit-identical on all fixtures). Instrumented ≡ stock **bitwise** for those builds, diagnostics on or off. For `-march=native -ffp-contract=fast` builds the instrumented binary is *not* bitwise equal to stock (≤ 1.3e-13 in forces; the compiler's fusion choices depend on the surrounding code) — such builds are used only **as stock** noise-floor probes, never as the instrumented oracle.
+Throwaway **experiment patches** (`patches/experiments/EXP-000x-*.patch`, applied on top of 0001) change reference *behaviour* to confirm a root cause (Q-32, Q-34); builds from them are never used for fixtures.
+
+## ADR-020 — Tolerance freeze and the conditioning-definition amendment (proposal)  · *Frozen file written; amendment awaits owner confirmation*
+`tolerances/tolerances.json` (+ `TOLERANCES.sha256`, enforced by the `tolerances_frozen` CTest) carries C1 thresholds = ⌈10 × measured noise floor⌉ (one significant digit), the owner's C3 values verbatim, the QEq/neutrality thresholds, the conditioning classification of every fixture and the FD protocol.
+M1 execution showed that the **pre-registered** well-conditioned definition (NUMERICAL_POLICY §5.2) lets through exactly collinear fixtures whose forces differ by 1.5e-2 kcal/mol/Å between FMA and non-FMA builds of the *same* source (a 1e-2 floor would make C1 meaningless). Two classes are therefore **proposed** as additions (X1 near-linear angle, X2 BO-product within 1e-3 of `thb_cutsq`); the file records C1 under both definitions, **primary = with the amendment**. The owner decides; nothing in C3 was changed.
+
+## ADR-021 — Reference defects are reproduced by default, flagged, and never silently corrected  · *Proposed (consequence of M1 findings)*
+Q-32 (H-bond acceptor that is a periodic image of the donor is dropped, tag comparison), Q-34 (analytic force ≠ gradient of the reported energy for heavy atoms with π bonds: `dDelta_lp[j]` instead of `dDelta_lp_temp[j]`) are defects of the pinned reference, confirmed by modified-source experiments. The engine's contract is *parity with pinned LAMMPS*: both are reproduced by default behind named compat flags (`compat.hbond_donor_image_exclusion`, `compat.ovun_heavy_neighbor_force`), documented as defects, with a corrected variant opt-in and reported separately in validation. Q-09 overrun and Q-12 zero-fill are *rejected* with an explicit error (undefined behaviour / phantom physics cannot be a parity target), and Q-35 (QEq taper beyond the ghost shell) is an error. Whether to report Q-32/Q-34 upstream is the owner's call.

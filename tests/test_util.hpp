@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-only
+// SPDX-FileCopyrightText: 2026 Anirban Phukan
 // Minimal assertion helpers (no third-party test framework dependency at M0).
 #pragma once
 #include <cstdio>
