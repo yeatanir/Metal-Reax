@@ -96,8 +96,8 @@ def main():
             fails.append(f"{cf.stem}: self-check {status}: rows mismatched {mis}, lammps_entries {le} vs engine {ee}")
         elif (int(oo), int(og), int(sf)) != want:
             fails.append(f"{cf.stem}: engine pair classes {(oo, og, sf)} != M1 reference tallies {want}")
-        elif "force backend is not implemented" not in msg:
-            fails.append(f"{cf.stem}: compute() did not refuse after the self-check")
+        elif "self-check mode stops here" not in msg:
+            fails.append(f"{cf.stem}: self-check mode did not stop after the summary")
         else:
             ok_n += 1
     # C3, strict where the reference only warns: a ghost shell narrower than max(nonb_cut, hbond_cut, 2*bond_cut) is an error

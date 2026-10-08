@@ -22,7 +22,8 @@ struct PairSettings {
   int mincap = 50, minhbonds = 25;
   bool list_blocking = false;        // Kokkos-only performance option: accepted, ignored (notice)
   int tabulate = 0;                  // > 0: Deferred (spline tables change the numbers)
-  bool selfcheck = false;            // development keyword `reaxmetal_selfcheck yes`: A2 builds the ghost-native view and verifies it against LAMMPS' own neighbor list (then still refuses to compute)
+  std::string backend = "cpu64";    // force backend: cpu64 (reference, complete) | metal (not complete yet)
+  bool selfcheck = false;            // development keyword `reaxmetal_selfcheck yes`: A2 builds the ghost-native view and verifies it against LAMMPS' own neighbor list (then stops with an error: development aid)
   ControlParams control;             // defaults, or the control file contents
   std::vector<std::string> notices;  // warnings from the control file and "ignored option" notices
 };

@@ -67,3 +67,11 @@ if(RM_LIBLAMMPS AND REAXMETAL_FFIELD_DIR AND REAXMETAL_BUILD_TESTS)
       FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
   endforeach()
 endif()
+
+# INT-2 (M4/M6): in-LAMMPS A/B of stock `pair_style reaxff` vs `reaxff/metal backend cpu64` on the 58 fixtures: 14 energy slots, PE, charges, forces, pressure.
+if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND REAXMETAL_FFIELD_DIR AND REAXMETAL_BUILD_TESTS)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME lammps_int2 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
+  set_tests_properties(lammps_int2 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+endif()

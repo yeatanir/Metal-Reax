@@ -22,7 +22,10 @@
 #include <cstring>
 #include <unordered_map>
 
+#include "reaxmetal/bonded.hpp"
 #include "reaxmetal/capabilities.hpp"
+#include "reaxmetal/energy_terms.hpp"
+#include "reaxmetal/nonbonded.hpp"
 
 using namespace LAMMPS_NS;
 
@@ -278,10 +281,13 @@ std::string PairReaxFFMetal::selfcheck_summary(bool &ok)
          " vdw_self=" + std::to_string(pc.self) + " comm_cutoff=" + std::to_string(comm->get_comm_cutoff());
 }
 
-void PairReaxFFMetal::compute(int, int)
+void PairReaxFFMetal::compute(int eflag, int vflag)
 {
+  ev_init(eflag, vflag);
   std::string selfcheck;
   if (settings_.selfcheck) {
+    // development aid (A2): verify the host view and far list against LAMMPS' own list, report through the error text and stop (the
+    // C-library harness reads the summary from the message)
     bool ok = false;
     std::string failure;
     try {
@@ -291,10 +297,48 @@ void PairReaxFFMetal::compute(int, int)
     }
     if (!failure.empty()) error->all(FLERR, "ReaxMetal A2 self-check could not run: {}", failure);
     if (!ok) error->all(FLERR, "{}", selfcheck);
-    selfcheck += "; ";
+    error->all(FLERR, "{}; self-check mode stops here (remove reaxmetal_selfcheck to compute)", selfcheck);
   }
-  error->all(FLERR,
-             "{}Pair style reaxff/metal: the force backend is not implemented yet (milestone M4). This adapter (A1/A2, milestones M2/M3) "
-             "provides parsing, pair_coeff mapping, extract(), host checks and the ghost-native host view only; it never returns zero energies or forces.",
-             selfcheck);
+  if (eflag_atom || vflag_atom)
+    error->all(FLERR, "Pair style reaxff/metal: per-atom energy / virial output is not implemented yet");
+  if (settings_.backend != "cpu64")
+    error->all(FLERR, "Pair style reaxff/metal: backend '{}' is not implemented yet for the complete force field; use 'backend cpu64'", settings_.backend);
+
+  using namespace reaxmetal;
+  reaxmetal::BondedResult br;
+  reaxmetal::NonbondedResult nr;
+  AtomSet a;
+  try {
+    const Box box = host_box();
+    a = host_atom_set(box);
+    const NeighborCutoffs cut = cutoffs();
+    const FarList far = build_far_list(a, cut);
+    std::vector<double> q(a.nlocal);
+    for (std::size_t i = 0; i < a.nlocal; ++i) q[i] = atom->q[i];
+    BondedOptions bo;
+    bo.enobonds = settings_.enobonds;
+    NonbondedOptions no;
+    no.lgvdw = settings_.lgvdw;
+    br = compute_bonded_core(*ff_, settings_.control, a, far, bo);
+    nr = compute_nonbonded_core(*ff_, cut, a, far, q, no);
+  } catch (const std::exception &e) {
+    error->all(FLERR, "Pair style reaxff/metal: {}", e.what());
+  }
+
+  // forces: the engine returns gradients (dE/dx) for owned and ghost atoms; LAMMPS folds the ghost forces onto their owners
+  double **f = atom->f;
+  const std::size_t nall = a.nall();
+  for (std::size_t i = 0; i < nall; ++i)
+    for (std::size_t c = 0; c < 3; ++c) f[i][c] -= br.grad[3 * i + c] + nr.grad[3 * i + c];
+
+  EnergyBreakdown e;
+  for (std::size_t t = 0; t < kEnergyTermCount; ++t) e.e[t] = br.e.e[t] + nr.e.e[t];
+  if (eflag_global) {
+    const auto pv = to_lammps_pvector(e);
+    for (std::size_t k = 0; k < kPvectorSize; ++k) pvector[k] = pv[k];
+    eng_vdwl += e[EnergyTerm::Bond] + e[EnergyTerm::Over] + e[EnergyTerm::Under] + e[EnergyTerm::LonePair] + e[EnergyTerm::Valence] +
+                e[EnergyTerm::Penalty] + e[EnergyTerm::Coalition] + e[EnergyTerm::HBond] + e[EnergyTerm::Torsion] + e[EnergyTerm::Conjugation] + e[EnergyTerm::VdW];
+    eng_coul += e[EnergyTerm::Coulomb] + e[EnergyTerm::Polarization];
+  }
+  if (vflag_fdotr) virial_fdotr_compute();
 }
