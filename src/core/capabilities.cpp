@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: GPL-2.0-only
+#include "reaxmetal/capabilities.hpp"
+
+#include <array>
+
+namespace reaxmetal {
+namespace {
+
+constexpr Status P = Status::Planned;
+constexpr Status R = Status::Rejected;
+constexpr Status I = Status::Ignored;
+
+// Keep in lock-step with docs/FEATURE_MATRIX.md (enforced by tests/test_docs_sync.cpp).
+// No row is `Implemented` at M0: nothing physical exists yet.
+constexpr std::array kFeatures{
+    // ---- energy terms -------------------------------------------------------------------------
+    Feature{"term.bond", P, "M4", "ReaxFF::Bonds", "includes terminal-triple-bond stabilisation"},
+    Feature{"term.lone_pair", P, "M4", "ReaxFF::Atom_Energy", "includes C2 correction"},
+    Feature{"term.over_under", P, "M4", "ReaxFF::Atom_Energy", "over- and under-coordination"},
+    Feature{"term.valence", P, "M6", "ReaxFF::Valence_Angles", ""},
+    Feature{"term.penalty", P, "M6", "ReaxFF::Valence_Angles", ""},
+    Feature{"term.coalition", P, "M6", "ReaxFF::Valence_Angles", "3-body conjugation"},
+    Feature{"term.torsion", P, "M6", "ReaxFF::Torsion_Angles", ""},
+    Feature{"term.conjugation", P, "M6", "ReaxFF::Torsion_Angles", "4-body conjugation"},
+    Feature{"term.hbond", P, "M6", "ReaxFF::Hydrogen_Bonds", ""},
+    Feature{"term.vdw.shielded", P, "M5", "vdw_type 1", "shielded Morse"},
+    Feature{"term.vdw.inner_wall", P, "M5", "vdw_type 2", "Morse + inner wall, no shielding"},
+    Feature{"term.vdw.shielded_inner_wall", P, "M5", "vdw_type 3", "shielded Morse + inner wall"},
+    Feature{"term.vdw.lg_dispersion", P, "M5", "pair_style reaxff lgvdw yes", "low-gradient correction"},
+    Feature{"term.coulomb", P, "M5", "ReaxFF::vdW_Coulomb_Energy", "taper-shielded"},
+    Feature{"term.polarization", P, "M5", "ReaxFF::Compute_Polarization_Energy", "QEq self energy"},
+    // ---- parameter file -------------------------------------------------------------------------
+    Feature{"ffield.standard", P, "M2", "ffield general/atom/bond/angle/torsion/hbond blocks", "39-parameter layout"},
+    Feature{"ffield.atom_line5_lgvdw", P, "M2", "ffield 5-line atom block", "only with lgvdw"},
+    Feature{"ffield.offdiagonal", P, "M2", "ffield off-diagonal block", ""},
+    Feature{"ffield.torsion_compact", P, "M2", "ffield 4-body entry 0-X-Y-0", "order-dependent overwrite, see ENGINE_SPEC 2.5"},
+    Feature{"ffield.hbond_block", P, "M2", "ffield hydrogen-bond block", "may be absent (LAMMPS warns)"},
+    Feature{"ffield.control_file", P, "M2", "pair_style reaxff <control file>", "cutoff keywords only"},
+    Feature{"ffield.strict_missing_pairs", P, "M2", "(no LAMMPS equivalent)", "reject, do not zero-fill, absent 2-body pairs"},
+    // ---- LAMMPS-compat flags (element knowledge expressed as data, ADR-003) -----------------------
+    Feature{"compat.c2_correction", P, "M4", "strcmp(name,\"C\") in Atom_Energy", "per-type flag derived at load time"},
+    Feature{"compat.triple_bond_stabilisation", P, "M4", "gp.l[37]==2 or mass pair 12.0000/15.9990", "per-pair flag"},
+    Feature{"compat.light_element_split", P, "M4", "mass > 21 / mass < 21 tests", "per-type flag"},
+    // ---- pair_style options ----------------------------------------------------------------------
+    Feature{"opt.enobonds", P, "M4", "pair_style reaxff enobonds yes|no", ""},
+    Feature{"opt.checkqeq_no", P, "M5", "pair_style reaxff checkqeq no", "fixed input charges"},
+    Feature{"opt.lgvdw", P, "M5", "pair_style reaxff lgvdw yes", ""},
+    Feature{"opt.memory_heuristics", I, "-", "safezone / mincap / minhbonds", "LAMMPS allocation heuristics only"},
+    Feature{"opt.list_blocking", I, "-", "list/blocking", "Kokkos performance option only"},
+    Feature{"opt.tabulate", R, "-", "tabulate N>0 / tabulate_long_range N>0", "spline tables change the physics; analytic only"},
+    // ---- charge models ---------------------------------------------------------------------------
+    Feature{"qeq.reaxff", P, "M5", "fix qeq/reaxff ... reaxff", "standard CG QEq"},
+    Feature{"qeq.pertype_file", P, "M5", "fix qeq/reaxff ... <param file>", "per-type chi/eta/gamma override"},
+    Feature{"qeq.shielded", R, "-", "fix qeq/shielded", "different model; not planned"},
+    Feature{"qeq.acks2", R, "-", "fix acks2/reaxff", "different model; not planned"},
+    Feature{"qeq.qtpie", R, "-", "fix qtpie/reaxff", "different model; not planned"},
+    Feature{"qeq.relative", R, "-", "fix qeq/rel/reaxff", "not planned"},
+    Feature{"qeq.efield", R, "-", "fix efield with fix qeq/reaxff", "not planned"},
+    Feature{"qeq.group_subset", R, "-", "fix qeq/reaxff on a proper subgroup", "all atoms are equilibrated"},
+    // ---- system description ----------------------------------------------------------------------
+    Feature{"sys.pbc_images", P, "M3", "ghost atoms / periodic images", "explicit image shifts; never minimum-image only"},
+    Feature{"sys.triclinic", P, "M3", "triclinic box", ""},
+    Feature{"sys.nonperiodic", P, "M3", "boundary f/s/m", ""},
+    Feature{"sys.type_null_mapping", R, "-", "pair_coeff ... NULL", "hybrid placeholder; not planned"},
+    Feature{"sys.hybrid", R, "-", "pair_style hybrid[/overlay] with reaxff", "not planned"},
+    // ---- outputs ---------------------------------------------------------------------------------
+    Feature{"out.energy_breakdown", P, "M4", "compute pair reaxff (pvector[14])", "see energy_terms.hpp"},
+    Feature{"out.forces", P, "M6", "atom->f", "analytical"},
+    Feature{"out.charges", P, "M5", "atom->q", ""},
+    Feature{"out.virial", P, "M6", "virial_fdotr / v_tally*", "needed for pressure"},
+    Feature{"out.per_atom_energy", R, "-", "compute pe/atom with reaxff", "not planned"},
+    Feature{"out.bond_analysis", R, "-", "fix reaxff/bonds, fix reaxff/species", "not planned"},
+    // ---- dynamics --------------------------------------------------------------------------------
+    Feature{"md.nve", P, "M7", "fix nve", ""},
+    Feature{"md.thermostat", P, "M7", "fix nvt / langevin", "choice deferred to M7"},
+    Feature{"md.barostat", R, "-", "fix npt", "not planned"},
+    Feature{"min.minimize", P, "M7", "minimize", ""},
+    // ---- backends --------------------------------------------------------------------------------
+    Feature{"backend.cpu_fp64", P, "M4", "-", "reference backend"},
+    Feature{"backend.cpu_fp32_twin", P, "M4", "-", "same kernels in float; calibrates GPU tolerance"},
+    Feature{"backend.metal_fp32", P, "M3", "-", "native Metal; Apple GPUs have no FP64"},
+    Feature{"backend.metal_atomic_accum", P, "M8", "-", "benchmark-only option; default path is deterministic"},
+    Feature{"backend.metal_batching", P, "M8", "-", ""},
+    Feature{"backend.fp16", R, "-", "-", "not planned"},
+};
+
+}  // namespace
+
+std::span<const Feature> feature_table() noexcept { return kFeatures; }
+
+const Feature* find_feature(std::string_view id) noexcept {
+  for (const Feature& f : kFeatures)
+    if (f.id == id) return &f;
+  return nullptr;
+}
+
+const Feature* find_by_lammps_construct(std::string_view construct) noexcept {
+  // "-" (or empty) means "no LAMMPS spelling" and must never be matchable.
+  if (construct.empty() || construct == "-") return nullptr;
+  for (const Feature& f : kFeatures)
+    if (f.lammps_construct == construct) return &f;
+  return nullptr;
+}
+
+std::string_view to_string(Status s) noexcept {
+  switch (s) {
+    case Status::Implemented: return "Implemented";
+    case Status::Planned: return "Planned";
+    case Status::Rejected: return "Rejected";
+    case Status::Ignored: return "Ignored";
+  }
+  return "?";
+}
+
+Verdict require_supported(std::string_view id) {
+  const Feature* f = find_feature(id);
+  if (f == nullptr) throw std::logic_error("require_supported: unknown feature id '" + std::string(id) + "'");
+  switch (f->status) {
+    case Status::Implemented: return Verdict::Supported;
+    case Status::Ignored: return Verdict::IgnoredWithNotice;
+    case Status::Planned:
+      throw NotImplementedError("feature '" + std::string(id) + "' is planned for milestone " +
+                                std::string(f->milestone) + " and is not implemented yet");
+    case Status::Rejected:
+      throw UnsupportedFeatureError("feature '" + std::string(id) + "' (" + std::string(f->lammps_construct) +
+                                    ") is not supported: " + std::string(f->note));
+  }
+  throw std::logic_error("unreachable");
+}
+
+}  // namespace reaxmetal

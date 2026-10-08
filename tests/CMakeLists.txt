@@ -1,0 +1,12 @@
+function(reaxmetal_add_test name)
+  add_executable(test_${name} test_${name}.cpp)
+  target_link_libraries(test_${name} PRIVATE reaxmetal_core)
+  target_compile_definitions(test_${name} PRIVATE REAXMETAL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+  reaxmetal_apply_warnings(test_${name})
+  add_test(NAME ${name} COMMAND test_${name})
+endfunction()
+
+reaxmetal_add_test(pins)
+reaxmetal_add_test(capabilities)
+reaxmetal_add_test(energy_terms)
+reaxmetal_add_test(docs_sync)

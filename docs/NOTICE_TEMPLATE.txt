@@ -1,0 +1,27 @@
+/* SPDX-License-Identifier: GPL-2.0-only   <-- or GPL-2.0-or-later ONLY if every adapted source is PuReMD-derived (ADR-010)
+ *
+ * Adapted-from: src/REAXFF/<upstream file> @ 8de817dd79bfe4525d5d39246a212d833e6dee07 (LAMMPS stable_30Sep2026)
+ * Changes: <what was changed and why; e.g. "re-expressed as pure function templated on scalar; no LAMMPS API">
+ *
+ * ---- upstream notice, verbatim ------------------------------------------------------------------------
+ * [for LAMMPS-authored files]
+ *   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+ *   https://www.lammps.org/ Sandia National Laboratories
+ *   LAMMPS development team: developers@lammps.org
+ *   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+ *   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+ *   certain rights in this software.  This software is distributed under
+ *   the GNU General Public License.
+ *
+ * [for PuReMD-derived files, in addition]
+ *   PuReMD - Purdue ReaxFF Molecular Dynamics Program
+ *   Copyright (2010) Purdue University
+ *   Hasan Metin Aktulga, hmaktulga@lbl.gov; Joseph Fogarty, jcfogart@mail.usf.edu;
+ *   Sagar Pandit, pandit@usf.edu; Ananth Y Grama, ayg@cs.purdue.edu
+ *   Please cite: H. M. Aktulga, J. C. Fogarty, S. A. Pandit, A. Y. Grama,
+ *   "Parallel Reactive Molecular Dynamics: Numerical Methods and Algorithmic Techniques",
+ *   Parallel Computing, 38, 245-259 (2012).
+ *   This program is free software; you can redistribute it and/or modify it under the terms of the
+ *   GNU General Public License as published by the Free Software Foundation; either version 2 of the
+ *   License, or (at your option) any later version. [...remaining upstream text verbatim]
+ */

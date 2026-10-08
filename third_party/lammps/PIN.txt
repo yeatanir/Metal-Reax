@@ -1,0 +1,22 @@
+# Pinned upstream reference for ReaxMetal. Machine-read by tests/test_pins.cpp
+# and tools/fetch_lammps.sh -- keep key=value lines free of spaces around '='.
+#
+# Pin recorded 2026-10-08 (M0). Changing any value here is a reference change and
+# MUST be accompanied by a docs/DEVELOPMENT_LOG.md entry and regenerated fixtures.
+
+lammps_repo=https://github.com/lammps/lammps.git
+lammps_tag=stable_30Sep2026
+# annotated tag object (what `git ls-remote` shows for refs/tags/stable_30Sep2026)
+lammps_tag_object=752e990c8d4c30bb134f6c1b630a2ab056cbc087
+# commit the tag points to (refs/tags/stable_30Sep2026^{})
+lammps_commit=8de817dd79bfe4525d5d39246a212d833e6dee07
+lammps_commit_date=2026-09-30
+# LAMMPS-wide license: GNU GPL v2 (third_party/lammps/COPYING == upstream LICENSE)
+lammps_license=GPL-2.0-only
+lammps_license_sha256=be38e38d9482c2beae35 (prefix; full hash in SOURCE_HASHES.sha256)
+# Provenance notes (see docs/SOURCE_MAP.md section 6):
+#  - src/REAXFF/reaxff_*.cpp physics core: PuReMD-derived, text says GPL v2 "or any later version"
+#  - src/REAXFF/{pair,fix_*}_reaxff.*, reaxff_{api,defs,inline,types}.h, src/KOKKOS/*reaxff*:
+#    LAMMPS-authored, "GNU General Public License" via LAMMPS LICENSE (GPL-2.0-only)
+# Directories fetched by tools/fetch_lammps.sh (sparse):
+sparse_dirs=src/REAXFF src/KOKKOS doc/src examples/reaxff potentials cmake unittest/force-styles/tests

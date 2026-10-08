@@ -1,0 +1,10 @@
+/build*/
+/out/
+*.o
+*.a
+*.metallib
+*.air
+.DS_Store
+__pycache__/
+# upstream trees fetched by tools/fetch_lammps.sh must never be committed
+/third_party/lammps/checkout/
