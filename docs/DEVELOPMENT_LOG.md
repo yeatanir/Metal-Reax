@@ -223,3 +223,41 @@ macOS/Metal anything (the plugin has not been built with Apple clang or loaded i
 
 ### What I need from you
 Run `tools/mac/step1_bringup.sh` first and send `mac-reports/step1-*.txt`. Then steps 2 and 3 (details in `docs/MAC_VALIDATION.md`). I will not claim any Metal result before that, and step 4 (macOS plugin build, INT-5) will be prepared after the Metal layer builds. Also decide: ADR-023 (no metal-cpp), the narrowed host-binning scope (ADR-024), and the three pending items from M2 (ADR-022 Q-12 per used pair; real style name while `compute()` refuses).
+
+## M3 validation on the M5 Max, step 4 (INT-5) and the physics (M4–M6) — 2026-10-08 (Claude Code on the Mac)
+
+### Instruction
+"START WORKING ON IT - MAKE THE PHYSICS RUN PROPERLY WITH METAL", plan approved: ADR-013 order (M4 → M5 → M6), stay inside the frozen rules (ADR-021 quirks reproduced, frozen tolerances, no FP atomics in the validated path, no tolerance edits).
+
+### What was run before any new code
+`tools/mac/step1..3` all PASS on the M5 Max (MET-1, NBR-1, FORCE-2, MET-4). Step 4 (INT-5): the pinned LAMMPS built unmodified (serial, shared, Apple clang 17), the plugin built and loaded; probe, A1, A2 pass. No code change was needed for any of it.
+
+### What was built
+* `include/reaxmetal/terms.hpp` (dual-use: host C++ via `terms_host.hpp`, and MSL): pure term functions templated on the scalar — bond order, bond-order correction with derivative coefficients, atom quantities, bond energy, triple-bond stabilisation, lone pair, C2, over/under, taper (reference Horner form on the host, scaled form `1−35x⁴+84x⁵−70x⁶+20x⁷` for float), vdW/Coulomb/polarization pair terms. `safe_exp` caps float exponent arguments at 40 (double: 700).
+* `src/cpu/bonded.cpp`, `src/cpu/nonbonded.cpp`: the CPU-64 engine, following the pinned traversal (bond_mark, tag-order rules, three-body lists, H-bond lists, `Add_dBond_to_Forces`): all 13 energy terms and the gradient.
+* `plugin/adapter`: `compute()` now evaluates the force field (energies, `pvector`, forces, virial by fdotr); keyword `backend cpu64|metal`; per-atom energy/virial requests are refused.
+* Metal: `rm_nb_pairs/rm_nb_gather` (nonbonded) and the `rm_b_*` / `rm_h_build` kernels (bond list, bond orders, bond/lp/over/under, valence/penalty/coalition, torsion/conjugation, H-bond, force assembly), `Context::nonbonded/bonded`, host orchestration with grow-and-retry for bond/H-bond capacity (`bonded_device.cpp`), and the same orchestration run against a CPU emulation backend in `test_metal_emulation`.
+* Tests: `bonded_fixtures` (BOND-1), `nonbonded_fixtures` (NB-1), `full_fixtures` (FULL-1), `gpu_fixtures` (GPU-1), `lammps_int2`, `lammps_int2_metal` (INT-2), emulation of the new kernels. CTest 31/31 on the M5 Max (Apple clang, Metal ON).
+
+### Results (actual runs; see VALIDATION)
+* CPU-64 vs pinned LAMMPS: 13 slots 3.5e-15 relative, forces 3.4e-12 (limits 2e-9 / 1e-9); FD reproduces the documented reference behaviours (Q-34 16.500, Q-33 0.009/0.013) exactly.
+* In-LAMMPS A/B (INT-2): cpu64 within frozen C1 on all 58 fixtures; **metal within the owner-set C3** on all 58 (PE ≤ 9.7e-5 kcal/mol/atom, forces 4.0e-3 max / 9.1e-4 RMS). A 24-atom periodic water box, 200 NVE steps with `fix qeq/reaxff` and neighbor rebuilds: cpu64 identical to stock to 10 digits; metal agrees to ~6 digits and conserves energy like stock (−1898.5595 → −1898.5601 for both).
+* Metal runs are deterministic (two launches bitwise identical on every fixture).
+
+### Mistakes made and corrected
+* The first fixture test mapped LAMMPS types to force-field indices wrongly (element order differs); every energy "failed" and some runs threw `vector::at`. The mapping now goes through `ForceField::match_element` like `pair_coeff`.
+* The hydrogen-bond list was built after the `bond_cut` filter, so acceptors between 5 Å and 7.5 Å were missed (periodic water boxes failed); fixed to the reference's `max(hbond_cut, bond_cut)` row cutoff.
+* The Metal compiler rejected reference parameters without an address space (the CPU emulation cannot see this class of error); fixed with `RM_THREAD`. This is the first evidence the shared-header design works on the real compiler.
+* **GPU-1 first failed on `cho_co`**: force RMS 5.4e-3 vs the owner's 5e-3. Diagnosis: float coordinates relative to the box corner (up to 17 Å here) quantise at 1.9e-6 Å, times the C–O force constant. Fix: hi/lo float positions, differences formed as `(hi_j−hi_i)+(lo_j−lo_i)`; all 58 fixtures then pass with margin. No tolerance was changed.
+* The A1/A2 harnesses encoded "compute() refuses"; they were updated deliberately (A1: runs complete; A2 self-check stops with the summary).
+* The `capabilities` test caught that `lammps.virial_fdotr`/`out.virial` may not be Implemented while the barostat gate (INT-4) is open; reverted to Planned with the INT-2 evidence in the note.
+
+### Decisions I took that you should confirm
+1. **FP32 stability by capped exponents (cap 40), not the algebraic STAB-n forms of NUMERICAL_POLICY 4.4.** It is finite on all 58 fixtures including the isolated atoms and the C=O molecule; the capped and true values differ only where the term saturates far below FP32 precision. The derivative-test protocol (STAB-1..n) was NOT run: the evidence is GPU-1 agreement, not per-expression tests.
+2. **hi/lo coordinates** for all device kernels (resolves NUMERICAL_POLICY 4.1 item 6 as an M3 experiment: needed).
+3. **Bond lists on the GPU are symmetric by construction**: each directed bond is corrected from its own end (the correction is symmetric) and `bond_mark` is not reproduced; it only changes bonds of atoms ≥ 4 bonds from an owned atom (CPU-64 keeps it). Torsion entries reproduce the reference's three-body-list gate (a later slot always, an earlier one only if k or l is owned) with slots sorted by neighbor index.
+4. `backend` defaults to `cpu64` (the complete reference); `backend metal` must be requested.
+5. ADR-022's "adapter refuses to compute until M4" is now superseded: compute works; per-atom outputs and non-fdotr virial paths still refuse.
+
+### Not run / known gaps
+NPT (INT-4), NVE drift protocol (NVE-1) and minimisation (MIN-1) beyond the 200-step water-box sanity run; the CPU-32 twin and FP32-1 envelope; decision-mismatch census; vdW type 2 and `enobonds no`; the GPU QEq (charges still come from the stock CPU fix); `reaxff/metal` per-atom energy/virial; MPI > 1 rank; systems larger than ~3 000 atoms were only timed, not validated. **Performance is not good yet**: a 3 000-atom water box takes 0.48 s of pair time for 20 steps on Metal vs 0.39 s for stock CPU `reaxff` — the pipeline re-uploads, re-bins and re-runs everything every step and the torsion/valence kernels use one thread per atom. That is the M8 work.
