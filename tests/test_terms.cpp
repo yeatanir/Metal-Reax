@@ -3,7 +3,7 @@
 // Shared pure term functions (terms.hpp): the stable taper form equals the reference Horner form, float stays close, and its derivative is consistent.
 #include <cmath>
 
-#include "reaxmetal/terms.hpp"
+#include "reaxmetal/terms_host.hpp"
 #include "test_util.hpp"
 
 using namespace reaxmetal;

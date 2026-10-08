@@ -6,7 +6,7 @@
 #include <array>
 #include <cmath>
 
-#include "reaxmetal/terms.hpp"
+#include "reaxmetal/terms_host.hpp"
 
 namespace reaxmetal {
 namespace {

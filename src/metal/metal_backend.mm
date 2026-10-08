@@ -20,6 +20,7 @@
 
 #include "reaxmetal/metal_backend.hpp"
 #include "reaxmetal_m3_types.h"
+#include "reaxmetal_m4_types.h"
 
 namespace reaxmetal::mtl {
 
@@ -238,6 +239,43 @@ MathProbe Context::math_probe() {
 FarRowsF32 Context::far_rows(const DeviceListInput& in, std::uint32_t initial_cap, unsigned* launches) {
   Impl& m = *impl_;
   return build_far_rows_with_growth([&](std::uint32_t cap) { return m.launch_far_rows(in, cap); }, initial_cap, in.nall, 4, launches);
+}
+
+NonbondedDeviceOutput Context::nonbonded(const NonbondedDeviceInput& in) {
+  Impl& m = *impl_;
+  const std::size_t nall = in.list.nall, nlocal = in.list.nlocal, cap = in.rows.cap;
+  NonbondedDeviceOutput out;
+  out.grad.assign(3 * nall, 0.0f);
+  out.row_e.assign(2 * nlocal, 0.0f);
+  if (nall == 0 || nlocal == 0) return out;
+  if (nlocal * cap * 3 > 0xFFFFFFFFull) throw MetalError("nonbonded: pair buffer index exceeds 32 bits");
+  std::vector<float> pf_init(nlocal * cap * 3, 0.0f);   // entries that are not counted must read as zero
+  id<MTLBuffer> bx = m.buffer_from(in.list.x.data(), in.list.x.size() * sizeof(float));
+  id<MTLBuffer> btype = m.buffer_from(in.type.data(), in.type.size() * sizeof(std::int32_t));
+  id<MTLBuffer> btag = m.buffer_from(in.tag.data(), in.tag.size() * sizeof(std::int32_t));
+  id<MTLBuffer> bq = m.buffer_from(in.q.data(), in.q.size() * sizeof(float));
+  id<MTLBuffer> btab = m.buffer_from(in.pair_table.data(), in.pair_table.size() * sizeof(float));
+  id<MTLBuffer> bnbr = m.buffer_from(in.rows.nbr.data(), in.rows.nbr.size() * sizeof(std::int32_t));
+  id<MTLBuffer> bcount = m.buffer_from(in.rows.count.data(), in.rows.count.size() * sizeof(std::uint32_t));
+  id<MTLBuffer> bpf = m.buffer_from(pf_init.data(), pf_init.size() * sizeof(float));
+  id<MTLBuffer> brow = m.buffer(out.row_e.size() * sizeof(float));
+  id<MTLBuffer> bcs = m.buffer_from(in.column.start.data(), in.column.start.size() * sizeof(std::uint32_t));
+  id<MTLBuffer> bci = m.buffer_from(in.column.items.data(), in.column.items.size() * sizeof(std::uint32_t));
+  id<MTLBuffer> bgrad = m.buffer(out.grad.size() * sizeof(float));
+  RmNbParams p{};
+  p.nlocal = static_cast<std::uint32_t>(nlocal); p.cap = static_cast<std::uint32_t>(cap); p.ntypes = in.ntypes;
+  p.vdw_type = in.vdw_type; p.lg = in.lg; p.p_vdW1 = in.p_vdW1; p.swa = in.swa; p.swb = in.swb;
+  Dispatch d1 = m.make("rm_nb_pairs", nlocal);
+  d1.buffers = {bx, btype, btag, bq, btab, bnbr, bcount, bpf, brow};
+  set_params(d1, p, 9);
+  RmNbGatherParams g{static_cast<std::uint32_t>(nall), static_cast<std::uint32_t>(nlocal), static_cast<std::uint32_t>(cap)};
+  Dispatch d2 = m.make("rm_nb_gather", nall);
+  d2.buffers = {bpf, bcount, bcs, bci, bgrad};
+  set_params(d2, g, 5);
+  m.run({d1, d2});
+  std::memcpy(out.row_e.data(), [brow contents], out.row_e.size() * sizeof(float));
+  std::memcpy(out.grad.data(), [bgrad contents], out.grad.size() * sizeof(float));
+  return out;
 }
 
 std::vector<float> Context::partial_sums(std::span<const float> v, std::uint32_t chunk) {

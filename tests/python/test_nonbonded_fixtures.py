@@ -24,8 +24,8 @@ KNOWN_FD_QUIRK = {}
 TERMS = {"e_vdW": "e_vdW", "e_ele": "e_ele", "e_pol": "e_pol"}
 
 
-def run_tool(tool, ffield, extra, txt, grad=False):
-    r = subprocess.run([tool, "--ffield", str(ffield), *extra, *(["--grad", "--grad-terms", "nonbonded"] if grad else []), str(txt)], capture_output=True, text=True)
+def run_tool(tool, ffield, extra, txt, grad=False, backend="cpu64"):
+    r = subprocess.run([tool, "--ffield", str(ffield), *extra, "--backend", backend, *(["--grad", "--grad-terms", "nonbonded"] if grad else []), str(txt)], capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip())
     out, g = {}, {}
@@ -38,15 +38,67 @@ def run_tool(tool, ffield, extra, txt, grad=False):
     return out, g
 
 
+def main_metal(a, fx):
+    """GPU-1 (nonbonded subset): Metal-32 vs CPU-64 and vs the pinned-LAMMPS reference values, against the owner-set C3 criteria of
+    tolerances/tolerances.json (energy per atom, force max component and RMS). Also FORCE-2: two launches give identical output."""
+    c3 = json.loads((ROOT / "tolerances" / "tolerances.json").read_text())["C3"]
+    e_tol, f_max, f_rms = c3["energy_per_atom_abs_kcal_mol"], c3["force_max_component_kcal_mol_A"], c3["force_rms_kcal_mol_A"]
+    fails, n, w = [], 0, {"e_atom": 0.0, "e_rel": 0.0, "f_max": 0.0, "f_rms": 0.0}
+    gpu_ms = []
+    with tempfile.TemporaryDirectory() as td:
+        for cf in sorted((fx / "cases").glob("*.json")):
+            if a.only and a.only != cf.stem:
+                continue
+            case = json.loads(cf.read_text()); ref = json.loads((fx / "reference" / cf.name).read_text())
+            if not ref.get("valid", True):
+                continue
+            txt = Path(td) / "case.txt"; txt.write_text(case_text(case, ref))
+            extra = ["--elements", ",".join(case["elements"])] + (["--lgvdw"] if case.get("pair", {}).get("lgvdw") else [])
+            ff = Path(a.ffield_dir) / case["ffield"]["name"]
+            try:
+                g64_e, g64 = run_tool(a.tool, ff, extra, txt, grad=True)
+                gm_e, gm = run_tool(a.tool, ff, extra, txt, grad=True, backend="metal")
+                gm2_e, gm2 = run_tool(a.tool, ff, extra, txt, grad=True, backend="metal")
+            except RuntimeError as e:
+                fails.append(f"{cf.stem}: tool failed: {e}"); continue
+            n += 1
+            gpu_ms.append(gm_e.get("gpu_ms", 0.0))
+            natoms = len(ref["positions"])
+            if gm != gm2 or any(gm_e[k] != gm2_e[k] for k in TERMS):
+                fails.append(f"{cf.stem}: FORCE-2 two Metal launches differ")
+            for k, rk in TERMS.items():
+                want = ref["energy_data_fields"][rk]
+                d = abs(gm_e[k] - want)
+                w["e_atom"] = max(w["e_atom"], d / natoms); w["e_rel"] = max(w["e_rel"], d / max(1.0, abs(want)))
+                if d / natoms > e_tol:
+                    fails.append(f"{cf.stem}: {k} Metal {gm_e[k]!r} reference {want!r} |d|/N={d / natoms:.3e} > {e_tol}")
+            dif = [gm[t][c] - g64[t][c] for t in g64 for c in range(3)]
+            fm = max(abs(x) for x in dif); fr = (sum(x * x for x in dif) / len(dif)) ** 0.5
+            w["f_max"] = max(w["f_max"], fm); w["f_rms"] = max(w["f_rms"], fr)
+            if fm > f_max or fr > f_rms:
+                fails.append(f"{cf.stem}: gradient Metal vs CPU-64 max {fm:.3e} (limit {f_max}) rms {fr:.3e} (limit {f_rms})")
+    for f in fails[:60]:
+        print("FAIL", f)
+    print(f"worst: energy/atom vs LAMMPS {w['e_atom']:.2e} (C3 {e_tol}), relative {w['e_rel']:.2e}; gradient Metal-32 vs CPU-64 max {w['f_max']:.2e} (C3 {f_max}) rms {w['f_rms']:.2e} (C3 {f_rms})")
+    if gpu_ms:
+        print(f"GPU time per evaluation: median {sorted(gpu_ms)[len(gpu_ms) // 2]:.3f} ms, max {max(gpu_ms):.3f} ms")
+    print(f"GPU-1 nonbonded: {n} fixtures, {len(fails)} failures")
+    ok = not fails and n >= (1 if a.only else 50)
+    print("RESULT: PASS" if ok else "RESULT: FAIL")
+    return 0 if ok else 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tool", required=True); ap.add_argument("--ffield-dir", required=True)
     ap.add_argument("--fixtures", default=str(ROOT / "tests" / "fixtures"))
     ap.add_argument("--fd", action="store_true"); ap.add_argument("--fd-max-atoms", type=int, default=24)
-    ap.add_argument("--only")
+    ap.add_argument("--only"); ap.add_argument("--backend", default="cpu64", choices=["cpu64", "metal"])
     a = ap.parse_args()
     fx = Path(a.fixtures)
     rtol = json.loads((ROOT / "tolerances" / "tolerances.json").read_text())["C1"]["primary"]["threshold"]["energy_slot_rel_to_max1"]
+    if a.backend == "metal":
+        return main_metal(a, fx)
     fails, n, nfd, worst = [], 0, 0, {}
     with tempfile.TemporaryDirectory() as td:
         for cf in sorted((fx / "cases").glob("*.json")):

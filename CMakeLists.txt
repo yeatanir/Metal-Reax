@@ -44,6 +44,7 @@ add_library(reaxmetal_core STATIC
   src/cpu/bonded.cpp
   src/cpu/nonbonded.cpp
   src/neighbor/neighbor.cpp
+  src/neighbor/nonbonded_device.cpp
   src/io/ffield_parser.cpp
   src/io/control_parser.cpp
   src/io/pair_settings.cpp
@@ -61,6 +62,9 @@ set(RM_GEN ${CMAKE_BINARY_DIR}/generated)
 file(MAKE_DIRECTORY ${RM_GEN})
 reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m3_types.h ${RM_GEN}/reaxmetal_m3_types.inc)
 reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m3.metal ${RM_GEN}/reaxmetal_m3_kernels.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m4_types.h ${RM_GEN}/reaxmetal_m4_types.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/include/reaxmetal/terms.hpp ${RM_GEN}/reaxmetal_terms.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m4.metal ${RM_GEN}/reaxmetal_m4_kernels.inc)
 if(REAXMETAL_ENABLE_METAL)
   enable_language(OBJCXX)
   set(CMAKE_OBJCXX_STANDARD 20)
@@ -94,7 +98,7 @@ target_link_libraries(reaxmetal_neighbor_tool PRIVATE reaxmetal_core)
 reaxmetal_apply_warnings(reaxmetal_neighbor_tool)
 
 add_executable(reaxmetal_energy_tool tools/energy_tool.cpp)
-target_link_libraries(reaxmetal_energy_tool PRIVATE reaxmetal_core)
+target_link_libraries(reaxmetal_energy_tool PRIVATE reaxmetal_metal)
 reaxmetal_apply_warnings(reaxmetal_energy_tool)
 
 if(REAXMETAL_BUILD_TESTS)

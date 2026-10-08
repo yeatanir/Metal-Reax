@@ -11,7 +11,9 @@
 #include <string>
 
 #include "reaxmetal/bonded.hpp"
+#include "reaxmetal/metal_backend.hpp"
 #include "reaxmetal/nonbonded.hpp"
+#include "reaxmetal/nonbonded_device.hpp"
 
 using namespace reaxmetal;
 
@@ -21,6 +23,7 @@ int main(int argc, char** argv) {
   BondedOptions bo;
   double shell = -1.0;
   bool grad = false, lgvdw = false;
+  std::string backend = "cpu64";    // nonbonded backend: cpu64 | metal
   std::string grad_terms = "all";  // gradient output: bonded | nonbonded | all
   std::vector<double> q;
   std::vector<std::string> elements;  // LAMMPS type t (1-based) <-> element elements[t-1], mapped through the ffield (pair_coeff rule)
@@ -33,6 +36,7 @@ int main(int argc, char** argv) {
     else if (a == "--shell") shell = std::stod(val());
     else if (a == "--grad") grad = true;
     else if (a == "--grad-terms") grad_terms = val();
+    else if (a == "--backend") backend = val();
     else if (a == "--lgvdw") lgvdw = true;
     else if (a == "--noenobonds") bo.enobonds = false;
     else if (a == "--elements") { std::istringstream es(val()); std::string e; while (std::getline(es, e, ',')) elements.push_back(e); }
@@ -89,7 +93,17 @@ int main(int argc, char** argv) {
     NonbondedResult nb;
     if (q.size() == a.nlocal) {
       NonbondedOptions no; no.lgvdw = lgvdw;
-      nb = compute_nonbonded_core(ff, cut, a, f, q, no);
+      double gpu_ms = -1;
+      if (backend == "metal") {
+        mtl::Context ctx;
+        const auto din = make_nonbonded_device_input(ff, cut, a, box, q, no, [&](const DeviceListInput& l) { return ctx.far_rows(l); });
+        const auto dout = ctx.nonbonded(din);
+        gpu_ms = 1e3 * ctx.last_gpu_seconds();
+        nb = finish_nonbonded(ff, a, q, dout);
+      } else {
+        nb = compute_nonbonded_core(ff, cut, a, f, q, no);
+      }
+      if (gpu_ms >= 0) std::printf("gpu_ms %.6g\n", gpu_ms);
       std::printf("e_vdW %.17g\ne_ele %.17g\ne_pol %.17g\npairs %zu\n", nb.e[EnergyTerm::VdW], nb.e[EnergyTerm::Coulomb], nb.e[EnergyTerm::Polarization], nb.pairs);
     }
     if (grad) {

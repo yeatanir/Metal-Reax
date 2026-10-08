@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: 2026 Anirban Phukan
 #include "reaxmetal/nonbonded.hpp"
 
-#include "reaxmetal/terms.hpp"
+#include "reaxmetal/terms_host.hpp"
 
 namespace reaxmetal {
 

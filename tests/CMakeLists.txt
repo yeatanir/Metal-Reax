@@ -24,6 +24,9 @@ add_executable(test_metal_emulation test_metal_emulation.cpp)
 target_link_libraries(test_metal_emulation PRIVATE reaxmetal_metal)
 target_include_directories(test_metal_emulation PRIVATE ${PROJECT_SOURCE_DIR}/src/metal/shaders ${CMAKE_CURRENT_SOURCE_DIR}/metal_shim ${PROJECT_SOURCE_DIR}/tools)
 target_compile_definitions(test_metal_emulation PRIVATE REAXMETAL_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
+if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
+  target_compile_definitions(test_metal_emulation PRIVATE REAXMETAL_FFIELD_DIR="${REAXMETAL_FFIELD_DIR}")
+endif()
 reaxmetal_apply_warnings(test_metal_emulation)
 reaxmetal_apply_strict_fp(test_metal_emulation)
 add_test(NAME metal_emulation COMMAND test_metal_emulation)
@@ -88,6 +91,12 @@ if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
     add_test(NAME nonbonded_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_nonbonded_fixtures.py
              --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --fd)
     set_tests_properties(nonbonded_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    if(REAXMETAL_ENABLE_METAL)
+      # GPU-1 (nonbonded subset) on the real Metal device: Metal-32 vs CPU-64 and vs LAMMPS under the owner-set C3 criteria; FORCE-2 repeat launches
+      add_test(NAME nonbonded_metal COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_nonbonded_fixtures.py
+               --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal)
+      set_tests_properties(nonbonded_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    endif()
     if(RM_LIBLAMMPS)
       add_test(NAME lammps_ghosts COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/lammps/run_ghosts.py
                --lib ${RM_LIBLAMMPS} --tool $<TARGET_FILE:reaxmetal_neighbor_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR})

@@ -21,9 +21,16 @@
 #include "reaxmetal/neighbor.hpp"
 #include "test_util.hpp"
 
+#include "reaxmetal/forcefield.hpp"
+#include "reaxmetal/nonbonded.hpp"
+#include "reaxmetal/nonbonded_device.hpp"
+#include "reaxmetal/terms_host.hpp"
+
 #include "metal_shim.hpp"
 #include "reaxmetal_m3_types.h"
+#include "reaxmetal_m4_types.h"
 #include "reaxmetal_m3.metal"
+#include "reaxmetal_m4.metal"
 #include "metal_shim_end.hpp"
 
 using namespace reaxmetal;
@@ -94,15 +101,20 @@ static void test_shader_source_lints() {
   RM_CHECK(src.find("#include <metal_stdlib>") != std::string::npos);
   RM_CHECK(src.find("struct RmFarRowsParams") != std::string::npos);        // types header was prepended
   RM_CHECK(src.find("struct RmFarRowsParams") < src.find("kernel void rm_far_rows"));
-  for (const char* k : {"rm_saxpy", "rm_math_probe", "rm_far_rows", "rm_partial_sums", "rm_sum_partials"}) {
+  for (const char* k : {"rm_saxpy", "rm_math_probe", "rm_far_rows", "rm_partial_sums", "rm_sum_partials", "rm_nb_pairs", "rm_nb_gather"}) {
     RM_CHECK_MSG(src.find(std::string("kernel void ") + k) != std::string::npos, k);
     const auto names = mtl::kernel_names();
     RM_CHECK_MSG(std::find(names.begin(), names.end(), std::string(k)) != names.end(), k);
   }
-  // the assembled source is exactly types header + kernel file
-  const std::string t = rmtest::read_file(std::string(REAXMETAL_SOURCE_DIR) + "/src/metal/shaders/reaxmetal_m3_types.h");
-  const std::string k = rmtest::read_file(std::string(REAXMETAL_SOURCE_DIR) + "/src/metal/shaders/reaxmetal_m3.metal");
-  RM_CHECK(full == t + "\n" + k);
+  // the assembled source is exactly: M3 types, M4 types, M3 kernels, terms.hpp, M4 kernels
+  const std::string dir = std::string(REAXMETAL_SOURCE_DIR);
+  const std::string t3 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m3_types.h");
+  const std::string t4 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m4_types.h");
+  const std::string k3 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m3.metal");
+  const std::string tm = rmtest::read_file(dir + "/include/reaxmetal/terms.hpp");
+  const std::string k4 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m4.metal");
+  RM_CHECK(full == t3 + "\n" + t4 + "\n" + k3 + "\n" + tm + "\n" + k4);
+  RM_CHECK_MSG(src.find("RM_POW") != std::string::npos && src.find("#define RM_POW pow") != std::string::npos, "math macros must reach MSL");
   // struct layout the host relies on
   static_assert(sizeof(rm_u32) == 4 && sizeof(rm_f32) == 4, "scalar widths");
   static_assert(sizeof(RmFarRowsParams) == 32 && sizeof(RmReduceParams) == 8 && sizeof(RmSaxpyParams) == 8, "parameter block layout");
@@ -254,6 +266,75 @@ static void test_reduction_kernels() {
     }
 }
 
+// Nonbonded kernels emulated vs the CPU-64 reference engine (needs the bundled force field; skipped without REAXMETAL_FFIELD_DIR)
+static void emulate_nonbonded(const NonbondedDeviceInput& in, NonbondedDeviceOutput& out) {
+  const std::uint32_t nall = in.list.nall, nlocal = in.list.nlocal, cap = in.rows.cap;
+  std::vector<float> pf(static_cast<std::size_t>(nlocal) * cap * 3, 0.0f);
+  out.grad.assign(3 * static_cast<std::size_t>(nall), 0.0f);
+  out.row_e.assign(2 * static_cast<std::size_t>(nlocal), 0.0f);
+  RmNbParams p{};
+  p.nlocal = nlocal; p.cap = cap; p.ntypes = in.ntypes; p.vdw_type = in.vdw_type; p.lg = in.lg; p.p_vdW1 = in.p_vdW1; p.swa = in.swa; p.swb = in.swb;
+  for (std::uint32_t i = 0; i < nlocal; ++i)
+    rm_nb_pairs(in.list.x.data(), in.type.data(), in.tag.data(), in.q.data(), in.pair_table.data(), in.rows.nbr.data(), in.rows.count.data(), pf.data(), out.row_e.data(), p, i);
+  RmNbGatherParams g{nall, nlocal, cap};
+  for (std::uint32_t k = 0; k < nall; ++k)
+    rm_nb_gather(pf.data(), in.rows.count.data(), in.column.start.data(), in.column.items.data(), out.grad.data(), g, k);
+}
+
+static void test_nonbonded_vs_cpu64() {
+#ifdef REAXMETAL_FFIELD_DIR
+  const ForceField ff = read_force_field_file(std::string(REAXMETAL_FFIELD_DIR) + "/ffield.reax.cho");
+  const int tC = ff.match_element("C").at(0), tH = ff.match_element("H").at(0), tO = ff.match_element("O").at(0);
+  Rng r(2468);
+  // three cases: large periodic cell, non-periodic cluster, and a periodic cell smaller than the cutoff (self-image pairs, tie-break rule)
+  for (const int mode : {0, 1, 2}) {
+    const bool periodic = mode != 1;
+    const Box box = mode == 0 ? Box::orthogonal({0, 0, 0}, {11.0, 11.5, 12.0}, {true, true, true})
+                              : mode == 1 ? Box::orthogonal({0, 0, 0}, {11.0, 11.5, 12.0}, {false, false, false}) : Box::orthogonal({0, 0, 0}, {6.3, 6.1, 6.7}, {true, true, true});
+    const std::size_t n = mode == 2 ? 24 : 70;
+    std::vector<double> x;
+    std::vector<int> type;
+    std::vector<std::int64_t> tag;
+    std::vector<double> q;
+    for (std::size_t i = 0; i < n; ++i) {
+      const Vec3 c = box.to_cartesian({r.u(), r.u(), r.u()});
+      x.insert(x.end(), c.begin(), c.end());
+      type.push_back(i % 3 == 0 ? tC : (i % 3 == 1 ? tH : tO));
+      tag.push_back(static_cast<std::int64_t>(i) + 1);
+      q.push_back(0.6 * r.u() - 0.3);
+    }
+    NeighborCutoffs cut;
+    cut.nonb = ff.file_control().nonb_cut;
+    ExpandOptions eo; eo.shell = cut.required_shell();
+    const AtomSet a = expand_images(box, x, type, tag, eo);
+    const FarList f = build_far_list(a, cut);
+    const NonbondedResult ref = compute_nonbonded_core(ff, cut, a, f, q);
+    NonbondedDeviceOutput dev;
+    const NonbondedDeviceInput in = make_nonbonded_device_input(ff, cut, a, box, q, {}, [&](const DeviceListInput& l) {
+      return build_far_rows_with_growth([&](std::uint32_t cap) { return emulate_far_rows(l, cap); }, 16, l.nall);
+    });
+    emulate_nonbonded(in, dev);
+    const NonbondedResult got = finish_nonbonded(ff, a, q, dev);
+    const double scale = 1.0 + std::fabs(ref.e[EnergyTerm::VdW]);
+    RM_CHECK_MSG(std::fabs(got.e[EnergyTerm::VdW] - ref.e[EnergyTerm::VdW]) < 1e-5 * scale, "emulated e_vdW");
+    RM_CHECK_MSG(std::fabs(got.e[EnergyTerm::Coulomb] - ref.e[EnergyTerm::Coulomb]) < 1e-5 * (1.0 + std::fabs(ref.e[EnergyTerm::Coulomb])), "emulated e_ele");
+    RM_CHECK(got.e[EnergyTerm::Polarization] == ref.e[EnergyTerm::Polarization]);
+    double worst = 0, fmax = 0;
+    for (std::size_t k = 0; k < ref.grad.size(); ++k) { worst = std::fmax(worst, std::fabs(got.grad[k] - ref.grad[k])); fmax = std::fmax(fmax, std::fabs(ref.grad[k])); }
+    RM_CHECK_MSG(worst < 1e-4 * (1.0 + fmax), "emulated gradient vs CPU-64");
+    // deterministic: second run is bitwise identical
+    NonbondedDeviceOutput dev2;
+    emulate_nonbonded(in, dev2);
+    RM_CHECK(dev2.grad == dev.grad && dev2.row_e == dev.row_e);
+    (void)periodic;
+    std::printf("  nonbonded emulation (%s): nall %zu, pairs %zu, |dE_vdW| %.2e, max |dgrad| %.2e (max |grad| %.1f)\n", mode == 0 ? "periodic" : (mode == 1 ? "cluster" : "small cell"), a.nall(), ref.pairs,
+                std::fabs(got.e[EnergyTerm::VdW] - ref.e[EnergyTerm::VdW]), worst, fmax);
+  }
+#else
+  std::puts("  nonbonded emulation skipped (REAXMETAL_FFIELD_DIR not set)");
+#endif
+}
+
 int main() {
   test_shader_source_lints();
   test_saxpy_and_probe();
@@ -261,6 +342,7 @@ int main() {
   test_shared_systems();
   test_growth();
   test_reduction_kernels();
+  test_nonbonded_vs_cpu64();
   if (rmtest::failures() != 0) {
     std::fprintf(stderr, "%d check(s) failed\n", rmtest::failures());
     return 1;
