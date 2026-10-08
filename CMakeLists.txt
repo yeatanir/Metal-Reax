@@ -41,6 +41,7 @@ add_library(reaxmetal_core STATIC
   src/core/pins.cpp
   src/core/sha256.cpp
   src/core/system.cpp
+  src/cpu/bonded.cpp
   src/neighbor/neighbor.cpp
   src/io/ffield_parser.cpp
   src/io/control_parser.cpp
@@ -90,6 +91,10 @@ reaxmetal_apply_strict_fp(reaxmetal_metal_check)
 add_executable(reaxmetal_neighbor_tool tools/neighbor_tool.cpp)
 target_link_libraries(reaxmetal_neighbor_tool PRIVATE reaxmetal_core)
 reaxmetal_apply_warnings(reaxmetal_neighbor_tool)
+
+add_executable(reaxmetal_energy_tool tools/energy_tool.cpp)
+target_link_libraries(reaxmetal_energy_tool PRIVATE reaxmetal_core)
+reaxmetal_apply_warnings(reaxmetal_energy_tool)
 
 if(REAXMETAL_BUILD_TESTS)
   enable_testing()

@@ -80,6 +80,10 @@ if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
     add_test(NAME neighbor_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_neighbor_fixtures.py
              --tool $<TARGET_FILE:reaxmetal_neighbor_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR})
     set_tests_properties(neighbor_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # BOND-1 (M4 phase A): CPU-64 bond/lone-pair/over/under energies vs the pinned-LAMMPS values of M1 + finite-difference check of their gradient
+    add_test(NAME bonded_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_bonded_fixtures.py
+             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --fd)
+    set_tests_properties(bonded_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     if(RM_LIBLAMMPS)
       add_test(NAME lammps_ghosts COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/lammps/run_ghosts.py
                --lib ${RM_LIBLAMMPS} --tool $<TARGET_FILE:reaxmetal_neighbor_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR})
