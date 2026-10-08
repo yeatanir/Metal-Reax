@@ -19,8 +19,9 @@ from test_neighbor_fixtures import case_text  # noqa: E402
 # Reference defect reproduced by default (ADR-021, ENGINE_SPEC Q-34): analytic force != gradient of the reported energy for heavy atoms with pi
 # bonds. M1 measured 16.5 kcal/mol/A on this fixture against FD of LAMMPS itself. The test requires the deviation to be PRESENT (a silent "fix" would
 # break parity) and of that size.
-KNOWN_FD_QUIRK = {"mattsson_so2": (10.0, 25.0)}
-TERMS = {"e_bond": "e_bond", "e_lp": "e_lp", "e_ov": "e_ov", "e_un": "e_un"}
+# Q-33 (M1): exactly collinear water dimers sit on the sin(theta)/acos discontinuities, the reference FD itself differs from its analytic force by 9e-3 / 1.3e-2.
+KNOWN_FD_QUIRK = {"mattsson_so2": (10.0, 25.0), "cho_water_dimer": (4e-3, 3e-2), "lg_water_dimer_lgvdw": (4e-3, 3e-2)}
+TERMS = {k: k for k in ("e_bond", "e_lp", "e_ov", "e_un", "e_ang", "e_pen", "e_coa", "e_tor", "e_con", "e_hb")}
 
 
 def run_tool(tool, ffield, extra, txt, grad=False):
@@ -92,7 +93,7 @@ def main():
                     lo, hi = KNOWN_FD_QUIRK[cf.stem]
                     if not lo <= maxd <= hi:
                         fails.append(f"{cf.stem}: expected the reproduced reference defect (max |analytic-FD| in [{lo},{hi}]), got {maxd:.3e}")
-                    print(f"note: {cf.stem}: max |analytic-FD| = {maxd:.3f} (reproduced reference defect, Q-34)")
+                    print(f"note: {cf.stem}: max |analytic-FD| = {maxd:.3f} (reproduced reference behaviour: Q-34 / Q-33)")
                 else:
                     worst["fd_abs"] = max(worst.get("fd_abs", 0.0), maxd)
     for f in fails[:60]:

@@ -91,6 +91,10 @@ if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
     add_test(NAME nonbonded_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_nonbonded_fixtures.py
              --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --fd)
     set_tests_properties(nonbonded_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # FULL-1: all 13 terms, total energy and total forces (frozen charges) vs the pinned-LAMMPS values, frozen C1 thresholds
+    add_test(NAME full_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_full_fixtures.py
+             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR})
+    set_tests_properties(full_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     if(REAXMETAL_ENABLE_METAL)
       # GPU-1 (nonbonded subset) on the real Metal device: Metal-32 vs CPU-64 and vs LAMMPS under the owner-set C3 criteria; FORCE-2 repeat launches
       add_test(NAME nonbonded_metal COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_nonbonded_fixtures.py

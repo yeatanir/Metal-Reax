@@ -90,6 +90,8 @@ int main(int argc, char** argv) {
     const BondedResult r = compute_bonded_core(ff, ctl, a, f, bo);
     std::printf("e_bond %.17g\ne_lp %.17g\ne_ov %.17g\ne_un %.17g\nbonds %zu\n", r.e[EnergyTerm::Bond], r.e[EnergyTerm::LonePair],
                 r.e[EnergyTerm::Over], r.e[EnergyTerm::Under], r.stats.bonds);
+    std::printf("e_ang %.17g\ne_pen %.17g\ne_coa %.17g\ne_tor %.17g\ne_con %.17g\ne_hb %.17g\n", r.e[EnergyTerm::Valence], r.e[EnergyTerm::Penalty],
+                r.e[EnergyTerm::Coalition], r.e[EnergyTerm::Torsion], r.e[EnergyTerm::Conjugation], r.e[EnergyTerm::HBond]);
     NonbondedResult nb;
     if (q.size() == a.nlocal) {
       NonbondedOptions no; no.lgvdw = lgvdw;
