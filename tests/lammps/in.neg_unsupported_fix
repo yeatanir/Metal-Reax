@@ -1,0 +1,8 @@
+variable NREP index 1
+include in.common_setup
+plugin load ${PLUGIN_SO}
+pair_style reaxff/metal NULL neigh none
+pair_coeff * * ffield.reax.mattsson H C O
+fix qeq all qeq/reaxff 1 0.0 8.0 1.0e-10 reaxff
+fix rb all reaxff/bonds 1 bonds.reaxff
+run 0

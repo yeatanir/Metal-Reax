@@ -25,6 +25,7 @@ int main() {
 
     switch (f.status) {
       case Status::Planned:  RM_EXPECT_THROW(require_supported(f.id), NotImplementedError); break;
+      case Status::Deferred:
       case Status::Rejected:
         RM_EXPECT_THROW(require_supported(f.id), UnsupportedFeatureError);
         if (f.lammps_construct == "-") {
@@ -47,11 +48,25 @@ int main() {
   }
 
   // The headline rejections from the mission statement must be present and must be errors, not warnings.
-  for (const char* id : {"qeq.acks2", "qeq.qtpie", "qeq.shielded", "qeq.relative", "opt.tabulate", "qeq.efield"}) {
+  for (const char* id : {"qeq.acks2", "qeq.qtpie", "qeq.relative", "opt.tabulate", "qeq.efield"}) {
     const Feature* f = find_feature(id);
     RM_CHECK_MSG(f != nullptr, std::string("missing ") + id);
-    if (f) RM_CHECK(f->status == Status::Rejected);
+    if (f) RM_CHECK(f->status == Status::Deferred || f->status == Status::Rejected);
+    if (f) RM_EXPECT_THROW(require_supported(id), UnsupportedFeatureError);
   }
+  // Owner decision (M0 approval #8): standard EEM/QEq and LAMMPS-compatible shielded QEq must NOT be rejected.
+  for (const char* id : {"qeq.reaxff", "qeq.shielded", "eem.external_cpu_fix", "eem.strict_convergence", "eem.compat_warn_continue"}) {
+    const Feature* f = find_feature(id);
+    RM_CHECK_MSG(f != nullptr, std::string("missing ") + id);
+    if (f) RM_CHECK(f->status == Status::Planned || f->status == Status::Implemented);
+  }
+  // Barostat is gated on virial support, not forbidden: it must be Planned and tied to the virial feature's milestone.
+  RM_CHECK(find_feature("md.barostat") && find_feature("md.barostat")->status == Status::Planned);
+  RM_CHECK(find_feature("lammps.virial_fdotr") && find_feature("lammps.virial_fdotr")->status == Status::Planned);
+  RM_CHECK(find_feature("md.barostat")->milestone == find_feature("lammps.virial_fdotr")->milestone);
+  // Multi-rank must be an explicit refusal, single-rank the supported path.
+  RM_CHECK(find_feature("lammps.multi_rank") && find_feature("lammps.multi_rank")->status == Status::Deferred);
+  RM_CHECK(find_feature("lammps.single_rank_only") != nullptr);
   // Every one of the 13 energy terms must be represented by a term.* feature (rule 5).
   for (const char* id : {"term.bond", "term.lone_pair", "term.over_under", "term.valence", "term.penalty",
                          "term.coalition", "term.torsion", "term.conjugation", "term.hbond", "term.coulomb",

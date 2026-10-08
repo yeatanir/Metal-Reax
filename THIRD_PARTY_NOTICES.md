@@ -1,6 +1,6 @@
 # Third-party notices
 
-No third-party **source code** is included in this repository at M0. What is included or referenced:
+No third-party **source code** is included in this repository except one structural adaptation (a plugin class skeleton, listed under "Adapted files" below). What is included or referenced:
 
 | Item | Where | License / notice |
 |---|---|---|
@@ -16,4 +16,10 @@ No third-party **source code** is included in this repository at M0. What is inc
 4. Keep the SPDX identifier consistent with the upstream terms (see `docs/ARCHITECTURE_DECISIONS.md` ADR-010).
 
 ## Adapted files
-*(none yet)*
+| File | Adapted from (pinned commit 8de817dd…) | Upstream notice retained |
+|---|---|---|
+| `plugin/probe/pair_reaxff_metal_probe.h` | `examples/plugins/pair_morse2.h` (class skeleton only; GPL-2.0, Sandia Corporation notice) | yes (header comment) |
+
+Other plugin files (`probe_plugin.cpp`, `pair_reaxff_metal_probe.cpp`, `plugin/CMakeLists.txt`) follow the documented plugin API
+(`doc/src/Developer_plugins.rst`) and the structure of `examples/plugins/{morse2plugin.cpp,CMakeLists.txt}`; they link against and
+derive from the GPL-2.0 LAMMPS `Pair` interface and are therefore GPL-2.0 (see `third_party/lammps/LICENSE_AUDIT.tsv`).

@@ -1,0 +1,15 @@
+# minimize drives the same pair/fix contract (min_pre_force of fix qeq/reaxff)
+variable NREP index 2
+include in.common_setup
+plugin load ${PLUGIN_SO}
+pair_style reaxff/metal NULL neigh ${NEIGH} verbose yes ghostforce yes
+pair_coeff * * ffield.reax.mattsson H C O
+fix qeq all qeq/reaxff 1 0.0 8.0 1.0e-10 reaxff
+compute reax all pair reaxff/metal
+variable e14 equal c_reax[14]
+variable e1 equal c_reax[1]
+thermo_style custom step pe c_reax[1] c_reax[14]
+thermo 1
+min_style cg
+minimize 0.0 0.0 3 10
+print "RESULT e1=${e1} e14=${e14}"

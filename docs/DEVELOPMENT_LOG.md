@@ -72,3 +72,52 @@ Environment: Linux 6.18 x86-64 VM (4 cores), CMake 3.28.3, g++ 13.3.0, clang++ 1
 * No physics, no parser, no neighbor list, no QEq, no Metal code. No fixture exists. No Metal-capable machine was available.
 * Claims marked "by reading" in ENGINE_SPEC (notably Q-09, Q-12) have not been confirmed by executing LAMMPS.
 * The Kokkos path was not audited line by line.
+
+---
+## 2026-10-08 — M0.5: LAMMPS integration architecture (after the owner's M0 review)
+
+**Scope executed:** M0.5 only; M1 not started. M0 work preserved (nothing discarded).
+
+### Owner decisions received (summary)
+1 license GPL-2.0-only approved, complete the per-file audit; 2 element/mass behaviour → per-type compatibility flags with regression tests; 3 target = Apple M5 Max (CLT only, no Xcode/`metal` compiler); 4 instrumented LAMMPS approved (M1) incl.
+experimental Q-09/Q-12; 5 FP32 policy modified (twin not the only criterion; independent tolerances before Metal; stable formulations, derivative-tested); 6 strict charge convergence by default; 7 pin approved; 8 scope modified
+(standard EEM/QEq and LAMMPS-compatible shielded QEq **not** rejected; defer ACKS2/QTPIE/efield/alt models/tabulation; NPT after virial). **Architectural change:** LAMMPS integration is primary (`reaxff/metal` plugin; no standalone MD engine).
+
+### What was done
+* Audited the plugin mechanism and the `Pair`/`Force`/`Neighbor`/`Comm`/`Verlet` contracts in the pinned tree, and the charge fixes (`qeq/reaxff`, `qeq/shielded`, plus access/extract coupling of `qtpie`, `acks2`, analysis fixes).
+* Built the **stock pinned LAMMPS** (serial, shared, REAXFF+QEQ+PLUGIN) with the new reusable `tools/build_lammps_reference.sh` (refuses a non-pristine tree; ≈3 min on 4 cores).
+* Wrote and ran a **`Pair`-derived probe plugin `reaxff/metal`** (no physics; `plugin/probe/`) and a stdlib-only harness (`tests/lammps/`), then the same through CTest (`lammps_probe`, opt-in).
+* License audit (`tools/audit_licenses.py` → `LICENSE_AUDIT.tsv`, 130 files), `LICENSE`, `LICENSES/`, `REUSE.toml`, SPDX everywhere, `license_headers` test.
+* `compat_flags.hpp/.cpp` + `test_compat_flags.cpp` (exact upstream predicates, boundaries/exceptions); capability table moved to the owner's scope (`Deferred` status; `lammps.*`, `eem.*` rows).
+* `tools/eem_dense_check.py` (independent dense explicit-image EEM), `tools/stab_f1_check.py` (stable overcoordination factor, values only).
+* Documents: new `LAMMPS_INTEGRATION.md`; updated ENGINE_SPEC (ghost-native §3, EEM §7.1–7.4, Q-26…Q-31, D-1/D-5), ARCHITECTURE_DECISIONS (approvals, ADR-004 amendment, ADR-013/014/015, re-planned milestones), NUMERICAL_POLICY (§4.4, §5), FEATURE_MATRIX, SOURCE_MAP (§7), VALIDATION, README.
+
+### Findings that changed the plan
+1. **A `Pair`-derived style works with the stock charge fixes** (bit-identical charges vs stock `reaxff`; `qeq/shielded` agrees to 3.3e-15) — no need to derive from `PairReaxFF`.
+2. **LAMMPS gives the host everything:** ghosts are owner + lattice shift on every step; ghost forces fold back exactly; the topology (order, `nghost`) changes only when `neighbor->ago == 0`, including under `atom_modify sort`; a pair neighbor request is optional → device-built lists are legitimate. This made the **ghost-native** engine the right pivot (ADR-013); the explicit-image-shift mechanism of ADR-004 was dropped (its "never minimum-image" rule stands: minimum-image is wrong by 0.06–7.8 e here).
+3. The documented `fix qeq/reaxff` small-cell restriction is **not reproduced** in 4 cubic cases (dense explicit-image EEM agrees to ≤2.7e-14). Open for triclinic/degenerate cases.
+4. **Strict EEM cannot be obtained from the stock fix** (no status, protected state, no `extract`) → derived-fix plan (ADR-015).
+5. The FP32 reference form of the overcoordination factor is **non-finite for 30 % of the physical Δ′ domain**; the stable form is finite everywhere and equal in FP64 to 4.4e-16 (values only).
+6. Plugin interface headers are plain-LAMMPS-GPL (not LGPL) in this tree; 35 audited files carry no per-file notice (ffields, YAML, example build files).
+7. The owner's Mac has **no Xcode / `metal` compiler** → runtime shader compilation is the baseline (unverified).
+8. AMS EEM details could not be retrieved (`scm.com` blocked); only search summaries were seen → no equivalence claimed.
+
+### Mistakes made and corrected during M0.5
+* I first wrote that the plugin loader enforces version equality; the source shows it only logs a mismatch (`plugin.cpp:179-182`). Corrected; ABI/symbol compatibility is the real constraint.
+* Quoted "≈7 min" for the stock build; file timestamps show ≈3 min. Corrected.
+* My one-line `qtpie`/`qeq/rel` probe used the wrong argument count, so those fixes were **not** tested; their rows are [U], not [V].
+* A mutation "survivor" (`mass pair: only one order`) was a **no-op sed** (the `||` sat at a line break); re-run properly it was caught (12/12).
+* Regenerating `SOURCE_HASHES.sha256` truncated the file before `cat` read it (72 → 70 entries). Caught by the count; rebuilt from git as the union (142 entries), all 72 originals preserved and all hashes verified against the full tree.
+* The M0 documents called ghost handling a deliberate *deviation* (D-1) — superseded: it is now a replication (R).
+* A documentation-edit script aborted on a text-pattern mismatch (ADR-004 wording) before writing anything — no partial edits; the pattern was corrected and the script re-run.
+
+### Verification (actual runs, Linux x86-64, g++ 13.3 / clang++ 18.1)
+* Default build: **6/6 CTest pass** on both compilers, 0 warnings (`pins`, `capabilities`, `energy_terms`, `docs_sync`, `license_headers`, `compat_flags`).
+* Plugin-enabled build: **7/7** including `lammps_probe` (≈10 s). Probe summary: failures=0.
+* Mutation checks: compat flags 12/12 caught; license/provenance 3/3; `lammps_probe` detects a plugin that skips ghost forces (fold-back FAIL → CTest red).
+* `tools/fetch_lammps.sh`: sparse and `--full`, 142/142 hashes. `tools/build_lammps_reference.sh`: OK on a pristine pinned tree.
+* **Not run:** anything on macOS/Metal; any multi-rank run (serial LAMMPS only — the `nprocs` check is unexecuted); `qtpie`, `qeq/rel`; real adapter physics; derivative tests of stable forms; AMS comparison.
+
+### Awaiting owner confirmation (proposals, not decisions)
+ADR-005 (shared term functions), ADR-015 (derived strict fix), the numeric acceptance criteria of NUMERICAL_POLICY §5.2 (frozen at M1 start), copyright-holder wording in `REUSE.toml`, whether ffields may be vendored, whether AMS reference charges can be provided.
+

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 cmake_minimum_required(VERSION 3.24)
 project(ReaxMetal VERSION 0.0.1 LANGUAGES CXX)
 
@@ -10,6 +11,9 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE RelWithDebInfo CACHE STRING "" FORCE)
 endif()
 
+option(REAXMETAL_BUILD_LAMMPS_PLUGIN "Build the LAMMPS plugin(s); needs REAXMETAL_LAMMPS_SOURCE_DIR (pinned LAMMPS src/)" OFF)
+set(REAXMETAL_LAMMPS_SOURCE_DIR "" CACHE PATH "src/ directory of the pinned LAMMPS tree (tools/fetch_lammps.sh --full)")
+set(REAXMETAL_LAMMPS_PREFIX "" CACHE PATH "install prefix of the stock pinned LAMMPS build (tools/build_lammps_reference.sh); enables the lammps_probe CTest")
 option(REAXMETAL_BUILD_TESTS "Build the CTest suite" ON)
 # Metal is only available on Apple platforms. The Metal backend does not exist yet (M3);
 # the option is reserved so that nothing can silently configure a half-built GPU backend.
@@ -25,6 +29,7 @@ include(cmake/ReaxMetalFlags.cmake)
 
 add_library(reaxmetal_core STATIC
   src/core/capabilities.cpp
+  src/core/compat_flags.cpp
   src/core/energy_terms.cpp
   src/core/pins.cpp)
 target_include_directories(reaxmetal_core PUBLIC include)
@@ -36,4 +41,8 @@ reaxmetal_apply_strict_fp(reaxmetal_core)
 if(REAXMETAL_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+if(REAXMETAL_BUILD_LAMMPS_PLUGIN)
+  add_subdirectory(plugin)
 endif()

@@ -13,7 +13,7 @@ using namespace reaxmetal;
 int main() {
   const std::string root = REAXMETAL_SOURCE_DIR;
   for (const char* doc : {"ENGINE_SPEC", "SOURCE_MAP", "FEATURE_MATRIX", "NUMERICAL_POLICY", "VALIDATION",
-                          "DEVELOPMENT_LOG", "ARCHITECTURE_DECISIONS"}) {
+                          "DEVELOPMENT_LOG", "ARCHITECTURE_DECISIONS", "LAMMPS_INTEGRATION"}) {
     const std::string text = rmtest::read_file(root + "/docs/" + doc + ".md");
     RM_CHECK_MSG(text.size() > 500, std::string("docs/") + doc + ".md missing or suspiciously short");
   }

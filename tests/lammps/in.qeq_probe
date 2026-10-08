@@ -1,0 +1,9 @@
+variable NREP index 2
+include in.common_setup
+plugin load ${PLUGIN_SO}
+pair_style reaxff/metal NULL neigh ${NEIGH}
+pair_coeff * * ffield.reax.mattsson H C O
+fix qeq all ${QEQFIX} 1 0.0 8.0 1.0e-20 reaxff
+dump d all custom 1 ${OUT} id type q x y z
+dump_modify d sort id format float %.17g
+run 0

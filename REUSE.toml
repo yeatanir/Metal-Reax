@@ -1,0 +1,16 @@
+# REUSE 3.x annotations for files that cannot carry an in-file SPDX header (documentation, LAMMPS input decks, data).
+version = 1
+SPDX-PackageName = "ReaxMetal"
+
+[[annotations]]
+path = ["docs/**", "README.md", "THIRD_PARTY_NOTICES.md", ".gitignore", "tests/lammps/in.*", "fixtures/**", "src/**/README.md", "third_party/lammps/PIN.txt"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 ReaxMetal contributors"
+SPDX-License-Identifier = "GPL-2.0-only"
+
+# Verbatim upstream material kept for provenance; NOT ReaxMetal-authored.
+[[annotations]]
+path = ["third_party/lammps/COPYING", "third_party/lammps/SOURCE_HASHES.sha256", "third_party/lammps/LICENSE_AUDIT.tsv"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Sandia Corporation and LAMMPS contributors (COPYING); metadata files: 2026 ReaxMetal contributors"
+SPDX-License-Identifier = "GPL-2.0-only"

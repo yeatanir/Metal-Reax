@@ -5,7 +5,7 @@ Format: **Status** is *Decided* (made in M0 on the evidence cited; revisit only 
 Nothing below has been implemented beyond the build skeleton.
 
 ---
-## ADR-001 — Reference oracle and pin  · *Decided (owner may override)*
+## ADR-001 — Reference oracle and pin  · *Decided — owner approved `stable_30Sep2026` @ `8de817dd…` (M0 review)*
 **Decision.** Primary oracle = `pair_style reaxff` (CPU, `src/REAXFF`) + `fix qeq/reaxff` of LAMMPS tag
 `stable_30Sep2026`, commit `8de817dd79bfe4525d5d39246a212d833e6dee07`. Secondary cross-check = `reaxff/kk`
 (Kokkos, double). The Kokkos pair style is **not** the oracle: it restructures math (`cbrt`, reduced
@@ -21,7 +21,7 @@ Deviations are limited to places where the reference is undefined or silently wr
 array overrun, conflicting vdW types) or where it is an artefact of domain decomposition (ghost bookkeeping).
 No deviation may change a result that the reference computes correctly.
 
-## ADR-003 — Element-agnostic parameter tables; LAMMPS' element knowledge becomes data  · *Proposed (needs owner OK)*
+## ADR-003 — Element-agnostic parameter tables; LAMMPS' element knowledge becomes data  · *Decided — owner approved (M0 review #2)*
 **Context.** Rule 1 forbids hard-coding elements, yet the reference contains element logic in kernels
 (Q-06): `strcmp(name,"C")` for the C2 correction, exact masses 12.0000/15.9990 for the C–O triple-bond
 stabilisation, and `mass>21` / `mass<21` for the first-row/second-row split.
@@ -30,11 +30,15 @@ evaluates the **same predicates as the reference** and stores the outcome as per
 (`compat.c2_correction`, `compat.triple_bond_stabilisation`, `compat.light_element_split`). Kernels read flags,
 never names or masses. Flags are logged at load, and overridable explicitly. Consequence: bit-for-bit LAMMPS
 behaviour is kept while no kernel mentions any element. **Alternative:** drop these corrections (violates rule 3;
-changes energies of C/O systems — rejected). **Open:** owner to confirm this reading of rule 1.
+changes energies of C/O systems — rejected). **Owner decision:** approved. Flags must preserve the exact source behaviour (including exact-equality mass tests and strict `<`/`>` thresholds) and are *compatibility flags, not new chemical rules*;
+kernels stay generic. **Done in M0.5:** `compat_flags.hpp` with one regression-test block per predicate (boundaries 20.999…/21.0/21.000…1, `"C"` vs `CL`/`CA`/lower case/>3 chars, exact `12.0000`/`15.9990` incl. `nextafter` neighbours and either order, `(int)gp[37]` truncation incl. negatives/NaN/out-of-range/short `gp`, strict `gp[5] > 0.001`) — 12 deliberate mutations all caught.
 Parameter storage: `n_types`-indexed dense tables for 1/2-body; index-table + packed parameter sets for 3/4-body/H-bond
 (multiple 3-body sets per triple are *summed*, Q-09); size limit on `n_types` (dense `n⁴` index) measured in M2.
 
-## ADR-004 — Periodicity: explicit images, never minimum-image  · *Decided*
+## ADR-004 — Periodicity: never minimum-image  · *Decided; the explicit-image mechanism is amended by ADR-013 (ghost-native)*
+**Amendment (M0.5):** with LAMMPS as the host, periodic images arrive as ghost atoms (ADR-013); the *engine* does no shift arithmetic. What stays: minimum-image is forbidden
+(measured: wrong by 0.06–7.8 e in QEq charges for the LAMMPS regression cells, LAMMPS_INTEGRATION §7.3). The text below describes the standalone/image-expander variant.
+
 **Evidence.** The LAMMPS reaxff unit tests use a 7.54 Å cell against a 10 Å taper cutoff; GMD-Reax used minimum
 image (invalid there). **Decision.** Neighbor lists carry integer lattice shifts; a pair is (i, j, shift);
 cell matrix supports triclinic; non-periodic dimensions are first-class. Each physical interaction (including
@@ -83,18 +87,19 @@ against pinned LAMMPS and by per-term FD tests, both independent of the shared c
   (`s` and `t` together, as in Kokkos), device-side dot products with fixed reduction trees; convergence flag read
   back each *k* iterations. FP32 strategy decided at the M5 gate (NUMERICAL_POLICY 4.3).
 
-## ADR-007 — Precision and determinism  · *Decided in principle; numbers pending*
-See NUMERICAL_POLICY. Summary: CPU-64 strict-FP reference; CPU-32 twin; Metal-32; FP32 range audit per `exp/pow`
+## ADR-007 — Precision and determinism  · *Decided; owner-modified in M0 review #5; numbers proposed in NUMERICAL_POLICY §5 for confirmation before M1 freezes them*
+See NUMERICAL_POLICY. **Owner modification:** the CPU-FP32 twin characterises floating-point behaviour but is **not** the sole GPU acceptance criterion; independent energy, force, charge, derivative and MD-stability tolerances are specified *before* any Metal result is evaluated; separate CPU-64↔LAMMPS, CPU-32↔CPU-64 and Metal-32↔CPU-64 comparisons; mathematically unstable expressions (the identified `exp` overflow) are replaced by algebraically equivalent stable forms and derivative-tested. Summary: CPU-64 strict-FP reference; CPU-32 twin; Metal-32; FP32 range audit per `exp/pow`
 (M0 found real overflow cases); no FP atomics in the validated path; tolerances frozen before comparison; Metal
 tolerance derived from the CPU-32 envelope, never from GPU output.
 
-## ADR-008 — Build system and Metal toolchain  · *Decided (Metal parts untested in M0)*
+## ADR-008 — Build system and Metal toolchain  · *Decided; Metal parts untested — updated with the owner's machine facts*
 CMake ≥ 3.24, C++20, no Objective-C++ in the core. The Metal backend (M3) exists only on Apple platforms
 (`REAXMETAL_ENABLE_METAL` currently hard-fails by design). Host API via **metal-cpp** (Apple-distributed header
 package; pinned by version + sha256 when M3 starts — `developer.apple.com/metal/cpp` was reachable from the M0
 sandbox, version/licence not yet recorded). Shaders: compiled offline (`xcrun metal` → `.metallib`) as a CMake step, with an
-optional runtime-compile path for debugging. **The M0 sandbox is Linux: the Metal backend cannot be built or run
-here**, so every Metal result must come from an Apple-silicon machine (open question).
+optional runtime-compile path for debugging. **The development sandbox is Linux: the Metal backend cannot be built or run
+here**; every Metal result comes from the owner's **Apple M5 Max (40-core GPU, macOS 26.3.1, SDK 26.2, Apple clang 17, CMake 4.2.3)**.
+**Owner-reported constraint: only Command Line Tools are installed — no Xcode and no `metal` compiler (`xcrun` cannot find it).** Consequence: the *offline* `.metallib` path is unavailable, so the baseline is **runtime compilation from source** through metal-cpp (`newLibrary(source…)`); whether that works without Xcode on that machine is the first M3 check (unverified). The offline path stays an optional CMake step for machines with Xcode. The GPU reports Metal 4; no Metal 4 API is used until verified — the baseline is whatever the runtime compiler accepts. Details: LAMMPS_INTEGRATION §11.
 
 ## ADR-009 — Tests, fixtures, scripting  · *Decided*
 CTest; at M0 a ~60-line assertion header (no third-party dependency); a framework (Catch2/GoogleTest via a
@@ -102,12 +107,17 @@ pinned `FetchContent`) may be adopted at M2. Fixtures are plain text + a hashed 
 `tools/` (fixture generation, survey/analysis) until the M7 bindings (nanobind/pybind11 + ASE calculator); the core
 has no Python dependency. Doc/code drift is a failing test (`docs_sync`).
 
-## ADR-010 — License and notices  · *Proposed (needs owner decision)*
+## ADR-010 — License and notices  · *Decided — owner approved GPL-2.0-only (M0 review #1); audit and enforcement implemented in M0.5*
 Audit facts (SOURCE_MAP §6): physics-core files carry PuReMD "GPL v2 or any later version"; LAMMPS-authored
 files (incl. `fix_qeq_reaxff`, `pair_reaxff`, Kokkos) carry LAMMPS' GPL (v2, `LICENSE`).
 **Proposed:** project license `GPL-2.0-only` (compatible with adapting anything in the tree), `SPDX` identifier in every file,
 verbatim upstream notice blocks + `Adapted-from: <file>@8de817dd` in every adapted file (`docs/NOTICE_TEMPLATE.txt`,
-`THIRD_PARTY_NOTICES.md`). No LAMMPS code is vendored or adapted in M0. If the owner wants a more permissive
+`THIRD_PARTY_NOTICES.md`). No LAMMPS code is vendored or adapted in M0.
+**Done in M0.5 (owner: "do not assume every upstream file has identical terms"):** `tools/audit_licenses.py` classifies the notice text of **130 upstream files** (derived-from, linked-against, or tested-with) into
+`third_party/lammps/LICENSE_AUDIT.tsv`: 76 LAMMPS-GPL, 17 PuReMD GPL-2.0-or-later, 1 MIT-style (`fmt`, headers only included by the plugin build), 35 with **no per-file notice** (ffields, regression YAML, plugin
+example build files — covered only by the tree-level GPLv2). The plugin interface headers carry the plain LAMMPS GPL (not LGPL) in this tree. Top-level `LICENSE`, `LICENSES/GPL-2.0-only.txt`, `REUSE.toml`, SPDX in every authored
+source file, and a `license_headers` test (every authored file has SPDX; every `Adapted-from:` file keeps an upstream notice and is listed in `THIRD_PARTY_NOTICES.md`; license text identical across copies) enforce it.
+**Not decided / flagged:** the ffield parameter sets have scientific provenance (papers) but no file-level license — they are fetched at test time, not vendored, until the owner decides; the copyright holder name in `REUSE.toml` is a placeholder ("ReaxMetal contributors"). If the owner wants a more permissive
 licence, the equations/conventions must be re-derived without adapting source (a clean-room process has to be
 set up *before* M2) — this is a legal/strategy decision that I cannot make; I have not added a top-level
 `LICENSE` file until it is made (the `SPDX` tags in the skeleton are provisional).
@@ -126,11 +136,48 @@ src/physics/            shared pure term functions              (M4–M6)
 src/cpu/                CPU-64 / CPU-32 reference drivers       (M4–M6)
 src/qeq/                CG solver + H assembly                  (M5)
 src/metal/              runtime + kernels (Apple only)          (M3+)
-src/md/                 integrators, minimiser                  (M7)
-python/                 bindings + ASE calculator               (M7)
+plugin/                 LAMMPS plugin: adapter + DSO (probe in M0.5)       (A0 done; A1 at M2)
+python/                 optional standalone evaluator + ASE      (after M7)
 tools/                  fetch_lammps.sh, survey_ffield.py, fp32_hazards.py, (M1) fixture generator
 fixtures/               reference fixtures + hashed manifests   (M1)
 third_party/lammps/     PIN.txt, SOURCE_HASHES.sha256, COPYING (no vendored code)
-docs/                   the seven documents
-tests/                  CTest suite
+docs/                   the eight documents (incl. LAMMPS_INTEGRATION.md)
+tests/                  CTest suite;  tests/lammps/ = in-LAMMPS integration probe (gated by REAXMETAL_LAMMPS_PREFIX)
 ```
+
+---
+## ADR-013 — LAMMPS-first architecture and re-planned milestones  · *Decided (owner directive, M0 review)*
+**Context.** The owner requires ReaxMetal to be usable *inside LAMMPS* and forbids duplicating LAMMPS' MD machinery.
+**Decision.** Layers: (1) backend-independent ReaxFF library (`reaxmetal_core`: parsers, tables, term functions, lists, CPU-64/CPU-32 reference, EEM reference solver);
+(2) Metal backend; (3) thin LAMMPS adapter `pair_style reaxff/metal` shipped as a **loadable plugin**; (4) CPU reference path for validation; (5) standalone evaluator/Python later.
+The engine is **ghost-native** (consumes LAMMPS' owned+ghost atom set; replicates the reference's owner-computes rules; the standalone harness uses an image expander) — this *replaces*
+the explicit-image-shift design as the mechanism and turns ENGINE_SPEC D-1 into a replication (R). Neighbor lists are built on the device in production. Single MPI rank; others fail explicitly. Full contract: `LAMMPS_INTEGRATION.md`.
+**Evidence (executed, Linux):** a `Pair`-derived plugin loads; ghost forces fold back exactly; the stock charge fixes work against it; no pair neighbor request is required; topology changes only at rebuilds.
+**Consequences.** (a) no `src/md`; M7 becomes LAMMPS-hosted validation (NVE drift, minimiser, per-atom outputs, NPT after virial) plus an optional standalone evaluator;
+(b) the primary oracle is **in-LAMMPS A/B** (`pair_style reaxff` vs `reaxff/metal backend cpu64` on identical input) with hashed fixtures for localisation;
+(c) an A-series for the adapter. **Re-planned milestones:**
+
+| Milestone | Content (changes from the original plan in bold) |
+|---|---|
+| M0 ✓ | audit, spec, decisions, skeleton (pushed) |
+| **M0.5 ✓** | **LAMMPS integration architecture, probe plugin, license audit, compat-flag derivation, EEM/strictness/scope decisions** |
+| M1 | pinned fixture generator **+ instrumented LAMMPS patch (hashed)**; experiments Q-09, Q-12, REF-GHOST, REF-QEQ-CELL, noise floor; **tolerance freeze (owner-confirmed numbers)** |
+| M2 | ffield/control parser, tables with compat flags, **adapter A1: real parse + `extract(chi/eta/gamma)` + host checks, compared to stock** |
+| M3 | Metal runtime (runtime-compiled shaders), device cell/neighbor lists over owned+ghost, deterministic reductions; **first run on the M5 Max** |
+| M4 | bond orders + stable formulations, atom terms; CPU-64/CPU-32; derivative tests; adapter A2 (partial energies) |
+| M5 | EEM (reference solver, GPU solver, **derived strict fix**), nonbonded; strict/compat policy |
+| M6 | bonded terms + forces + **virial (enables NPT)**; in-LAMMPS A/B complete |
+| **M7** | **LAMMPS-hosted validation: NVE drift, minimiser, per-atom outputs; optional standalone evaluator/ASE** (no standalone MD engine) |
+| M8 | optimisation, batching, benchmarks (atomics benchmark option) |
+
+## ADR-014 — EEM naming, scope and strict convergence  · *Decided (owner M0 review #6, #8)*
+The internal charge-model abstraction is **EEM**, defined as the LAMMPS-compatible model (`fix qeq/reaxff` ≡ `fix qeq/shielded` kernel, Q-26) — no new physics. In scope: standard EEM/QEq **and LAMMPS-compatible shielded charge equilibration**;
+deferred with explicit errors: ACKS2, QTPIE, `qeq/rel`, external fields, alternative models, tabulated interactions, non-neutral groups. **Non-convergence is an error/status by default**; a separate explicit compatibility mode
+warns and continues like LAMMPS; an unconverged solution is never silently accepted. Barostats: enabled through LAMMPS once the pair style reports validated global virial (`lammps.virial_fdotr`, M6); until then pressure-controlled runs are refused.
+The stock fix cannot report convergence (Q-28), hence ADR-015. AMS equivalence is *not claimed* (LAMMPS_INTEGRATION §7.2).
+
+## ADR-015 — Plugin class structure: `Pair`-derived style; derived QEq fix for strictness  · *Proposed (needs owner OK)*
+**Decision.** `reaxff/metal` derives from **`Pair`** (verified to work with the stock charge fixes, LAMMPS_INTEGRATION §3.3). For strict EEM, a second plugin style `fix qeq/reaxff/metal` **subclasses `FixQEqReaxFF`** (protected state accessible; REAXFF package required in the host — it is the oracle build anyway)
+and verifies the true residual after the base solve (LAMMPS_INTEGRATION §7.4); later replaceable by a GPU-resident own fix.
+**Alternatives.** Derive the pair from `PairReaxFF` (rejected: drags in the PuReMD host machinery and heuristics, not needed [V]); a built-in package patch to LAMMPS (rejected for now: keeps the stock tree pristine, ADR-001); adapter-side residual check with user-repeated parameters (fragile).
+**Risk.** The derived fix depends on `protected` layout of one pinned LAMMPS version → it is pinned to `stable_30Sep2026` and compile-checked; moving the pin means revisiting it.

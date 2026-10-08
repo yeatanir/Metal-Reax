@@ -19,4 +19,4 @@ lammps_license_sha256=be38e38d9482c2beae35 (prefix; full hash in SOURCE_HASHES.s
 #  - src/REAXFF/{pair,fix_*}_reaxff.*, reaxff_{api,defs,inline,types}.h, src/KOKKOS/*reaxff*:
 #    LAMMPS-authored, "GNU General Public License" via LAMMPS LICENSE (GPL-2.0-only)
 # Directories fetched by tools/fetch_lammps.sh (sparse):
-sparse_dirs=src/REAXFF src/KOKKOS doc/src examples/reaxff potentials cmake unittest/force-styles/tests
+sparse_dirs=src/REAXFF src/KOKKOS src/QEQ src/PLUGIN doc/src examples/reaxff examples/plugins potentials cmake unittest/force-styles unittest/plugins

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 import sys, glob, collections
 # Survey bundled ffields using the same line layout as reaxff_ffield.cpp (read-only analysis, not an engine component).
 def survey(path):

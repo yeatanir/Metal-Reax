@@ -1,0 +1,13 @@
+# Does ghost data stay consistent over MD steps and reneighbouring when the pair style has NO neighbor request?
+variable NREP index 2
+include in.common_setup
+plugin load ${PLUGIN_SO}
+pair_style reaxff/metal NULL neigh ${NEIGH} verbose yes
+pair_coeff * * ffield.reax.mattsson H C O
+fix qeq all qeq/reaxff 1 0.0 8.0 1.0e-10 reaxff
+velocity all create 300000 4534624
+fix nve all nve
+timestep 0.25
+neigh_modify delay 0 every 1 check yes
+thermo 100
+run 60

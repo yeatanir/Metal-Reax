@@ -1,0 +1,14 @@
+# Host-contract probe: what does LAMMPS hand a Pair-derived reaxff/metal style?  (no physics)
+variable NREP index 2
+include in.common_setup
+plugin load ${PLUGIN_SO}
+pair_style reaxff/metal NULL neigh ${NEIGH} ghostforce yes verbose yes
+pair_coeff * * ffield.reax.mattsson H C O
+fix qeq all qeq/reaxff 1 0.0 8.0 1.0e-10 reaxff
+thermo_style custom step pe press pxx pyy pzz
+compute fxs all reduce sum fx
+variable fxsum equal c_fxs
+variable fx1 equal fx[1]
+variable tg1 equal id[1]
+run 0
+print "RESULT fx1=${fx1} fxsum=${fxsum}"

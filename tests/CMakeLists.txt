@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 function(reaxmetal_add_test name)
   add_executable(test_${name} test_${name}.cpp)
   target_link_libraries(test_${name} PRIVATE reaxmetal_core)
@@ -10,3 +11,5 @@ reaxmetal_add_test(pins)
 reaxmetal_add_test(capabilities)
 reaxmetal_add_test(energy_terms)
 reaxmetal_add_test(docs_sync)
+reaxmetal_add_test(license_headers)
+reaxmetal_add_test(compat_flags)

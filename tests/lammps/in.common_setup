@@ -1,0 +1,23 @@
+# Geometry copied from LAMMPS' own reaxff regression test (unittest/force-styles/tests/atomic-pair-reaxff.yaml,
+# pinned stable_30Sep2026): 64-atom diamond, 7.54 A cubic periodic cell, 3 types, 0.1 A random displacement.
+# Variables expected from the harness: ${LAMMPS_POTENTIALS_DIR} is set via the LAMMPS_POTENTIALS env var.
+variable newton_pair delete
+variable newton_pair index on
+variable SORTFREQ index 1000
+atom_modify     map array sort ${SORTFREQ} 2.0
+units           real
+atom_style      charge
+lattice         diamond 3.77
+region          box block 0 ${NREP} 0 ${NREP} 0 ${NREP}
+create_box      3 box
+create_atoms    1 box
+mass            1 1.0
+mass            2 12.0
+mass            3 16.0
+set type 1 type/ratio 2 0.5 998877
+set type 2 type/ratio 3 0.5 887766
+set type 1 charge  0.00
+set type 2 charge  0.01
+set type 3 charge -0.01
+variable DISP index 0.1
+displace_atoms  all random ${DISP} ${DISP} ${DISP} 623426

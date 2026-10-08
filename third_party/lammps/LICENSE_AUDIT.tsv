@@ -1,0 +1,131 @@
+path	sha256_16	notice_class	copyright_lines	contributing_author
+src/REAXFF/README	2fd3c564c20d6dc8	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/compute_reaxff_atom.cpp	b264e3010bbf17ad	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Richard Berger (LANL)
+src/REAXFF/compute_reaxff_atom.h	2ec7ca1b3ea851ce	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Richard Berger (LANL)
+src/REAXFF/compute_spec_atom.cpp	37c09742cd10939b	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/REAXFF/compute_spec_atom.h	480ab164de2fe835	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/REAXFF/fix_acks2_reaxff.cpp	1af3fe46c9e87073	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Stan Moore (Sandia)
+src/REAXFF/fix_acks2_reaxff.h	02f448a3137a912e	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/REAXFF/fix_qeq_reaxff.cpp	4b73d235c90459b5	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Purdue University (now at Lawrence Berkeley National Laboratory, hmaktulga@lbl.gov)
+src/REAXFF/fix_qeq_reaxff.h	d138941a5cc0f213	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Purdue University (now at Lawrence Berkeley National Laboratory, hmaktulga@lbl.gov)
+src/REAXFF/fix_qeq_rel_reaxff.cpp	b07321e375c5cb29	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Navraj S Lalli, Imperial College London (navrajsinghlalli@gmail.com)
+src/REAXFF/fix_qeq_rel_reaxff.h	c64ef8c5a40d6366	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/REAXFF/fix_qtpie_reaxff.cpp	1877aa3ffb95b341	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Efstratios M Kritikos, California Institute of Technology (Implemented original version in LAMMMPS Aug 2019) Navraj S Lalli, Imperial College London (navrajsing
+src/REAXFF/fix_qtpie_reaxff.h	48230d9ca7686ff4	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/REAXFF/fix_reaxff.cpp	cd61ad8f1a132479	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Purdue University (now at Lawrence Berkeley National Laboratory, hmaktulga@lbl.gov)
+src/REAXFF/fix_reaxff.h	5a666268cd9331f0	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Purdue University (now at Lawrence Berkeley National Laboratory, hmaktulga@lbl.gov)
+src/REAXFF/fix_reaxff_bonds.cpp	4de37be833454fff	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Ray Shan (Sandia, tnshan@sandia.gov)
+src/REAXFF/fix_reaxff_bonds.h	cd4da6b3280c1d05	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/REAXFF/fix_reaxff_species.cpp	17f46e388de63dd7	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Ray Shan (Sandia, tnshan@sandia.gov) Oleg Sergeev (VNIIA, sergeev@vniia.ru) Jacob Gissinger (NASA, jacob.r.gissinger@gmail.com), 'delete' keyword
+src/REAXFF/fix_reaxff_species.h	5b76ef26766949bc	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/REAXFF/pair_reaxff.cpp	103f663db3c943f4	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Michigan State University, hma@cse.msu.edu
+src/REAXFF/pair_reaxff.h	b9bad9e6dd6ee410	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Purdue University (now at Lawrence Berkeley National Laboratory, hmaktulga@lbl.gov)
+src/REAXFF/reaxff_allocate.cpp	05d168ce92e2f6a6	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_api.h	06c256dcafb4565e	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Purdue University (now at Lawrence Berkeley National Laboratory, hmaktulga@lbl.gov)
+src/REAXFF/reaxff_bond_orders.cpp	41a0bbd094ee9eb6	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	H. M. Aktulga, J. Fogarty, S. Pandit, A. Grama Corresponding author: Hasan Metin Aktulga, Michigan State University, hma@cse.msu.edu
+src/REAXFF/reaxff_bonds.cpp	98618939b0cc088c	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_control.cpp	ffbbf387a4e4a54c	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_defs.h	25e636e605caf72a	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Purdue University (now at Lawrence Berkeley National Laboratory, hmaktulga@lbl.gov)
+src/REAXFF/reaxff_ffield.cpp	70d4d801046eddcf	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_forces.cpp	31e0525f8f54b7c1	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_hydrogen_bonds.cpp	ea17d0f637b84b11	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_init_md.cpp	9bea66549c6e4e3e	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	H. M. Aktulga, J. Fogarty, S. Pandit, A. Grama Corresponding author: Hasan Metin Aktulga, Michigan State University, hma@cse.msu.edu
+src/REAXFF/reaxff_inline.h	b0e0880f5574bf98	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Purdue University (now at Lawrence Berkeley National Laboratory, hmaktulga@lbl.gov)
+src/REAXFF/reaxff_list.cpp	198d1d113a48e519	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_lookup.cpp	cac5e217e109a844	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_multi_body.cpp	d91731fbeabadadc	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_nonbonded.cpp	6638670d1b18dcdd	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_reset_tools.cpp	900fd34c96de50e2	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_tool_box.cpp	760e7980a68c4c5c	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_torsion_angles.cpp	f3d3aaa56fc5b1ee	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/REAXFF/reaxff_types.h	062003df08919aa0	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Hasan Metin Aktulga, Purdue University (now at Lawrence Berkeley National Laboratory, hmaktulga@lbl.gov)
+src/REAXFF/reaxff_valence_angles.cpp	61c252767f66be3f	GPL-2.0-or-later-PuReMD	Copyright (2010) Purdue University	
+src/KOKKOS/compute_reaxff_atom_kokkos.cpp	fcef850776595b71	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Richard Berger (LANL)
+src/KOKKOS/compute_reaxff_atom_kokkos.h	72bfc0132aaa7684	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Richard Berger (LANL)
+src/KOKKOS/fix_acks2_reaxff_kokkos.cpp	0a7e84f70e92591a	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Stan Moore (SNL)
+src/KOKKOS/fix_acks2_reaxff_kokkos.h	119630f1fb0aeda5	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/KOKKOS/fix_qeq_reaxff_kokkos.cpp	488f00b318ac7999	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Ray Shan (SNL), Stan Moore (SNL), Kamesh Arumugam (NVIDIA)
+src/KOKKOS/fix_qeq_reaxff_kokkos.h	1633b249c102adc4	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/KOKKOS/fix_reaxff_bonds_kokkos.cpp	f99b9bbdac1c2bcd	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Stan Moore (Sandia)
+src/KOKKOS/fix_reaxff_bonds_kokkos.h	94bf53aedf08d092	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/KOKKOS/fix_reaxff_species_kokkos.cpp	4af12b2f07b26ab4	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Stan Moore (Sandia)
+src/KOKKOS/fix_reaxff_species_kokkos.h	055a6a3f8ec87a75	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/KOKKOS/pair_reaxff_kokkos.cpp	8260f98b302d41ad	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Ray Shan (SNL), Stan Moore (SNL), Evan Weinberg (NVIDIA)
+src/KOKKOS/pair_reaxff_kokkos.h	4ec30c985b3004e4	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/KOKKOS/kokkos_type.h	caeb95294410a09a	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/QEQ/fix_qeq.cpp	dec73091232b20fa	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Ray Shan (Sandia) Based on fix qeq/reax by H. Metin Aktulga
+src/QEQ/fix_qeq.h	f328aac3d29b15b5	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/QEQ/fix_qeq_shielded.cpp	a7fbd8ce34d5d452	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Ray Shan (Sandia)
+src/QEQ/fix_qeq_shielded.h	13674a172d0344b2	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/PLUGIN/Install.sh	c29bc2d26bf5a66d	NO-NOTICE		
+src/PLUGIN/README	e15809617ef09dc6	NO-NOTICE		
+src/PLUGIN/plugin.cpp	259eb5977b282e03	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/PLUGIN/plugin.h	727c8fecf9d57724	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/pair.h	99deb119bcde6608	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/pair.cpp	7826ee86dd611eef	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Paul Crozier (SNL)
+src/force.h	d3fb21907fbc2362	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/neighbor.h	799f3666d991c23f	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/neigh_list.h	0edd0d50ecca2bd7	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/neigh_request.h	173b120a3d30e340	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/comm.h	23291476f5550e92	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/lammpsplugin.h	9fbc347044ff548b	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/library.h	e192f29c4a57d0c2	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/lmptype.h	6b75cad236deed69	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+src/fix.h	a1f018aa8a0df2bb	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/CMakeLists.txt	4c33eada1aab9c39	NO-NOTICE		
+examples/plugins/LAMMPSInterfaceCXX.cmake	79847d33bd033358	NO-NOTICE		
+examples/plugins/Makefile	ddd26b5a555dc5f6	NO-NOTICE		
+examples/plugins/Makefile.common	6c7de553218eec26	NO-NOTICE		
+examples/plugins/Makefile.macos	8ea9e2a64bdff7f3	NO-NOTICE		
+examples/plugins/Makefile.serial	387abfe7d07fdef6	NO-NOTICE		
+examples/plugins/angle_zero2.cpp	930f406cfe62bbf0	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Carsten Svaneborg (SDU)
+examples/plugins/angle_zero2.h	2e913b259adc2601	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/bond_zero2.cpp	d2941b233db85350	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Carsten Svaneborg (SDU)
+examples/plugins/bond_zero2.h	b97d1096595bba96	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/dihedral_zero2.cpp	efcf1d16c479e263	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Carsten Svaneborg (SDU)
+examples/plugins/dihedral_zero2.h	3c386c543b535c5e	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/fix_nve2.cpp	822571eef9bd0c37	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/fix_nve2.h	f97363b5720774d1	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/helloplugin.cpp	eb6be047b27a1f9e	NO-NOTICE		
+examples/plugins/improper_zero2.cpp	1ef12acb9bcfcebe	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Carsten Svaneborg (SDU)
+examples/plugins/improper_zero2.h	bd41c84a78607267	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/kspace_zero2.cpp	8a5c7391d3d50a56	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Axel Kohlmeyer (Temple U)
+examples/plugins/kspace_zero2.h	648e8662e069baf7	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/kspaceplugin.cpp	26d1ff31344aac3a	NO-NOTICE		
+examples/plugins/min_cg2.cpp	1b61ebb45c33b2a8	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/min_cg2.h	aa39dbe368538898	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/morse2plugin.cpp	195ff1721495441c	NO-NOTICE		
+examples/plugins/nve2plugin.cpp	1db13c866441a7b9	NO-NOTICE		
+examples/plugins/pair_morse2.cpp	6d297bc291975244	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/pair_morse2.h	0d668fb6c968dc53	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/pair_morse2_omp.cpp	af26d586159aebad	GPL-LAMMPS		Axel Kohlmeyer (Temple U)
+examples/plugins/pair_morse2_omp.h	a6b2fb32527b9f96	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Axel Kohlmeyer (Temple U)
+examples/plugins/pair_zero2.cpp	7576edb1a6bba3e9	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	Carsten Svaneborg (SDU)
+examples/plugins/pair_zero2.h	a79e942fb167fa91	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/runminplugin.cpp	6dbc647d075fcb51	NO-NOTICE		
+examples/plugins/verlet2.cpp	e2a5fac2e7136afc	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/verlet2.h	7aa187b0045af8fe	GPL-LAMMPS	Copyright (2003) Sandia Corporation.  Under the terms of Contract	
+examples/plugins/zero2plugin.cpp	f9a3dec2d6e903e8	NO-NOTICE		
+potentials/ffield.reax.AB	7813cc55f15171b8	NO-NOTICE		
+potentials/ffield.reax.AuO	5844788b0b28a7d2	NO-NOTICE		
+potentials/ffield.reax.FC	db41eb3874e43d97	NO-NOTICE		
+potentials/ffield.reax.Fe_O_C_H	201cb64d0f9c3f1f	NO-NOTICE		
+potentials/ffield.reax.V_O_C_H	58631f2d005c142d	NO-NOTICE		
+potentials/ffield.reax.ZnOH	b5af5a65573ce60f	NO-NOTICE		
+potentials/ffield.reax.budzien	ee100a5dbbc36094	NO-NOTICE		
+potentials/ffield.reax.cho	c5240c07e664dde5	NO-NOTICE		
+potentials/ffield.reax.lg	ea8a5842997291fd	NO-NOTICE		
+potentials/ffield.reax.mattsson	46d5eb6af8cfc7aa	NO-NOTICE		
+potentials/ffield.reax.rdx	b6ced12fc2ba1512	NO-NOTICE		
+potentials/README.reax	46a92a0a250fe0ee	NO-NOTICE		
+unittest/force-styles/tests/atomic-pair-reaxff-acks2.yaml	fc044e54ea01dacb	NO-NOTICE		
+unittest/force-styles/tests/atomic-pair-reaxff-acks2_efield.yaml	f0e8d8f913f547a0	NO-NOTICE		
+unittest/force-styles/tests/atomic-pair-reaxff-qtpie.yaml	45872d2d48d25632	NO-NOTICE		
+unittest/force-styles/tests/atomic-pair-reaxff.yaml	2638c841c69ae88f	NO-NOTICE		
+unittest/force-styles/tests/atomic-pair-reaxff_lgvdw.yaml	8431965529a08df5	NO-NOTICE		
+unittest/force-styles/tests/atomic-pair-reaxff_noqeq.yaml	3ba46210b52aa68f	NO-NOTICE		
+unittest/force-styles/tests/atomic-pair-reaxff_tabulate.yaml	40ad3349b409267c	NO-NOTICE		
+unittest/force-styles/tests/atomic-pair-reaxff_tabulate_flag.yaml	cb583809d246fa5c	NO-NOTICE		
+unittest/force-styles/tests/reaxff.control	1079da65110bacba	NO-NOTICE		
+src/fmt/format.h	67ca890154e4ff76	MIT-style	Copyright (c) 2012 - present, Victor Zverovich	
+LICENSE	be38e38d9482c2be	GPL-2.0-text	Copyright (C) 1989, 1991 Free Software Foundation, Inc.	

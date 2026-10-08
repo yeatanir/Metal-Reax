@@ -1,6 +1,8 @@
 # ReaxMetal Engine Specification (M0 — functional form as implemented by the pinned reference)
 
-**Status: specification only. Nothing in this document is implemented or tested yet.**
+**Status: specification only. Nothing in this document is implemented or tested yet** (one exception: the element/mass compatibility predicates of Q-06
+exist as `compat_flags.hpp` with boundary tests). Revised in M0.5 for the LAMMPS-first architecture (`LAMMPS_INTEGRATION.md`): §3 ghost semantics,
+§7 charge model (now named EEM), D-1/D-5, new quirks Q-26…Q-31.
 Reference: LAMMPS `stable_30Sep2026`, commit `8de817dd79bfe4525d5d39246a212d833e6dee07`
 (`src/REAXFF/`, `src/KOKKOS/*reaxff*`). Line numbers below refer to that commit.
 Where this document and the pinned source disagree, **the source wins** and this document is a bug.
@@ -16,10 +18,12 @@ Notation: `i,j,k,l` atoms (indices into the *periodic-image-expanded* environmen
 
 ## 0. Scope of the supported model
 
-Supported (planned): standard ReaxFF energy (13 terms, §5) with analytic forces, `fix qeq/reaxff`-style charge
-equilibration (§7), the three vdW variants selected by ffield contents plus the `lgvdw` correction, `enobonds`,
-`checkqeq no`, control-file cutoffs. Everything else the reference can do is rejected explicitly
-(FEATURE_MATRIX.md §10). No element, ffield, or chemical system is built into the engine (ADR-003).
+Supported (planned): standard ReaxFF energy (13 terms, §5) with analytic forces; the standard **EEM** charge model — defined as the
+LAMMPS-compatible model of `fix qeq/reaxff` and `fix qeq/shielded` (§7), *not* a different physics; the three vdW variants selected by ffield
+contents plus the `lgvdw` correction; `enobonds`; `checkqeq no`; control-file cutoffs; global virial for NPT once validated. Deferred with
+explicit errors: ACKS2, QTPIE, `qeq/rel`, external electric fields, tabulated interactions, non-neutral groups, multi-rank (FEATURE_MATRIX.md).
+Time integration, thermostats, minimisation and all trajectory/atom management are **LAMMPS'** (the engine is a force/energy evaluator behind
+`pair_style reaxff/metal`). No element, ffield, or chemical system is built into the engine (ADR-003).
 
 ## 1. Units, sign conventions, constants
 
@@ -145,13 +149,15 @@ Cutoffs (`reaxff_ffield.cpp:620-624`, `pair_reaxff.cpp:189-274`, `reaxff_control
 | `thb_cut`, `thb_cutsq` | control `thb_cutoff`, `thb_cutoff_sq` | 0.001, 1e-5 |
 | `bg_cut` | control `bond_graph_cutoff` | 0.3 (does not enter CPU energies) |
 
-LAMMPS builds them from a half neighbor list with ghost neighbors. **Reference semantics for the engine:**
-every interaction is evaluated over the *complete periodic environment* (explicit image shifts, ADR-004),
-each physical pair/triple/quadruple counted exactly once. This equals the LAMMPS result iff LAMMPS' ghost
-shell is large enough that every bonded environment of every local atom is complete; LAMMPS' ghost-specific
-bookkeeping (`bond_mark`, `j < n || nbr < n`, `orig_id` ordering) exists only to emulate that and is not
-replicated (Q-07). Verification experiment REF-GHOST (VALIDATION.md) must establish the sufficiency
-condition empirically; the fixture generator records ghost cutoff and neighbor skin for every case.
+LAMMPS builds them from a half neighbor list with ghost neighbors. **Reference semantics for the engine (revised in M0.5, ADR-013):**
+the engine is **ghost-native**: its input is LAMMPS' *expanded atom set* — `nlocal` owned atoms followed by `nghost` ghost atoms, each ghost an
+owner plus an integer lattice shift (verified on every step, LAMMPS_INTEGRATION §4) — and it reproduces the reference's owner-computes rules
+(only owned atoms are centres of angle/torsion/H-bond/vdW terms; ordering of equal-image pairs by `tag` with the coordinate tie-break;
+ghost rows limited to `bond_cut`; `bond_mark`), so the results are those of LAMMPS by construction. The standalone harness (fixtures, tests, later Python)
+builds the same expanded set with an **image expander** — periodic images are always a *host* concern; no kernel does minimum-image or shift arithmetic
+(minimum-image is demonstrably wrong: LAMMPS_INTEGRATION §7.3). Correctness for owned atoms requires a **sufficient ghost shell**; the
+engine requires `shell ≥ max(nonb_cut, hbond_cut, 2·bond_cut)` (the reference only warns, `pair_reaxff.cpp:372-375`; we error) and
+experiment REF-GHOST (VALIDATION.md) determines whether this is also sufficient. Forces are returned for **all** owned+ghost atoms; the host folds ghost forces onto owners.
 
 Bond creation (`reaxff_forces.cpp:130-252`, `BOp` `reaxff_bond_orders.cpp:148-243`): a bond i–j exists iff
 `r_ij ≤ bond_cut` and `BO'_ij ≥ bo_cut`. H-bond candidates (`:204-223`): donor `i` with `p_hbond==1`,
@@ -315,6 +321,27 @@ unless `nowarn` (Q-22). Initial guess: `s = 4(s₀+s₂) − (6s₁+s₃)`, `t =
 solutions (Q-23); histories are zero at start. Per-type `χ,η,γ` come from the ffield (`reaxff`) or a 4-column
 file `type χ η γ` (ffield eta values enter ×2).
 
+### 7.1 Naming and model definition (M0.5, owner instruction)
+The internal abstraction is named **EEM** and is *defined as* the model above (the one LAMMPS runs with the bundled ffields). It is not a physically
+different model from `fix qeq/reaxff`; `fix qeq/shielded` is the same kernel with a different solver/list (Q-26). The relation to AMS-ReaxFF's EEM is
+**documented only as far as verified** (LAMMPS_INTEGRATION §7.2): the LAMMPS side is established from source; the AMS details (kernel, taper, tolerance
+definition, constraints) could only be seen as search-result summaries because `scm.com` pages were not retrievable — equivalence is **not claimed**.
+
+### 7.2 Parameters and conventions exposed to the host
+`chi` (eV) as in the ffield, `eta = 2×ffield` (Q-29), `gamma` as in the ffield; all indexed by LAMMPS type. Units are Å, eV, e inside the solve and kcal/mol outside
+(constants Q-01/Q-03).
+
+### 7.3 Convergence policy (owner decision: strict by default)
+`EemStatus ∈ {Converged, NotConverged, Failed}` is returned with every solve. **Default: `NotConverged`/`Failed` is an error** (adapter: `error->one`).
+A separate, explicitly requested compatibility mode (`eem.compat_warn_continue`) warns and continues like LAMMPS. The convergence test itself follows the
+reference (`√(rᵀM⁻¹r)/‖b‖ ≤ tol`, `maxiter`) so that "converged" means the same thing as in LAMMPS. Additional strict-mode checks (candidates, each to be justified before
+adoption): `Σq` neutrality within tolerance, finite charges, and an AMS-style stability screen `eta > 7.2·gamma` **only if** confirmed from the primary AMS source.
+
+### 7.4 Strictness and the stock fix
+The unmodified stock fix cannot report non-convergence to the pair style (Q-28). Strictness therefore requires either a **derived fix**
+(`fix qeq/reaxff/metal` subclassing `FixQEqReaxFF`, verifying the true residual with the protected `H`, `s`, `t`, `Hdia_inv`, `tolerance`) or an own GPU-resident fix;
+see LAMMPS_INTEGRATION §7.4. Runs with the stock fix are in compat-warn mode by definition.
+
 ## 8. Discontinuities in the reference (must be reproduced, will affect NVE drift)
 
 | Source | Where | Nature |
@@ -331,11 +358,11 @@ file `type χ η γ` (ffield eta values enter ×2).
 
 | # | Reference behaviour | Engine behaviour | Rationale |
 |---|---|---|---|
-| D-1 | Ghost atoms with `bond_mark` heuristics | explicit periodic images, each interaction once | removes a decomposition artefact; equal results to be demonstrated (REF-GHOST) |
+| D-1 | *(superseded in M0.5)* ghost bookkeeping | **replicated** (ghost-native engine, owner-computes, `tag` ordering) — now disposition **R**, not a deviation; the explicit-image alternative is dropped | ADR-013; remaining risk = ghost-shell sufficiency (REF-GHOST) |
 | D-2 | Missing bond parameters zero-filled (Q-12) | error (`ffield.strict_missing_pairs`) | silent garbage |
 | D-3 | `thbp` array overrun for >5 sets (Q-09) | error | undefined behaviour |
 | D-4 | `vdw_type` conflict between elements = warning (§2.3) | error | latent division by zero |
-| D-5 | Non-converged QEq = warning, continue | selectable policy, default = LAMMPS-compatible warn + `QeqStatus::NotConverged` surfaced to caller | rule 5/“QEq failure” validation case |
+| D-5 | Non-converged QEq = warning, continue (`fix qeq/reaxff` default) | **strict by default**: non-convergence is an error / explicit failure status; LAMMPS behaviour only via an explicitly requested compatibility mode (`eem.compat_warn_continue`); never silently accepted. The unmodified stock fix cannot be made strict (§7.4) | owner decision M0.5 #6 |
 
 ## 10. Quirk catalogue (reference behaviours that surprised the audit)
 
@@ -349,8 +376,8 @@ Disposition: **R** replicate, **D** deviate by design (§9), **F** flag only.
 | Q-04 | C++ `valency_boc` = file column "Val(angle)", `valency_val` = file column "Val(boc)" (names swapped relative to header labels); gp[14] labelled `p(val7)` but used as `p_val6` | `reaxff_ffield.cpp:198,228`; `reaxff_valence_angles.cpp:108` | R (engine uses semantic names) |
 | Q-05 | `mass<21` forces `valency_val := valency_boc` at parse time | `reaxff_ffield.cpp:298-305` | R |
 | Q-06 | Element knowledge inside kernels: `strcmp(name,"C")` (C2 correction), exact `mass==12.0000 && mass==15.9990` (C–O stabilisation), `mass>21` first/second-row split | `reaxff_multi_body.cpp:101,107,137`; `reaxff_bonds.cpp:108-110`; `reaxff_bond_orders.cpp:457` | R **as load-time per-type/pair flags** (ADR-003) |
-| Q-07 | Ghost bookkeeping: `bond_mark` (ghosts start at 1000; a bond's corrected BO is recomputed instead of copied when `bond_mark[j]>3`), `j<n \|\| nbr<n`, `orig_id` ordering with coordinate tie-breaks | `reaxff_forces.cpp:150-154,233-237`; `reaxff_bond_orders.cpp:295`; `reaxff_bonds.cpp:64-73` | D-1 |
-| Q-08 | Neighbor rows: local atoms use `nonb_cut`, ghost rows only `bond_cut` | `pair_reaxff.cpp:659-662` | D-1 |
+| Q-07 | Ghost bookkeeping: `bond_mark` (ghosts start at 1000; a bond's corrected BO is recomputed instead of copied when `bond_mark[j]>3`), `j<n \|\| nbr<n`, `orig_id` ordering with coordinate tie-breaks | `reaxff_forces.cpp:150-154,233-237`; `reaxff_bond_orders.cpp:295`; `reaxff_bonds.cpp:64-73` | R (ghost-native, ADR-013) |
+| Q-08 | Neighbor rows: local atoms use `nonb_cut`, ghost rows only `bond_cut` | `pair_reaxff.cpp:659-662` | R (ghost-native, ADR-013) |
 | Q-09 | `j==l` three-body mirror increments `cnt` twice (second slot is all-zero and skipped by `|p_val1|>0.001`); >5 sets overrun `prm[5]` unchecked; torsion keeps only `prm[0]` | `reaxff_ffield.cpp:452-454`; `reaxff_types.h:149` | R / D-3 |
 | Q-10 | Compact torsion `0-X-Y-0` is order-dependent among compact entries; explicit entries always win | `reaxff_ffield.cpp:525-550` | R |
 | Q-11 | H-bond table is directional `[i][j][k]`; `r0_hb≤0` = absent; `hbond_cut>0.1` (allocation estimate) vs `>0` (physics) | `reaxff_ffield.cpp:556-586`; `reaxff_forces.cpp:319` vs `:204` | R |
@@ -368,6 +395,12 @@ Disposition: **R** replicate, **D** deviate by design (§9), **F** flag only.
 | Q-23 | QEq initial guess comes from 4-step history (cubic `s`, quadratic `t`); result below tolerance depends on history | `fix_qeq_reaxff.cpp:666-670` | R option; fixtures use tight tolerance |
 | Q-24 | Doc says tabulation uses "linear interpolation"; code builds cubic splines | `doc/src/pair_reaxff.rst` vs `reaxff_lookup.cpp:52,100` | F (tabulation rejected) |
 | Q-25 | LAMMPS skips pure-single (FP32) Kokkos runs of its ReaxFF regression tests (`skip_tests: kokkos_*_single`), and for the `mixed` (FP32 compute / FP64 accumulate, `kokkos_type.h:392-407`) runs the harness multiplies the test epsilon by 2e9 (`test_pair_style.cpp:825-830`): 5×2e-10×2e9 = a **relative error of 2.0**, i.e. a vacuous criterion | `unittest/force-styles/tests/atomic-pair-reaxff*.yaml`; `test_pair_style.cpp:823-830` | F — no upstream FP32 accuracy reference exists; we must build our own (NUMERICAL_POLICY §5) |
+| Q-26 | `fix qeq/shielded` vs `fix qeq/reaxff`: same kernel/constants (14.4, shielding), but full list with H×0.5, history 5 deep initialised from `q` (vs 4 deep, zero), taper lower bound fixed `swa=0`, argument list `(cutoff tol maxiter)` | `fix_qeq_shielded.cpp:238,253-268`; `fix_qeq.cpp:84,95,134-135` | R (both accepted; agree to 3.3e-15 on the test system, LAMMPS_INTEGRATION §7) |
+| Q-27 | LAMMPS documents that `fix qeq/reaxff` mishandles multiple images of one atom when a cell dimension < non-bonded cutoff; **not reproduced** in 4 cubic cases (dense explicit-image EEM agrees to ≤2.7e-14) | `doc/src/fix_qeq_reaxff.rst`; `tools/eem_dense_check.py` | F — open for triclinic (REF-QEQ-CELL) |
+| Q-28 | Stock `fix qeq/reaxff` exposes no convergence status and its parameters are `protected` (no `extract`): a pair style cannot detect non-convergence | `fix_qeq_reaxff.h:30-80`; `.cpp:812-814` | D-5 → derived-fix plan (§7.4) |
+| Q-29 | `extract()` convention: arrays indexed by LAMMPS type 1..ntypes; `eta` = 2×file value; `gamma` raw file value; NULL-mapped types all 0 | `pair_reaxff.cpp:701-731`; `fix_qeq_reaxff.cpp:226-248` | R |
+| Q-30 | `fix qeq/*` charge solve requires and enforces `Σq = 0` for its group (warning if the initial charges are non-neutral); no per-region constraints | `fix_qeq_reaxff.cpp:429-430,851-880`; `fix_qeq_reaxff.rst` | R; non-neutral = Deferred |
+| Q-31 | `e_pol` is tallied into LAMMPS' **Coulomb** energy (`ecoul`), the rest of the 13 terms into `evdwl`; `pvector` slot 13 `eqeq` | `reaxff_nonbonded.cpp:58`; `pair_reaxff.cpp:501-514` | R |
 
 ## 11. Open specification items (to be closed in the named milestone, not guessed now)
 
@@ -375,3 +408,5 @@ Disposition: **R** replicate, **D** deviate by design (§9), **F** flag only.
   GPU re-expression (gather, deterministic) is designed in ADR-006 and validated in M6 against the FP64 CPU path.
 * Virial/stress: reference tallies per-interaction (`v_tally*`); equivalent `Σ r⊗F` formulation to be chosen at M6.
 * QEq history carry-over across MD steps and across minimiser calls (LAMMPS `s_hist/t_hist` shifts) — M5/M7.
+* Ghost-shell sufficiency (REF-GHOST) and whether `bond_mark` must be replicated bit-for-bit or may be proven irrelevant (M1/M4).
+* Per-atom energy/virial semantics (`ev_tally` equivalents) for the adapter (M7); NPT virial identity check against stock `reaxff` (M6).

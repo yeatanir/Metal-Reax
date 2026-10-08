@@ -9,11 +9,14 @@ test fails if this file and the code table disagree):
 |---|---|
 | Implemented | Exists **and** has passing tests recorded in VALIDATION.md. |
 | Planned | Scheduled for the named milestone. Requesting it earlier throws `NotImplementedError`. |
-| Rejected | Deliberately unsupported. Requesting it throws `UnsupportedFeatureError` (an error, never a warning). |
+| Deferred | Not supported **now**; may be scheduled later (owner decision). Requesting it throws `UnsupportedFeatureError` (an error, never a warning). |
+| Rejected | Deliberately unsupported (no plan). Requesting it throws `UnsupportedFeatureError` (an error, never a warning). |
 | Ignored | Accepted; has no effect on physics in this engine; a notice is logged. |
 
-**At M0 no row is Implemented.** M0 delivers the audit, specification, decisions and a build skeleton only.
-Milestone letters follow the mission statement (M2 parser … M8 optimisation).
+**Only `compat.flag_derivation` is Implemented** (pure predicates with boundary tests). M0 and M0.5 deliver audit, specification,
+decisions, a build skeleton and a host-contract probe; no physics exists yet.
+Milestone letters follow the mission statement (M2 parser … M8 optimisation) as re-planned in `ARCHITECTURE_DECISIONS.md` ADR-013
+(M0.5 integration architecture; M7 is now LAMMPS-hosted validation, not a standalone MD engine).
 
 ## 1. Energy terms
 
@@ -64,26 +67,26 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation).
 | `opt.lgvdw` | Planned | M5 | `pair_style reaxff lgvdw yes` | |
 | `opt.memory_heuristics` | Ignored | - | `safezone / mincap / minhbonds` | allocation heuristics only; notice logged |
 | `opt.list_blocking` | Ignored | - | `list/blocking` | Kokkos performance option only |
-| `opt.tabulate` | Rejected | - | `tabulate N>0 / tabulate_long_range N>0` | spline tables change the numbers; analytic only |
+| `opt.tabulate` | Deferred | - | `tabulate N>0 / tabulate_long_range N>0` | deferred; spline tables change the numbers, analytic evaluation only for now |
 
 ## 5. Charge models
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `qeq.reaxff` | Planned | M5 | `fix qeq/reaxff ... reaxff` | preconditioned CG, history extrapolation (ENGINE_SPEC 7) |
+| `qeq.reaxff` | Planned | M5 | `fix qeq/reaxff ... reaxff` | standard EEM as implemented by fix qeq/reaxff (ENGINE_SPEC 7) |
 | `qeq.pertype_file` | Planned | M5 | `fix qeq/reaxff ... <param file>` | per-type chi/eta/gamma override |
-| `qeq.shielded` | Rejected | - | `fix qeq/shielded` | different model |
-| `qeq.acks2` | Rejected | - | `fix acks2/reaxff` | different model |
-| `qeq.qtpie` | Rejected | - | `fix qtpie/reaxff` | different model |
-| `qeq.relative` | Rejected | - | `fix qeq/rel/reaxff` | |
-| `qeq.efield` | Rejected | - | `fix efield with fix qeq/reaxff` | |
-| `qeq.group_subset` | Rejected | - | `fix qeq/reaxff on a proper subgroup` | all atoms are equilibrated |
+| `qeq.shielded` | Planned | M5 | `fix qeq/shielded` | LAMMPS-compatible shielded charge equilibration; same kernel as qeq/reaxff (ENGINE_SPEC 7.2); works through extract() today |
+| `qeq.acks2` | Deferred | - | `fix acks2/reaxff` | deferred; different charge model |
+| `qeq.qtpie` | Deferred | - | `fix qtpie/reaxff` | deferred; different charge model |
+| `qeq.relative` | Deferred | - | `fix qeq/rel/reaxff` | deferred |
+| `qeq.efield` | Deferred | - | `fix efield with fix qeq/reaxff` | deferred; external electric field |
+| `qeq.group_subset` | Deferred | - | `fix qeq/reaxff on a proper subgroup` | deferred; all atoms are equilibrated |
 
 ## 6. System description
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `sys.pbc_images` | Planned | M3 | `ghost atoms / periodic images` | explicit image shifts; **never minimum-image only** (ADR-004) |
+| `sys.pbc_images` | Planned | M3 | `ghost atoms / periodic images` | ghost-native contract: images supplied by the host (LAMMPS ghosts) or by the standalone image expander; never minimum-image only (ADR-004/013) |
 | `sys.triclinic` | Planned | M3 | `triclinic box` | |
 | `sys.nonperiodic` | Planned | M3 | `boundary f/s/m` | |
 | `sys.type_null_mapping` | Rejected | - | `pair_coeff ... NULL` | hybrid placeholder |
@@ -97,17 +100,17 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation).
 | `out.forces` | Planned | M6 | `atom->f` | analytical |
 | `out.charges` | Planned | M5 | `atom->q` | |
 | `out.virial` | Planned | M6 | `virial_fdotr / v_tally*` | needed for pressure |
-| `out.per_atom_energy` | Rejected | - | `compute pe/atom with reaxff` | |
-| `out.bond_analysis` | Rejected | - | `fix reaxff/bonds, fix reaxff/species` | |
+| `out.per_atom_energy` | Planned | M7 | `compute pe/atom with reaxff` | adapter-level per-atom energy/virial; until then requests are refused |
+| `out.bond_analysis` | Deferred | - | `fix reaxff/bonds, fix reaxff/species` | deferred; LAMMPS analysis tools dynamic_cast to PairReaxFF and refuse other styles |
 
 ## 8. Dynamics
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `md.nve` | Planned | M7 | `fix nve` | |
-| `md.thermostat` | Planned | M7 | `fix nvt / langevin` | choice deferred to M7 |
-| `md.barostat` | Rejected | - | `fix npt` | |
-| `min.minimize` | Planned | M7 | `minimize` | |
+| `md.nve` | Rejected | - | `fix nve` | standalone MD is out of scope: LAMMPS provides integrators |
+| `md.thermostat` | Rejected | - | `fix nvt / langevin` | standalone MD is out of scope: LAMMPS provides thermostats |
+| `md.barostat` | Planned | M6 | `fix npt` | enabled once out.virial is validated; until then pressure-controlled runs are refused |
+| `min.minimize` | Rejected | - | `minimize` | standalone minimiser is out of scope: LAMMPS provides minimize |
 
 ## 9. Backends
 
@@ -133,3 +136,31 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 | ffield missing bond parameters for a type pair that occurs in the system | parser/system check | error (LAMMPS silently zero-fills; ENGINE_SPEC Q-12) |
 | More than 5 three-body (or torsion) parameter sets for one type triple | parser | error (LAMMPS overruns a fixed array; ENGINE_SPEC Q-09) |
 | Ignored LAMMPS control keywords (`nsteps`, `dt`, …) | control parser | notice, as LAMMPS warns |
+
+## 11. LAMMPS integration (added in M0.5)
+
+| Feature | Status | Milestone | LAMMPS construct | Notes |
+|---|---|---|---|---|
+| `lammps.pair_style_reaxff_metal` | Planned | M2 | `pair_style reaxff/metal` | thin Pair-derived adapter; parameters via our parser |
+| `lammps.plugin_loadable` | Planned | M2 | `plugin load <reaxmetal plugin>` | DSO built against the pinned LAMMPS; version-matched |
+| `lammps.extract_chi_eta_gamma` | Planned | M2 | `Pair::extract(chi\|eta\|gamma)` | arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value |
+| `lammps.single_rank_only` | Planned | M2 | `comm->nprocs == 1` | multi-rank runs fail explicitly (checked in init_style) |
+| `lammps.multi_rank` | Deferred | - | `mpirun -np N>1 with reaxff/metal` | deferred; needs distributed ghost/QEq handling |
+| `lammps.newton_off` | Rejected | - | `newton off (newton_pair off)` | forces on ghosts must be reverse-communicated |
+| `lammps.ghost_native_contract` | Planned | M3 | `ghost atoms from LAMMPS borders` | engine consumes owned+ghost atom set (LAMMPS_INTEGRATION 4) |
+| `lammps.virial_fdotr` | Planned | M6 | `Pair::virial_fdotr_compute` | global virial/pressure from forces on owned+ghost atoms |
+
+## 12. EEM charge model (added in M0.5)
+
+"EEM" is the project's name for the standard ReaxFF charge model. It is **not a different physics** from LAMMPS `fix qeq/reaxff`
+(ENGINE_SPEC §7.2 records exactly what is and is not established about the relation to AMS-ReaxFF's EEM).
+
+| Feature | Status | Milestone | LAMMPS construct | Notes |
+|---|---|---|---|---|
+| `eem.external_cpu_fix` | Planned | M2 | `fix qeq/reaxff \| fix qeq/shielded (stock CPU)` | first prototype: stock fix drives q through extract() |
+| `eem.charge_verification` | Planned | M5 | `(no LAMMPS equivalent)` | adapter checks the EEM residual so strictness holds with the stock fix |
+| `eem.strict_convergence` | Planned | M5 | `(no LAMMPS equivalent)` | default: non-convergence is an error/status, never silently accepted |
+| `eem.compat_warn_continue` | Planned | M5 | `fix qeq/reaxff default (warn and continue)` | explicit opt-in only |
+| `eem.gpu_resident` | Planned | M5 | `(no LAMMPS equivalent)` | GPU-resident EEM solve, subject to numerical validation |
+| `eem.net_charge_nonzero` | Deferred | - | `non-neutral fix group in fix qeq/reaxff` | LAMMPS imposes sum(q)=0; non-zero total charge not supported |
+| `compat.flag_derivation` | Implemented | - | `compat predicates (ENGINE_SPEC Q-06)` | exact upstream predicates, boundary-tested (tests/test_compat_flags.cpp) |

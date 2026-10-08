@@ -13,6 +13,7 @@ namespace reaxmetal {
 enum class Status {
   Implemented,  // exists AND has passing tests recorded in docs/VALIDATION.md
   Planned,      // scheduled for the named milestone; using it before then is an error
+  Deferred,     // not supported NOW, may be scheduled later (owner decision); using it is an error (not a warning)
   Rejected,     // deliberately unsupported; using it is an error (not a warning)
   Ignored       // accepted, has no effect on physics in this engine; a notice must be logged
 };
@@ -41,7 +42,7 @@ const Feature* find_feature(std::string_view id) noexcept;
 // Exact match on Feature::lammps_construct (used by the ffield / input parsers from M2 on).
 const Feature* find_by_lammps_construct(std::string_view construct) noexcept;
 
-// Gatekeeper. Throws UnsupportedFeatureError (Rejected) or NotImplementedError (Planned);
+// Gatekeeper. Throws UnsupportedFeatureError (Rejected or Deferred) or NotImplementedError (Planned);
 // throws std::logic_error for an id that is not in the table (a bug, never a user error).
 Verdict require_supported(std::string_view id);
 
