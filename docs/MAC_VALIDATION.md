@@ -6,6 +6,8 @@ Nothing below has been run. Every step records its own environment, so a failure
 ## Prerequisites (owner-reported machine, `LAMMPS_INTEGRATION.md` §11)
 Apple Silicon Mac, Command Line Tools (no Xcode needed), CMake ≥ 3.24, `clang++` (Apple clang), this repository checked out on branch `claude/friendly-ride-rwz7xu`. No network access is needed.
 
+A ready-made prompt for running these steps with Claude Code on the Mac is in `docs/MAC_CLAUDE_CODE_PROMPT.md`.
+
 ## Steps (run in order; stop at the first failure and send me the report)
 | Step | Command (repo root) | Answers | Expected on success |
 |---|---|---|---|
