@@ -86,8 +86,8 @@ if [[ ! -f "$EXP/q32_hbond_identity.json" ]]; then
     pf=$(ls third_party/lammps/patches/experiments/EXP-000${e}-*.patch); w="$EXP/exp$e-work"
     if [[ ! -x "$EXP/exp$e-install/bin/lmp" ]]; then
       rm -rf "$w"; git clone -q --shared "$root/lammps" "$w" && git -C "$w" checkout -q "$(grep '^lammps_commit=' third_party/lammps/PIN.txt | cut -d= -f2)" &&
-      git -C "$w" apply third_party/lammps/patches/0001-reaxmetal-diagnostics.patch && git -C "$w" add -A &&
-      git -C "$w" -c user.email=x@y -c user.name=x commit -q -m base0001 && git -C "$w" apply "$pf" &&
+      git -C "$w" apply "$here/third_party/lammps/patches/0001-reaxmetal-diagnostics.patch" && git -C "$w" add -A &&
+      git -C "$w" -c user.email=x@y -c user.name=x commit -q -m base0001 && git -C "$w" apply "$here/$pf" &&
       cmake -S "$w/cmake" -B "$EXP/exp$e-b" -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$EXP/exp$e-install" -DBUILD_MPI=off -DBUILD_OMP=off \
         -DBUILD_SHARED_LIBS=on -DLAMMPS_EXCEPTIONS=on -DPKG_REAXFF=on -DPKG_QEQ=on -DPKG_PLUGIN=on > "$EXP/exp$e-cfg.log" 2>&1 &&
       cmake --build "$EXP/exp$e-b" -j "$J" > "$EXP/exp$e-build.log" 2>&1 && cmake --install "$EXP/exp$e-b" > "$EXP/exp$e-inst.log" 2>&1
