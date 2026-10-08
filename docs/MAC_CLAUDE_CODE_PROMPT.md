@@ -1,7 +1,7 @@
 # Prompt for Claude Code running on the Apple machine
 
 Open Claude Code in a terminal **on the Mac**, in an empty working directory, and paste everything between the two lines below.
-(The repository is public to your account; Claude Code needs `git`, `cmake` >= 3.24 and Apple clang, i.e. Command Line Tools. No Xcode.)
+(Needs `git`, `cmake` >= 3.24 and Apple clang, i.e. Command Line Tools. No Xcode. You must be logged in to GitHub if the repository is private.)
 
 ---------------------------------------------------------------------------------------------------------------------------------
 
@@ -10,8 +10,8 @@ machine that has no Metal, so none of it has ever been built or run on Apple har
 report exactly what happened, and make only the smallest fixes needed to get past compile errors. Honesty matters more than a green result.
 
 SETUP
-1. `git clone <the ReaxMetal repository URL I give you> ReaxMetal && cd ReaxMetal && git checkout claude/friendly-ride-rwz7xu`
-   (if I did not give you a URL, ask me for it). Then `git checkout -b mac/m3-bringup`. Do NOT push to `claude/friendly-ride-rwz7xu`.
+1. `git clone https://github.com/yeatanir/Metal-Reax.git ReaxMetal && cd ReaxMetal && git checkout claude/friendly-ride-rwz7xu`
+   (if the clone needs credentials, ask me). Then `git checkout -b mac/m3-bringup`. Do NOT push to `claude/friendly-ride-rwz7xu`.
 2. Read `docs/MAC_VALIDATION.md` (what each step checks and what failures probably mean) and the header comments of
    `tools/metal_check.cpp`, `src/metal/metal_backend.mm` and `src/metal/shaders/reaxmetal_m3.metal`.
 
@@ -39,14 +39,13 @@ REPORT (always, even when everything passes)
 1. Per step: PASS / FAIL / NOT RUN, and the path of its report file. Paste the full `STEP n RESULT` line and every line containing FAIL.
 2. For step 1 also paste: the device line (`MET-1a`), the compile time (`MET-1b`), the kernel table, `MET-1e`, and `MET-1f` (the
    fused-multiply-add probe). For step 2: the GPU time and `band_pairs` per geometry. For step 3: the best GPU time line.
-3. A list of every file you changed with `git diff main..HEAD --stat` (or against the starting commit) and the reason for each change.
+3. A list of every file you changed with `git diff --stat 066f003..HEAD` and the reason for each change.
 4. Anything surprising, even if it did not fail (compiler warnings from the Metal compiler, deprecation warnings, slow steps).
 5. Finally, `cat` the content of each `mac-reports/step*.txt` file in full so I can paste it back to the person who wrote the code.
 
 ---------------------------------------------------------------------------------------------------------------------------------
 
 Notes for you (not part of the prompt)
-* Replace "<the ReaxMetal repository URL I give you>" by telling Claude Code the URL as your first message, or edit the line.
 * If you would rather not let Claude Code change code at all, delete the "MAY fix" sentences; it will then just run and report.
 * Whatever it reports, send me the three `mac-reports/step*.txt` files (or its final report); I will update `docs/VALIDATION.md`
   (MET-1, NBR-1, FORCE-2, MET-4) from them, and review any commits on `mac/m3-bringup` before merging anything.
