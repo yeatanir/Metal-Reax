@@ -41,6 +41,9 @@ def main():
     out_path = sys.argv[sys.argv.index("--out") + 1]
     builds = [a for a in sys.argv[3:] if not a.startswith("--") and a != out_path]
     runs = {b: load(rundir / b) for b in builds}
+    # a case that is INVALID in any build (e.g. LAMMPS warns that an MPI sub-domain is smaller than the skin) is excluded for all
+    dropped = sorted({c for r in runs.values() for c, v in r.items() if not v.get("valid")})
+    runs = {b: {c: v for c, v in r.items() if c not in dropped} for b, r in runs.items()}
     ids_all = sorted(set.intersection(*[set(r) for r in runs.values()]) & set(cond))
     sets = {
         "A_well_conditioned_pre_registered": [c for c in ids_all if cond[c]["well_conditioned_pre_registered"]],
@@ -48,7 +51,7 @@ def main():
         "C_not_in_B": [c for c in ids_all if not cond[c]["well_conditioned_extended"]],
         "D_proposed_X1_X2_only": [c for c in ids_all if cond[c]["well_conditioned_pre_registered"] and not cond[c]["well_conditioned_extended"]],
     }
-    rep = {"builds": builds, "n_cases": len(ids_all), "sets": {k: v for k, v in sets.items()},
+    rep = {"builds": builds, "excluded_invalid_in_some_build": dropped, "n_cases": len(ids_all), "sets": {k: v for k, v in sets.items()},
            "stats": {k: stats(runs, cond, v) for k, v in sets.items() if v}}
     Path(out_path).write_text(json.dumps(rep, indent=1))
     for name, st in rep["stats"].items():
