@@ -28,6 +28,7 @@ if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
   target_compile_definitions(test_metal_emulation PRIVATE REAXMETAL_FFIELD_DIR="${REAXMETAL_FFIELD_DIR}")
 endif()
 reaxmetal_apply_warnings(test_metal_emulation)
+target_compile_options(test_metal_emulation PRIVATE -Wno-unused-parameter)   # the M6 kernels share one 18-buffer signature; each uses a subset
 reaxmetal_apply_strict_fp(test_metal_emulation)
 add_test(NAME metal_emulation COMMAND test_metal_emulation)
 # The Apple-machine check tool, run end to end against a FAKE backend that executes the kernels on the CPU: tests the tool itself
@@ -100,6 +101,10 @@ if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
       add_test(NAME nonbonded_metal COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_nonbonded_fixtures.py
                --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal)
       set_tests_properties(nonbonded_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+      # GPU-1 (all terms): bonded + nonbonded kernels on the Metal device vs LAMMPS and CPU-64 under the owner-set C3 criteria; FORCE-2
+      add_test(NAME gpu_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_gpu_fixtures.py
+               --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR})
+      set_tests_properties(gpu_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     endif()
     if(RM_LIBLAMMPS)
       add_test(NAME lammps_ghosts COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/lammps/run_ghosts.py

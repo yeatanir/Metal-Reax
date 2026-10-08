@@ -21,6 +21,7 @@
 #include "reaxmetal/metal_backend.hpp"
 #include "reaxmetal_m3_types.h"
 #include "reaxmetal_m4_types.h"
+#include "reaxmetal_m6_types.h"
 
 namespace reaxmetal::mtl {
 
@@ -36,14 +37,14 @@ struct Dispatch {
   id<MTLComputePipelineState> pso = nil;
   NSUInteger threads = 0;
   std::vector<id<MTLBuffer>> buffers;   // bound at indices 0..k-1
-  std::array<unsigned char, 64> params{};
+  std::array<unsigned char, 128> params{};
   NSUInteger param_len = 0;
   NSUInteger param_index = 0;
 };
 
 template <class P>
 void set_params(Dispatch& d, const P& p, NSUInteger index) {
-  static_assert(sizeof(P) <= 64, "parameter block too large for Dispatch");
+  static_assert(sizeof(P) <= 128, "parameter block too large for Dispatch");
   std::memcpy(d.params.data(), &p, sizeof(P));
   d.param_len = sizeof(P);
   d.param_index = index;
@@ -133,6 +134,50 @@ struct Context::Impl {
     return rows;
   }
 };
+
+namespace {
+// Metal implementation of the bonded pipeline backend: every kernel takes the same 18 buffers + the RmBParams block (index 18)
+struct MetalBondedBackend final : BondedBackend {
+  Context::Impl* m;
+  std::vector<id<MTLBuffer>> in_bufs;    // x type tag atom_cell cell_start cell_items sb_f sb_i tb_f tb_i thb_idx thb_sets fb_f fb_has hb_f gp
+  id<MTLBuffer> wf = nil, wi = nil;
+  RmBParams p{};
+  double gpu = 0.0;
+  explicit MetalBondedBackend(Context::Impl* impl) : m(impl) {}
+  void setup(const BondedDeviceInput& in, const BondedLayout& L) override {
+    auto up = [&](const auto& v) { return m->buffer_from(v.data(), v.size() * sizeof(v[0])); };
+    in_bufs = {up(in.list.x), up(in.type), up(in.tag), up(in.list.grid.atom_cell), up(in.list.grid.cell_start), up(in.list.grid.cell_items), up(in.sb_f),
+               up(in.sb_i), up(in.tb_f), up(in.tb_i), up(in.thb_idx), up(in.thb_sets), up(in.fb_f), up(in.fb_has), up(in.hb_f), up(in.gp)};
+    wf = m->buffer(L.wf_size * sizeof(float));
+    wi = m->buffer(L.wi_size * sizeof(std::int32_t));
+    std::memset([wf contents], 0, L.wf_size * sizeof(float));
+    std::memset([wi contents], 0, L.wi_size * sizeof(std::int32_t));
+    p = RmBParams{};
+    p.N = L.N; p.nlocal = L.nlocal; p.B = L.B; p.H = L.H; p.NB = static_cast<std::uint32_t>(L.NB); p.ntypes = in.ntypes;
+    p.ncx = in.list.grid.ncell[0]; p.ncy = in.list.grid.ncell[1]; p.ncz = in.list.grid.ncell[2];
+    p.o_atom = static_cast<std::uint32_t>(L.o_atom); p.o_iatom = static_cast<std::uint32_t>(L.o_iatom); p.o_tkl = static_cast<std::uint32_t>(L.o_tkl);
+    p.o_tfl = static_cast<std::uint32_t>(L.o_tfl); p.o_hi = static_cast<std::uint32_t>(L.o_hi); p.o_hf = static_cast<std::uint32_t>(L.o_hf);
+    p.enobonds = in.enobonds;
+    p.bond_cut = in.bond_cut; p.bo_cut = in.bo_cut; p.thb_cut = in.thb_cut; p.thb_cutsq = in.thb_cutsq; p.hbond_cut = in.hbond_cut;
+  }
+  void run(std::span<const BondedStep> steps) override {
+    std::vector<Dispatch> list;
+    for (const BondedStep& st : steps) {
+      Dispatch d = m->make(st.kernel, st.threads);
+      d.buffers = in_bufs;
+      d.buffers.push_back(wf);
+      d.buffers.push_back(wi);
+      set_params(d, p, 18);
+      list.push_back(d);
+    }
+    m->run(list);
+    gpu += m->gpu_seconds;
+  }
+  void read_float(std::size_t offset, std::size_t count, float* dst) override { std::memcpy(dst, static_cast<const float*>([wf contents]) + offset, count * sizeof(float)); }
+  void read_int(std::size_t offset, std::size_t count, std::int32_t* dst) override { std::memcpy(dst, static_cast<const std::int32_t*>([wi contents]) + offset, count * sizeof(std::int32_t)); }
+  double gpu_seconds() const override { return gpu; }
+};
+}  // namespace
 
 Context::Context() : impl_(new Impl) {
   Impl& m = *impl_;
@@ -275,6 +320,13 @@ NonbondedDeviceOutput Context::nonbonded(const NonbondedDeviceInput& in) {
   m.run({d1, d2});
   std::memcpy(out.row_e.data(), [brow contents], out.row_e.size() * sizeof(float));
   std::memcpy(out.grad.data(), [bgrad contents], out.grad.size() * sizeof(float));
+  return out;
+}
+
+BondedDeviceOutput Context::bonded(const BondedDeviceInput& in) {
+  MetalBondedBackend be(impl_.get());
+  BondedDeviceOutput out = run_bonded_pipeline(be, in);
+  impl_->gpu_seconds = be.gpu_seconds();
   return out;
 }
 

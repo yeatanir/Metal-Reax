@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "reaxmetal/neighbor.hpp"
+#include "reaxmetal/bonded_device.hpp"
 #include "reaxmetal/nonbonded_device.hpp"
 
 namespace reaxmetal::mtl {   // not `metal`: that name is Metal Shading Language's own namespace
@@ -72,12 +73,15 @@ class Context {
   FarRowsF32 far_rows(const DeviceListInput& in, std::uint32_t initial_cap = 128, unsigned* launches = nullptr);
   // M5 nonbonded (frozen charges): rm_nb_pairs + rm_nb_gather in one command buffer; `in` was built by make_nonbonded_device_input
   NonbondedDeviceOutput nonbonded(const NonbondedDeviceInput& in);
+  // M6 bonded terms (all 10 bonded energy terms + gradient): rm_b_* kernels, grow-and-retry on bond / H-bond capacity
+  BondedDeviceOutput bonded(const BondedDeviceInput& in);
   // FORCE-2
   std::vector<float> partial_sums(std::span<const float> v, std::uint32_t chunk);
   float sum(std::span<const float> v, std::uint32_t chunk);   // partial_sums + rm_sum_partials in one command buffer
 
+ struct Impl;   // opaque; public only so that the backend adapters in metal_backend.mm can name it
+
  private:
-  struct Impl;
   std::unique_ptr<Impl> impl_;
 };
 

@@ -45,12 +45,14 @@ add_library(reaxmetal_core STATIC
   src/cpu/nonbonded.cpp
   src/neighbor/neighbor.cpp
   src/neighbor/nonbonded_device.cpp
+  src/neighbor/bonded_device.cpp
   src/io/ffield_parser.cpp
   src/io/control_parser.cpp
   src/io/pair_settings.cpp
   src/io/table_dump.cpp)
 set_target_properties(reaxmetal_core PROPERTIES POSITION_INDEPENDENT_CODE ON)  # linked into the LAMMPS plugin (a shared module)
 target_include_directories(reaxmetal_core PUBLIC include)
+target_include_directories(reaxmetal_core PRIVATE ${CMAKE_SOURCE_DIR}/src/metal/shaders)
 target_compile_features(reaxmetal_core PUBLIC cxx_std_20)
 reaxmetal_apply_warnings(reaxmetal_core)
 # Reference-quality FP: no contraction, no fast-math (docs/NUMERICAL_POLICY.md section 2).
@@ -65,6 +67,8 @@ reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m3.metal ${
 reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m4_types.h ${RM_GEN}/reaxmetal_m4_types.inc)
 reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/include/reaxmetal/terms.hpp ${RM_GEN}/reaxmetal_terms.inc)
 reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m4.metal ${RM_GEN}/reaxmetal_m4_kernels.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m6_types.h ${RM_GEN}/reaxmetal_m6_types.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m6.metal ${RM_GEN}/reaxmetal_m6_kernels.inc)
 if(REAXMETAL_ENABLE_METAL)
   enable_language(OBJCXX)
   set(CMAKE_OBJCXX_STANDARD 20)

@@ -21,6 +21,8 @@
 #include "reaxmetal/neighbor.hpp"
 #include "test_util.hpp"
 
+#include "reaxmetal/bonded.hpp"
+#include "reaxmetal/bonded_device.hpp"
 #include "reaxmetal/forcefield.hpp"
 #include "reaxmetal/nonbonded.hpp"
 #include "reaxmetal/nonbonded_device.hpp"
@@ -29,8 +31,10 @@
 #include "metal_shim.hpp"
 #include "reaxmetal_m3_types.h"
 #include "reaxmetal_m4_types.h"
+#include "reaxmetal_m6_types.h"
 #include "reaxmetal_m3.metal"
 #include "reaxmetal_m4.metal"
+#include "reaxmetal_m6.metal"
 #include "metal_shim_end.hpp"
 
 using namespace reaxmetal;
@@ -101,19 +105,21 @@ static void test_shader_source_lints() {
   RM_CHECK(src.find("#include <metal_stdlib>") != std::string::npos);
   RM_CHECK(src.find("struct RmFarRowsParams") != std::string::npos);        // types header was prepended
   RM_CHECK(src.find("struct RmFarRowsParams") < src.find("kernel void rm_far_rows"));
-  for (const char* k : {"rm_saxpy", "rm_math_probe", "rm_far_rows", "rm_partial_sums", "rm_sum_partials", "rm_nb_pairs", "rm_nb_gather"}) {
+  for (const char* k : {"rm_saxpy", "rm_math_probe", "rm_far_rows", "rm_partial_sums", "rm_sum_partials", "rm_nb_pairs", "rm_nb_gather", "rm_b_build", "rm_h_build", "rm_b_prime", "rm_b_correct", "rm_b_atom", "rm_b_valence", "rm_b_torsion", "rm_b_hbond", "rm_b_hbgather", "rm_b_cdgather", "rm_b_dbond", "rm_b_force"}) {
     RM_CHECK_MSG(src.find(std::string("kernel void ") + k) != std::string::npos, k);
     const auto names = mtl::kernel_names();
     RM_CHECK_MSG(std::find(names.begin(), names.end(), std::string(k)) != names.end(), k);
   }
-  // the assembled source is exactly: M3 types, M4 types, M3 kernels, terms.hpp, M4 kernels
+  // the assembled source is exactly: M3 types, M4 types, M6 types, M3 kernels, terms.hpp, M4 kernels, M6 kernels
   const std::string dir = std::string(REAXMETAL_SOURCE_DIR);
   const std::string t3 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m3_types.h");
   const std::string t4 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m4_types.h");
   const std::string k3 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m3.metal");
   const std::string tm = rmtest::read_file(dir + "/include/reaxmetal/terms.hpp");
   const std::string k4 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m4.metal");
-  RM_CHECK(full == t3 + "\n" + t4 + "\n" + k3 + "\n" + tm + "\n" + k4);
+  const std::string t6 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m6_types.h");
+  const std::string k6 = rmtest::read_file(dir + "/src/metal/shaders/reaxmetal_m6.metal");
+  RM_CHECK(full == t3 + "\n" + t4 + "\n" + t6 + "\n" + k3 + "\n" + tm + "\n" + k4 + "\n" + k6);
   RM_CHECK_MSG(src.find("RM_POW") != std::string::npos && src.find("#define RM_POW pow") != std::string::npos, "math macros must reach MSL");
   // struct layout the host relies on
   static_assert(sizeof(rm_u32) == 4 && sizeof(rm_f32) == 4, "scalar widths");
@@ -335,6 +341,108 @@ static void test_nonbonded_vs_cpu64() {
 #endif
 }
 
+// ---- the bonded pipeline: the SAME host orchestration run against a CPU backend that executes the M6 kernels as C++ --------------------------
+struct EmuBondedBackend final : BondedBackend {
+  const BondedDeviceInput* in = nullptr;
+  std::vector<float> wf, gp;
+  std::vector<std::int32_t> wi;
+  RmBParams p{};
+  void setup(const BondedDeviceInput& input, const BondedLayout& L) override {
+    in = &input;
+    wf.assign(L.wf_size, 0.0f);
+    wi.assign(L.wi_size, 0);
+    p = RmBParams{};
+    p.N = L.N; p.nlocal = L.nlocal; p.B = L.B; p.H = L.H; p.NB = static_cast<std::uint32_t>(L.NB); p.ntypes = input.ntypes;
+    p.ncx = input.list.grid.ncell[0]; p.ncy = input.list.grid.ncell[1]; p.ncz = input.list.grid.ncell[2];
+    p.o_atom = static_cast<std::uint32_t>(L.o_atom); p.o_iatom = static_cast<std::uint32_t>(L.o_iatom); p.o_tkl = static_cast<std::uint32_t>(L.o_tkl);
+    p.o_tfl = static_cast<std::uint32_t>(L.o_tfl); p.o_hi = static_cast<std::uint32_t>(L.o_hi); p.o_hf = static_cast<std::uint32_t>(L.o_hf);
+    p.enobonds = input.enobonds;
+    p.bond_cut = input.bond_cut; p.bo_cut = input.bo_cut; p.thb_cut = input.thb_cut; p.thb_cutsq = input.thb_cutsq; p.hbond_cut = input.hbond_cut;
+  }
+  template <class K>
+  void each(std::uint32_t threads, K kernel) {
+    for (std::uint32_t t = 0; t < threads; ++t)
+      kernel(in->list.x.data(), in->type.data(), in->tag.data(), in->list.grid.atom_cell.data(), in->list.grid.cell_start.data(), in->list.grid.cell_items.data(),
+             in->sb_f.data(), in->sb_i.data(), in->tb_f.data(), in->tb_i.data(), in->thb_idx.data(), in->thb_sets.data(), in->fb_f.data(), in->fb_has.data(), in->hb_f.data(),
+             in->gp.data(), wf.data(), wi.data(), p, t);
+  }
+  void run(std::span<const BondedStep> steps) override {
+    for (const BondedStep& st : steps) {
+      const std::string k = st.kernel;
+      if (k == "rm_b_build") each(st.threads, rm_b_build);
+      else if (k == "rm_h_build") each(st.threads, rm_h_build);
+      else if (k == "rm_b_prime") each(st.threads, rm_b_prime);
+      else if (k == "rm_b_correct") each(st.threads, rm_b_correct);
+      else if (k == "rm_b_atom") each(st.threads, rm_b_atom);
+      else if (k == "rm_b_valence") each(st.threads, rm_b_valence);
+      else if (k == "rm_b_torsion") each(st.threads, rm_b_torsion);
+      else if (k == "rm_b_hbond") each(st.threads, rm_b_hbond);
+      else if (k == "rm_b_hbgather") each(st.threads, rm_b_hbgather);
+      else if (k == "rm_b_cdgather") each(st.threads, rm_b_cdgather);
+      else if (k == "rm_b_dbond") each(st.threads, rm_b_dbond);
+      else if (k == "rm_b_force") each(st.threads, rm_b_force);
+      else RM_CHECK_MSG(false, "unknown kernel " + k);
+    }
+  }
+  void read_float(std::size_t o, std::size_t n, float* dst) override { std::copy(wf.begin() + static_cast<std::ptrdiff_t>(o), wf.begin() + static_cast<std::ptrdiff_t>(o + n), dst); }
+  void read_int(std::size_t o, std::size_t n, std::int32_t* dst) override { std::copy(wi.begin() + static_cast<std::ptrdiff_t>(o), wi.begin() + static_cast<std::ptrdiff_t>(o + n), dst); }
+};
+
+static void test_bonded_pipeline_vs_cpu64() {
+#ifdef REAXMETAL_FFIELD_DIR
+  const ForceField ff = read_force_field_file(std::string(REAXMETAL_FFIELD_DIR) + "/ffield.reax.cho");
+  const int tC = ff.match_element("C").at(0), tH = ff.match_element("H").at(0), tO = ff.match_element("O").at(0);
+  Rng r(97531);
+  for (const int mode : {0, 1}) {
+    const Box box = mode == 0 ? Box::orthogonal({0, 0, 0}, {13.0, 13.5, 14.0}, {true, true, true}) : Box::orthogonal({0, 0, 0}, {13.0, 13.5, 14.0}, {false, false, false});
+    // small molecules on a loose grid: C4H6O-like fragments with perturbed bond lengths
+    std::vector<double> x;
+    std::vector<int> type;
+    std::vector<std::int64_t> tag;
+    const double bl = 1.5;
+    for (int m = 0; m < 6; ++m) {
+      const Vec3 o{2.5 + 3.5 * (m % 3), 3.0 + 4.0 * (m / 3), 4.0};
+      const Vec3 off[8] = {{0, 0, 0}, {bl, 0, 0}, {-0.6, 0.9, 0.5}, {-0.6, -0.9, 0.5}, {bl + 0.6, 0.9, -0.5}, {bl + 0.6, -0.9, -0.5}, {-0.2, 0.1, -1.1}, {bl + 0.9, 0.0, 0.9}};
+      const int ty[8] = {tC, tC, tH, tH, tH, tH, tO, tH};
+      for (int a = 0; a < 8; ++a) {
+        for (int c = 0; c < 3; ++c) x.push_back(o[static_cast<std::size_t>(c)] + off[a][static_cast<std::size_t>(c)] + 0.12 * (r.u() - 0.5));
+        type.push_back(ty[a]);
+        tag.push_back(static_cast<std::int64_t>(type.size()));
+      }
+    }
+    NeighborCutoffs cut;
+    cut.nonb = ff.file_control().nonb_cut;
+    ExpandOptions eo; eo.shell = cut.required_shell();
+    const AtomSet a = expand_images(box, x, type, tag, eo);
+    const FarList f = build_far_list(a, cut);
+    ControlParams ctl;
+    const BondedResult ref = compute_bonded_core(ff, ctl, a, f);
+    const BondedDeviceInput in = make_bonded_device_input(ff, ctl, a, box, {});
+    EmuBondedBackend be;
+    const BondedDeviceOutput dev = run_bonded_pipeline(be, in, 4, 4);   // tiny initial capacities: exercises grow-and-retry
+    const BondedResult got = finish_bonded(dev, a.nall());
+    RM_CHECK_MSG(dev.attempts >= 2, "capacity growth must have been exercised");
+    double worst_e = 0.0;
+    for (const EnergyTerm t : {EnergyTerm::Bond, EnergyTerm::LonePair, EnergyTerm::Over, EnergyTerm::Under, EnergyTerm::Valence, EnergyTerm::Penalty,
+                               EnergyTerm::Coalition, EnergyTerm::Torsion, EnergyTerm::Conjugation, EnergyTerm::HBond}) {
+      const double d = std::fabs(got.e[t] - ref.e[t]) / (1.0 + std::fabs(ref.e[t]));
+      worst_e = std::fmax(worst_e, d);
+      RM_CHECK_MSG(d < 2e-4, "bonded term energy");
+    }
+    double worst_g = 0.0, gmax = 0.0;
+    for (std::size_t k = 0; k < ref.grad.size(); ++k) { worst_g = std::fmax(worst_g, std::fabs(got.grad[k] - ref.grad[k])); gmax = std::fmax(gmax, std::fabs(ref.grad[k])); }
+    RM_CHECK_MSG(worst_g < 2e-3 * (1.0 + gmax), "bonded gradient vs CPU-64");
+    EmuBondedBackend be2;
+    const BondedDeviceOutput dev2 = run_bonded_pipeline(be2, in, 4, 4);
+    RM_CHECK(dev2.grad == dev.grad);
+    std::printf("  bonded pipeline emulation (%s): nall %zu, caps B=%u H=%u after %u attempts, worst term rel %.2e, max |dgrad| %.2e (max |grad| %.1f)\n", mode == 0 ? "periodic" : "cluster",
+                a.nall(), dev.bond_cap, dev.hbond_cap, dev.attempts, worst_e, worst_g, gmax);
+  }
+#else
+  std::puts("  bonded pipeline emulation skipped (REAXMETAL_FFIELD_DIR not set)");
+#endif
+}
+
 int main() {
   test_shader_source_lints();
   test_saxpy_and_probe();
@@ -343,6 +451,7 @@ int main() {
   test_growth();
   test_reduction_kernels();
   test_nonbonded_vs_cpu64();
+  test_bonded_pipeline_vs_cpu64();
   if (rmtest::failures() != 0) {
     std::fprintf(stderr, "%d check(s) failed\n", rmtest::failures());
     return 1;

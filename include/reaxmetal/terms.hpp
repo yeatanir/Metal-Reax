@@ -24,6 +24,15 @@
 namespace reaxmetal {
 namespace terms {
 
+// exp() whose argument is capped from above so that FP32 cannot overflow (float: e^40 = 2.4e17 keeps products of a few such factors finite;
+// double: e^700). Every use is a saturating sigmoid/ratio where the capped and the true value agree to far below the working precision
+// (NUMERICAL_POLICY 4.4); in double the cap is never reached by physical inputs, so CPU-64 results are those of the reference expression.
+template <class T>
+inline T safe_exp(T x) {
+  const T cap = (sizeof(T) == 4) ? T(40) : T(700);
+  return RM_EXP(x > cap ? cap : x);
+}
+
 template <class T>
 struct PairParams {  // the pieces of TwoBody the bonded terms use
   T p_bo1, p_bo2, p_bo3, p_bo4, p_bo5, p_bo6, r_s, r_p, r_pp;
@@ -65,8 +74,8 @@ inline BoCorrected<T> bo_correct(const RM_THREAD PairParams<T>& p, T p_boc1, T p
   } else {
     T f1, Cf1_ij, Cf1_ji, f4, f5, f4f5, Cf45_ij, Cf45_ji;
     if (p.ovc >= T(0.001)) {
-      const T exp_p1i = RM_EXP(-p_boc1 * Deltap_i), exp_p2i = RM_EXP(-p_boc2 * Deltap_i);
-      const T exp_p1j = RM_EXP(-p_boc1 * Deltap_j), exp_p2j = RM_EXP(-p_boc2 * Deltap_j);
+      const T exp_p1i = safe_exp<T>(-p_boc1 * Deltap_i), exp_p2i = safe_exp<T>(-p_boc2 * Deltap_i);
+      const T exp_p1j = safe_exp<T>(-p_boc1 * Deltap_j), exp_p2j = safe_exp<T>(-p_boc2 * Deltap_j);
       const T f2 = exp_p1i + exp_p1j;
       const T f3 = -T(1) / p_boc2 * RM_LOG(T(0.5) * (exp_p2i + exp_p2j));
       f1 = T(0.5) * ((val_i + f2) / (val_i + f2 + f3) + (val_j + f2) / (val_j + f2 + f3));
@@ -81,8 +90,8 @@ inline BoCorrected<T> bo_correct(const RM_THREAD PairParams<T>& p, T p_boc1, T p
       f1 = T(1); Cf1_ij = Cf1_ji = T(0);
     }
     if (p.v13cor >= T(0.001)) {
-      const T exp_f4 = RM_EXP(-(p.p_boc4 * (BO * BO) - Deltap_boc_i) * p.p_boc3 + p.p_boc5);
-      const T exp_f5 = RM_EXP(-(p.p_boc4 * (BO * BO) - Deltap_boc_j) * p.p_boc3 + p.p_boc5);
+      const T exp_f4 = safe_exp<T>(-(p.p_boc4 * (BO * BO) - Deltap_boc_i) * p.p_boc3 + p.p_boc5);
+      const T exp_f5 = safe_exp<T>(-(p.p_boc4 * (BO * BO) - Deltap_boc_j) * p.p_boc3 + p.p_boc5);
       f4 = T(1) / (T(1) + exp_f4);
       f5 = T(1) / (T(1) + exp_f5);
       f4f5 = f4 * f5;
@@ -190,7 +199,7 @@ template <class T>
 struct LonePair { T e, CElp; };
 template <class T>
 inline LonePair<T> lone_pair(T p_lp2, T Delta_lp, T dDelta_lp) {
-  const T expvd2 = RM_EXP(-75 * Delta_lp);
+  const T expvd2 = safe_exp<T>(-75 * Delta_lp);
   const T inv_expvd2 = T(1) / (T(1) + expvd2);
   LonePair<T> o;
   o.e = p_lp2 * Delta_lp * inv_expvd2;
@@ -221,10 +230,10 @@ struct OverUnder {
 template <class T>
 inline OverUnder<T> over_under(T sum_ovun1, T sum_ovun2, T Delta, T Delta_lp_temp, T dDelta_lp, T dfvl, T valency, T p_ovun2, T p_ovun5,
                                T p_ovun3, T p_ovun4, T p_ovun6, T p_ovun7, T p_ovun8, bool under_active) {
-  const T exp_ovun1 = p_ovun3 * RM_EXP(p_ovun4 * sum_ovun2);
+  const T exp_ovun1 = p_ovun3 * safe_exp<T>(p_ovun4 * sum_ovun2);
   const T inv_exp_ovun1 = T(1.0) / (1 + exp_ovun1);
   const T Delta_lpcorr = Delta - (dfvl * Delta_lp_temp) * inv_exp_ovun1;
-  const T exp_ovun2 = RM_EXP(p_ovun2 * Delta_lpcorr);
+  const T exp_ovun2 = safe_exp<T>(p_ovun2 * Delta_lpcorr);
   const T inv_exp_ovun2 = T(1.0) / (T(1.0) + exp_ovun2);
   const T DlpVi = T(1.0) / (Delta_lpcorr + valency + T(1e-8));
   OverUnder<T> o{};
@@ -235,9 +244,9 @@ inline OverUnder<T> over_under(T sum_ovun1, T sum_ovun2, T Delta, T Delta_lp_tem
   o.CEover3 = CEover2 * (T(1.0) - dfvl * dDelta_lp * inv_exp_ovun1);
   o.CEover4 = CEover2 * (dfvl * Delta_lp_temp) * p_ovun4 * exp_ovun1 * (inv_exp_ovun1 * inv_exp_ovun1);
 
-  const T exp_ovun2n = T(1.0) / exp_ovun2;
-  const T exp_ovun6 = RM_EXP(p_ovun6 * Delta_lpcorr);
-  const T exp_ovun8 = p_ovun7 * RM_EXP(p_ovun8 * sum_ovun2);
+  const T exp_ovun2n = safe_exp<T>(-p_ovun2 * Delta_lpcorr);   // = 1/exp_ovun2, without the 1/0 overflow when exp_ovun2 underflows
+  const T exp_ovun6 = safe_exp<T>(p_ovun6 * Delta_lpcorr);
+  const T exp_ovun8 = p_ovun7 * safe_exp<T>(p_ovun8 * sum_ovun2);
   const T inv_exp_ovun2n = T(1.0) / (T(1.0) + exp_ovun2n);
   const T inv_exp_ovun8 = T(1.0) / (T(1.0) + exp_ovun8);
   // the reference evaluates e_un (and CEunder2 from it) unconditionally, but only adds it to the energy and CdDelta when `under_active`

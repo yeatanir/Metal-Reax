@@ -11,6 +11,7 @@
 #include <string>
 
 #include "reaxmetal/bonded.hpp"
+#include "reaxmetal/bonded_device.hpp"
 #include "reaxmetal/metal_backend.hpp"
 #include "reaxmetal/nonbonded.hpp"
 #include "reaxmetal/nonbonded_device.hpp"
@@ -87,7 +88,19 @@ int main(int argc, char** argv) {
     const AtomSet a = expand_images(box, x, type, tag, eo);
     a.validate(box);
     const FarList f = build_far_list(a, cut);
-    const BondedResult r = compute_bonded_core(ff, ctl, a, f, bo);
+    double bonded_gpu_ms = -1;
+    BondedResult r;
+    if (backend == "metal") {
+      mtl::Context ctx;
+      const auto bin = make_bonded_device_input(ff, ctl, a, box, bo);
+      const auto bout = ctx.bonded(bin);
+      bonded_gpu_ms = 1e3 * ctx.last_gpu_seconds();
+      r = finish_bonded(bout, a.nall());
+      r.stats.bonds = bout.bond_cap;   // (not the bond count: the capacity that was needed)
+    } else {
+      r = compute_bonded_core(ff, ctl, a, f, bo);
+    }
+    if (bonded_gpu_ms >= 0) std::printf("bonded_gpu_ms %.6g\nbond_cap %zu\n", bonded_gpu_ms, r.stats.bonds);
     std::printf("e_bond %.17g\ne_lp %.17g\ne_ov %.17g\ne_un %.17g\nbonds %zu\n", r.e[EnergyTerm::Bond], r.e[EnergyTerm::LonePair],
                 r.e[EnergyTerm::Over], r.e[EnergyTerm::Under], r.stats.bonds);
     std::printf("e_ang %.17g\ne_pen %.17g\ne_coa %.17g\ne_tor %.17g\ne_con %.17g\ne_hb %.17g\n", r.e[EnergyTerm::Valence], r.e[EnergyTerm::Penalty],
