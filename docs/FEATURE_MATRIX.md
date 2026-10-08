@@ -13,8 +13,10 @@ test fails if this file and the code table disagree):
 | Rejected | Deliberately unsupported (no plan). Requesting it throws `UnsupportedFeatureError` (an error, never a warning). |
 | Ignored | Accepted; has no effect on physics in this engine; a notice is logged. |
 
-**Implemented so far** (tested, see VALIDATION.md): `compat.flag_derivation` (M0.5); the force-field/control-file parser rows `ffield.*` and the
-adapter rows `lammps.plugin_loadable`, `lammps.extract_chi_eta_gamma`, `lammps.single_rank_only` (M2: PARSE-1, PARSE-2, EEM-3, INT-3, LINT-1).
+**Implemented so far** (tested on the CPU, see VALIDATION.md): `compat.flag_derivation` (M0.5); the force-field/control-file parser rows `ffield.*` and the
+adapter rows `lammps.plugin_loadable`, `lammps.extract_chi_eta_gamma`, `lammps.single_rank_only` (M2); the system-geometry rows `sys.pbc_images`, `sys.triclinic`,
+`sys.nonperiodic`, `lammps.ghost_native_contract`, `lammps.ghost_shell_check`, `dev.neighbor_selfcheck` (M3, CPU side). **Implemented never means "runs on Metal"**: the three
+`metal.*` rows and `backend.metal_fp32` stay Planned until the Apple-machine steps (tools/mac) have been run and recorded.
 No energy term exists yet and `pair_style reaxff/metal` refuses to compute (it never returns zero energy).
 Milestone letters follow the mission statement (M2 parser … M8 optimisation) as re-planned in `ARCHITECTURE_DECISIONS.md` ADR-013
 (M0.5 integration architecture; M7 is now LAMMPS-hosted validation, not a standalone MD engine).
@@ -90,9 +92,9 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `sys.pbc_images` | Planned | M3 | `ghost atoms / periodic images` | ghost-native contract: images supplied by the host (LAMMPS ghosts) or by the standalone image expander; never minimum-image only (ADR-004/013) |
-| `sys.triclinic` | Planned | M3 | `triclinic box` | |
-| `sys.nonperiodic` | Planned | M3 | `boundary f/s/m` | |
+| `sys.pbc_images` | Implemented | - | `ghost atoms / periodic images` | CPU: standalone image expander (triclinic, mixed periodicity) = LAMMPS ghost set for all 58 fixtures (NBR-2); LAMMPS ghosts verified as owner + lattice shift inside LAMMPS (INT-7). Metal: written only |
+| `sys.triclinic` | Implemented | - | `triclinic box` | CPU: expander, far list and ghost-native view on triclinic cells (NBR-1/2/3, INT-7) |
+| `sys.nonperiodic` | Implemented | - | `boundary f/s/m` | CPU: boundary f along any direction (NBR-1, fixtures); shrink-wrapped/m boundaries are not separately tested |
 | `sys.type_null_mapping` | Rejected | - | `pair_coeff ... NULL` | hybrid placeholder |
 | `sys.hybrid` | Rejected | - | `pair_style hybrid[/overlay] with reaxff` | |
 
@@ -123,6 +125,9 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `backend.cpu_fp64` | Planned | M4 | `-` | reference backend |
 | `backend.cpu_fp32_twin` | Planned | M4 | `-` | same term functions in float; calibrates GPU tolerance (NUMERICAL_POLICY 5) |
 | `backend.metal_fp32` | Planned | M3 | `-` | Apple GPUs have no FP64 |
+| `metal.runtime_compile` | Planned | M3 | `(no LAMMPS equivalent)` | shaders compiled at run time from source (no Xcode / metal compiler); written, NOT built or run on Apple hardware (MET-1) |
+| `metal.device_neighbor_rows` | Planned | M3 | `(no LAMMPS equivalent)` | device far-neighbor rows over owned+ghost atoms with grow-and-retry; kernel logic verified by CPU emulation only (NBR-1 Metal part) |
+| `metal.deterministic_reduction` | Planned | M3 | `(no LAMMPS equivalent)` | fixed-order float reductions, bitwise equal to the CPU twin; emulated only (FORCE-2 Metal part) |
 | `backend.metal_atomic_accum` | Planned | M8 | `-` | benchmark-only option; default path is deterministic |
 | `backend.metal_batching` | Planned | M8 | `-` | |
 | `backend.fp16` | Rejected | - | `-` | |
@@ -151,8 +156,10 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 | `lammps.single_rank_only` | Implemented | - | `comm->nprocs == 1` | multi-rank runs fail explicitly (checked in init_style) |
 | `lammps.multi_rank` | Deferred | - | `mpirun -np N>1 with reaxff/metal` | deferred; needs distributed ghost/QEq handling |
 | `lammps.newton_off` | Rejected | - | `newton off (newton_pair off)` | forces on ghosts must be reverse-communicated |
-| `lammps.ghost_native_contract` | Planned | M3 | `ghost atoms from LAMMPS borders` | engine consumes owned+ghost atom set (LAMMPS_INTEGRATION 4) |
+| `lammps.ghost_native_contract` | Implemented | - | `ghost atoms from LAMMPS borders` | adapter A2 builds the owned+ghost view from LAMMPS arrays and verifies ghost = owner + shift (INT-7, 58 fixtures); far list equals LAMMPS' own list row by row |
 | `lammps.virial_fdotr` | Planned | M6 | `Pair::virial_fdotr_compute` | global virial/pressure from forces on owned+ghost atoms |
+| `lammps.ghost_shell_check` | Implemented | - | `(reference only warns, pair_reaxff.cpp:372-375)` | ghost shell < max(nonb_cut, hbond_cut, 2*bond_cut) is an error (INT-7 negative case) |
+| `dev.neighbor_selfcheck` | Implemented | - | `(development aid)` | pair_style keyword reaxmetal_selfcheck yes: verify the host view and far list inside LAMMPS, then refuse to compute |
 
 ## 12. EEM charge model (added in M0.5)
 

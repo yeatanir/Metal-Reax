@@ -189,3 +189,37 @@ macOS/Metal anything (the plugin has not been built with Apple clang or loaded i
 
 ### Awaiting owner confirmation
 (a) the reading of "M1 approved" above; (b) ADR-022: Q-12 enforced per used element pair rather than per file; (c) whether the adapter should keep the real style name `reaxff/metal` while `compute()` refuses (my choice) or stay unregistered until M4.
+
+## M3 — geometry/neighbor core, Metal layer, adapter A2 (2026-10-08)
+
+### Instruction
+"Yes M3 next. Also b) Metal code alongside the CPU path in M3. You would run a short test script on the Mac and send me the output after each step. — write the metal code". So: CPU path validated here; Metal code written here and *never run*; three Apple-machine steps prepared (`tools/mac`, `docs/MAC_VALIDATION.md`). Status per ADR-016: **CPU: validated on Linux. Metal: written (and emulated/static-checked); not compiled, not executed.**
+
+### What was built
+* CPU: `Box`/`AtomSet`, image expander (triclinic, mixed periodicity), cell grid, far neighbor list with the reference's row cutoffs, owner-computes pair counting, device-list input with the float margin contract, row verification, grow-and-retry, fixed-order reductions (`include/reaxmetal/{system,neighbor}.hpp`).
+* Metal: MSL kernels (`saxpy`, `math_probe`, `rm_far_rows`, `rm_partial_sums`, `rm_sum_partials`), shared parameter header, Objective-C++ host with run-time shader compilation, plain-C++ interface and a "not available" stub, on-device check tool and step scripts, CPU emulation shim for the kernels, fake backend for testing the check tool, ObjC++ stub headers for a syntax check.
+* Adapter A2: ghost-native host view of LAMMPS' own arrays, strict ghost-shell check, `reaxmetal_selfcheck` row-by-row comparison with LAMMPS' list.
+
+### Results (actual runs)
+* NBR-1 CPU: cell-grid list bitwise equal to brute force on 4 box types × 3 cutoff sets. NBR-2: ghost sets equal LAMMPS' for 58/58 fixtures (32 313 ghosts). NBR-3: pair classes equal the M1 tallies for 58/58. INT-7: inside LAMMPS the far list equals LAMMPS' list row by row for 58/58 fixtures; ghost = owner + shift verified on every ghost.
+* Kernels by emulation: 7 shared geometries (up to 20 197 atoms, 2.6 M entries), 0 missing / 0 illegal; reductions bitwise equal to the CPU twin. **This is emulation, not Metal.**
+* **CTest: 24/24 pass with g++ 13.3 and with clang++ 18.1, 0 warnings** (fresh build trees, all opt-in LAMMPS tests enabled); the default configuration (no LAMMPS tree) passes its 18 tests.
+* Mutation checks: neighbor core (tag order, tie-break sign, shell width, strict `<`, ghost-row cutoff) — all caught after adding a cutoff-boundary unit test (the first set missed `<` vs `<=` in the unit test and missed orientation flips in the fixture test); 6 kernel mutations all caught; NBR-2 shell mutation caught; A2 ghost perturbation caught.
+
+### Decisions I took that you should confirm
+1. **ADR-023: no metal-cpp.** It is Apache-2.0 (I downloaded and read the license); the FSF treats Apache-2.0 as incompatible with GPL-2.0-only. The host layer is Objective-C++ against the system frameworks. This overrides the ADR-008 wording.
+2. **ADR-024: binning stays on the host** (device receives cell ids and CSR cells); only the per-atom row search and reductions run on the GPU in M3. This narrows "device cell lists" in the milestone table.
+3. Canonical reduction order is chunked-sequential (slow but bit-identical to a CPU twin).
+
+### Mistakes made and corrected during M3
+* **Wrong test expectation in my own Mac tool**: the "order-sensitive vector" gave the same sum in canonical and left-to-right order (5 = 5), so step 3 would have reported a failure on your machine for a non-bug. Found only because I built a fake backend and ran the tool end to end; vector replaced and its premise is now a unit test.
+* The first fixture driver wrote numpy `repr` (`np.float64(...)`) into the case files, and omitted `--lgvdw` for the lg fixtures. The shim namespace `metal` clashed with my own `reaxmetal::metal` (renamed `mtl`). My shader lint matched comments and `std::uint32_t` in the shared header (comments are now stripped and the header avoids `std::`). A `sed` edit of the test dropped a function once (restored).
+* **A2 checks its own row-cutoff function against itself**: mutating `row_cut` (ghost rows = `nonb_cut`) is not caught by `lammps_a2`; the cutoffs are covered by a unit test and source reading only until M4 bond lists give an end-to-end check. Recorded in VALIDATION INT-7.
+* 3 fixtures (`ab_ammonia_borane`, `lg_*`) are rejected by the strict Q-12 rule when the type map contains an element that has no atoms; the A2 harness retries with only the elements that have atoms. This is a (conservative) consequence of ADR-022 that users will meet: it is per element *type*, not per element actually present in the data.
+* Capability table: Implemented rows must use milestone `-` (the `capabilities` test caught it again after I forgot).
+
+### Not run
+**Everything Metal**: the Objective-C++ has never been compiled with the Apple SDK; no shader has been seen by the Metal compiler; no GPU kernel has run; INT-5 (plugin on macOS); NBR-1/FORCE-2 Metal parts; GPU timing. Also not run: shrink-wrapped/`m` boundaries; MPI beyond the existing refusal; a LAMMPS built as C++20 (`REAXMETAL_LAMMPS_STD_FORMAT=ON`).
+
+### What I need from you
+Run `tools/mac/step1_bringup.sh` first and send `mac-reports/step1-*.txt`. Then steps 2 and 3 (details in `docs/MAC_VALIDATION.md`). I will not claim any Metal result before that, and step 4 (macOS plugin build, INT-5) will be prepared after the Metal layer builds. Also decide: ADR-023 (no metal-cpp), the narrowed host-binning scope (ADR-024), and the three pending items from M2 (ADR-022 Q-12 per used pair; real style name while `compute()` refuses).

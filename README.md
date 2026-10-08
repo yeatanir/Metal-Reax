@@ -4,7 +4,7 @@ A native Apple **Metal** GPU backend for a general-purpose **ReaxFF** molecular-
 against a pinned LAMMPS release. Element-agnostic: ordinary ReaxFF `ffield` files are read at runtime and no
 chemical system is built in.
 
-**Current status: M0, M0.5, M1 (LAMMPS reference oracle) and M2 (ffield/control parser, tables with compat flags, adapter A1: parse + `extract()` + host checks, no force backend). No ReaxFF physics is implemented.**
+**Current status: M0, M0.5, M1 (LAMMPS reference oracle), M2 (parser, adapter A1) and M3 (CPU side: image expander, neighbor lists, adapter A2 ghost-native view — all verified against LAMMPS on Linux; Metal side: shaders, Objective-C++ host and Mac check scripts WRITTEN BUT NEVER BUILT OR RUN on Apple hardware). No ReaxFF physics is implemented.**
 Nothing in this repository computes an energy, force or charge yet, and nothing has been run on a GPU. The target is a **LAMMPS plugin `pair_style reaxff/metal`** (LAMMPS provides integrators, thermostats, minimisers, ghosts); there is no standalone MD engine.
 
 | Where to look | What it is |
@@ -63,3 +63,11 @@ build/reaxmetal_ffield_dump --sha256 <ffield>                              # can
 python3 tools/reaxref/parse_diff.py --lmp <instrumented lmp> --dump-tool build/reaxmetal_ffield_dump --ffield-dir <ff> --workdir <w>   # differential fuzz
 ```
 `pair_style reaxff/metal` loads and parses, but **refuses to compute** until M4.
+
+## M3 — Metal bring-up on the Apple machine (nothing in this section has been run yet)
+```
+tools/mac/step1_bringup.sh        # builds with the Command-Line-Tools SDK, compiles the shaders at run time, trivial kernels (MET-1)
+tools/mac/step2_neighbor.sh       # device neighbor rows vs the CPU list on 7 geometries, determinism, grow-and-retry (NBR-1, FORCE-2)
+tools/mac/step3_reduce.sh         # fixed-order reductions bitwise vs the CPU twin (FORCE-2, MET-4)
+```
+Each script writes `mac-reports/stepN-<time>.txt` (environment + build log + results); send that file back. Details and what each result means: `docs/MAC_VALIDATION.md`.

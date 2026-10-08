@@ -10,7 +10,7 @@ compares it row by row with LAMMPS' own half/newton-off/ghost neighbor list, (3)
 pair classes; then compute() refuses (no force backend) and the summary is read from the error text. The class counts must equal
 the interaction tallies recorded from stock pair reaxff in M1 (vdw.oo / vdw.og / vdw.self).
 usage: run_a2.py --lib liblammps --plugin reaxmetaladapterplugin.so --ffield-dir DIR [--fixtures tests/fixtures]"""
-import argparse, ctypes, json, re, sys
+import argparse, ctypes, json, re, sys, tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -41,7 +41,7 @@ class Lammps:
         self.L.lammps_close(self.h)
 
 
-def run_case(a, case, ref, trim=False):
+def run_case(a, case, ref, trim=False, control="NULL"):
     lo, hi, tilt = (tuple(float(v) for v in t) for t in runner.cell_to_lammps(case["cell"]))
     els = case["elements"]
     types = [int(t) for t in ref["types"]]
@@ -59,7 +59,7 @@ def run_case(a, case, ref, trim=False):
         for p, t in zip(ref["positions"], types):
             steps.append(f"create_atoms {t} single {float(p[0])!r} {float(p[1])!r} {float(p[2])!r} units box")
         steps.append(f"plugin load {a.plugin}")
-        steps.append(f"pair_style reaxff/metal NULL checkqeq no lgvdw {lg} reaxmetal_selfcheck yes")
+        steps.append(f"pair_style reaxff/metal {control} checkqeq no lgvdw {lg} reaxmetal_selfcheck yes")
         steps.append(f'pair_coeff * * "{Path(a.ffield_dir) / case["ffield"]["name"]}" ' + " ".join(els))
         steps.append(f"neighbor {skin!r} bin\nneigh_modify delay 0 every 1 check no\nthermo_style custom step pe\nrun 0")
         for s in steps:
@@ -100,6 +100,15 @@ def main():
             fails.append(f"{cf.stem}: compute() did not refuse after the self-check")
         else:
             ok_n += 1
+    # C3, strict where the reference only warns: a ghost shell narrower than max(nonb_cut, hbond_cut, 2*bond_cut) is an error
+    with tempfile.TemporaryDirectory() as td:
+        ctl = Path(td) / "ctl.reaxff"; ctl.write_text("nbrhood_cutoff 8.0\n")
+        case = json.loads((fx / "cases" / "cho_water_box_8.json").read_text()); ref = json.loads((fx / "reference" / "cho_water_box_8.json").read_text())
+        msg = run_case(a, case, ref, control=str(ctl))
+        if "ghost shell too narrow" not in msg:
+            fails.append(f"narrow ghost shell was not rejected: {msg[:300]}")
+        else:
+            print("  C3: nbrhood_cutoff 8.0 (needs a 16 A ghost shell, LAMMPS provides 12 A) -> rejected as required")
     for f in fails:
         print("FAIL", f)
     print(f"INT-7: {ok_n} fixtures verified inside LAMMPS ({nghost_total} ghost atoms), {strict_n} needed the trimmed element map (strict Q-12), {len(fails)} failures")

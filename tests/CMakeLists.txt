@@ -26,6 +26,17 @@ target_compile_definitions(test_metal_emulation PRIVATE REAXMETAL_SOURCE_DIR="${
 reaxmetal_apply_warnings(test_metal_emulation)
 reaxmetal_apply_strict_fp(test_metal_emulation)
 add_test(NAME metal_emulation COMMAND test_metal_emulation)
+# The Apple-machine check tool, run end to end against a FAKE backend that executes the kernels on the CPU: tests the tool itself
+add_executable(metal_check_emulated metal_check_emulated.cpp ${PROJECT_SOURCE_DIR}/tools/metal_check.cpp ${PROJECT_SOURCE_DIR}/src/metal/metal_source.cpp)
+target_link_libraries(metal_check_emulated PRIVATE reaxmetal_core)
+target_include_directories(metal_check_emulated PRIVATE ${PROJECT_SOURCE_DIR}/src/metal/shaders ${CMAKE_CURRENT_SOURCE_DIR}/metal_shim ${PROJECT_SOURCE_DIR}/tools ${CMAKE_BINARY_DIR}/generated)
+reaxmetal_apply_warnings(metal_check_emulated)
+reaxmetal_apply_strict_fp(metal_check_emulated)
+foreach(_s 1 2 3)
+  add_test(NAME metal_check_emulated_step${_s} COMMAND metal_check_emulated --step ${_s} --quick)
+  set_tests_properties(metal_check_emulated_step${_s} PROPERTIES PASS_REGULAR_EXPRESSION "STEP ${_s} RESULT: PASS" FAIL_REGULAR_EXPRESSION "FAIL")
+endforeach()
+
 # Syntax/type check of the Objective-C++ backend against hand-written stub headers (no Apple SDK needed). Weak evidence, see the script.
 find_program(RM_CLANGXX NAMES clang++ clang++-18 clang++-17 clang++-16 clang++-15)
 if(RM_CLANGXX AND NOT APPLE)

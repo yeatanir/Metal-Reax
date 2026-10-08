@@ -136,11 +136,11 @@ int step3(mtl::Context& ctx, bool quick) {
   report("FORCE-2", all_sum, fmt("full fixed-order sum bitwise equal to the CPU twin in %zu (n, chunk) cases", cases));
 
   // order sensitivity is real: the crafted vector below sums to different values in different orders; the GPU must pick OURS
-  const std::vector<float> trick{1.0e8f, 1.0f, -1.0e8f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
-  const float want_trick = fixed_order_sum_f32(trick, 3);
+  const std::vector<float> trick{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0e8f, -1.0e8f};   // chunk 5 -> 5, left-to-right -> 8
+  const float want_trick = fixed_order_sum_f32(trick, 5);
   float natural = 0.0f;
   for (float e : trick) natural += e;
-  report("FORCE-2", ctx.sum(trick, 3) == want_trick && want_trick != natural, fmt("order-sensitive vector: GPU %.9g == canonical %.9g (plain left-to-right would give %.9g)", static_cast<double>(ctx.sum(trick, 3)), static_cast<double>(want_trick), static_cast<double>(natural)));
+  report("FORCE-2", ctx.sum(trick, 5) == want_trick && want_trick != natural, fmt("order-sensitive vector: GPU %.9g == canonical %.9g (plain left-to-right would give %.9g)", static_cast<double>(ctx.sum(trick, 5)), static_cast<double>(want_trick), static_cast<double>(natural)));
 
   // repeatability on a big input and timing
   std::vector<float> big(quick ? (1u << 22) : (1u << 24));

@@ -180,6 +180,10 @@ Bond creation (`reaxff_forces.cpp:130-252`, `BOp` `reaxff_bond_orders.cpp:148-24
 `r_ij ≤ bond_cut` and `BO'_ij ≥ bo_cut`. H-bond candidates (`:204-223`): donor `i` with `p_hbond==1`,
 partner `j` with `p_hbond==2`, `r ≤ hbond_cut`, stored per donor hydrogen.
 
+### 3.2 The far neighbor list as implemented in M3 (`include/reaxmetal/neighbor.hpp`)
+`build_far_list(AtomSet, NeighborCutoffs)` returns, for every atom *i* of the expanded set (owned first), the atoms *j > i* with `dx²+dy²+dz² ≤ rc²` (`dvec = x_j − x_i`, the reference's arithmetic), `rc = nonb_cut` for owned rows and `bond_cut` for ghost rows (Q-08); rows ascending in *j*. This is the content of the reference's far list (`pair_reaxff.cpp:629-680`) for the same atom order. Consumers apply the owner-computes rules: `classify_nonbonded_entry` reproduces `vdW_Coulomb_Energy` lines 104-117 (`j` owned ⇒ counted; ghost ⇒ counted from the smaller tag; equal tags ⇒ coordinate tie-break on `dvec` with `SMALL = 1e-4`), and its class counts equal the reference tallies `vdw.oo/og/self` and `coulomb.*` for all 58 fixtures. Two reference quirks to keep in mind for M4: (a) the owned-row cutoff is `nonb_cut` only, so a control file with `bond_cut` or `hbond_cut` larger than `nonb_cut` silently loses those pairs in the reference — the engine reproduces this and should reject it when the bond/H-bond lists are written; (b) the bond-list tie-break uses exact coordinate comparisons (`reaxff_bonds.cpp:64-73`) while the nonbonded one uses `SMALL`: they are different rules and must not be unified.
+`expand_images` is the standalone stand-in for LAMMPS' ghost creation: all images whose fractional coordinates lie within `shell / height_d` of [0,1] along every periodic direction (closed interval, as `Comm::borders`); ghost sets are identical to LAMMPS' for all fixtures (NBR-2). Ghost *order* differs from LAMMPS' (shift-major), which is irrelevant to the physics but means index-level comparisons with LAMMPS lists need the adapter's own view (INT-7).
+
 ## 4. Bond order
 
 For every candidate pair with parameter set `tbp[type_i][type_j]` (`BOp`, `:148-243`):

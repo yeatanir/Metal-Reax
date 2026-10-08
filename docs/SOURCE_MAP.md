@@ -163,3 +163,15 @@ patch kept in this repository and hash-pinned. Open question Q1 in the M0 report
 | `tools/reaxref/parse_tables_check.py`, `parse_diff.py` | — | PARSE-1 and the differential mutation fuzz (PARSE-3) |
 | `plugin/adapter/*` | `PairReaxFF::{settings,coeff,init_style,init_one,extract}` | adapter A1 (no physics); `lammps_fmt_abi.h` see LAMMPS_INTEGRATION addenda |
 | `tests/lammps/run_a1.py` | — | adapter differential test through the LAMMPS C library |
+
+## M3 additions — geometry, neighbor lists, Metal layer (this repository's own code)
+| Item | Mirrors (pinned LAMMPS) | Role |
+|---|---|---|
+| `include/reaxmetal/system.hpp`, `src/core/system.cpp` | `Domain` box description | `Box` (general/triclinic), `AtomSet` (owned+ghost with owner and lattice shift) |
+| `include/reaxmetal/neighbor.hpp`, `src/neighbor/neighbor.cpp` | `Comm::borders` (ghost slab rule); `NPairBinGhost<HALF>` + `write_reax_lists` (`pair_reaxff.cpp:629-680`); `vdW_Coulomb_Energy` ownership rules (`reaxff_nonbonded.cpp:104-117`) | image expander, cell grid, far list, pair-class counting, device-list input, row verification, fixed-order reductions |
+| `src/metal/shaders/reaxmetal_m3.metal`, `reaxmetal_m3_types.h` | — | MSL kernels (bring-up, `rm_far_rows`, reductions); runtime-compiled |
+| `src/metal/metal_backend.mm`, `metal_backend_stub.cpp`, `metal_source.cpp`, `include/reaxmetal/metal_backend.hpp` | — | Objective-C++ host (Apple) / explicit "unavailable" stub / embedded shader text |
+| `tests/metal_shim/`, `tests/objc_stub/`, `tests/check_objcxx_syntax.sh` | — | CPU emulation of the kernels; stub headers for a syntax-only check of the Objective-C++ |
+| `tools/neighbor_tool.cpp`, `tools/m3_systems.hpp`, `tools/metal_check.cpp`, `tools/mac/*.sh` | — | CLI for fixture comparisons; shared geometries; on-device checks and the Apple-machine scripts |
+| `plugin/adapter/*` (A2 additions) | `PairReaxFF::init_style` (`pair_reaxff.cpp:360-376`) | ghost-native host view, self-check |
+| `tests/lammps/run_ghosts.py`, `run_a2.py`, `tests/python/test_neighbor_fixtures.py` | M1 reference tallies; stock LAMMPS ghosts | NBR-2, INT-7, NBR-3 |

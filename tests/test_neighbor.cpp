@@ -325,6 +325,12 @@ static void test_reductions() {
   RM_CHECK(p[1] == 3.0f && p[2] == 2.0f);
   RM_CHECK(fixed_order_sum_f32(v, 3) == 5.0f);
   RM_CHECK(fixed_order_sum_f32(std::vector<float>{}, 4) == 0.0f);
+  // the order-sensitive vector used by tools/metal_check.cpp (step 3): canonical order must differ from plain left-to-right
+  const std::vector<float> trick{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0e8f, -1.0e8f};
+  float natural = 0.0f;
+  for (float e : trick) natural += e;
+  RM_CHECK(natural == 8.0f);
+  RM_CHECK(fixed_order_sum_f32(trick, 5) == 5.0f);
   RM_EXPECT_THROW(fixed_order_partials_f32(v, 0), SystemError);
   // bitwise reproducible for any input
   Rng r(99);
