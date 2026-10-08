@@ -37,6 +37,7 @@ add_library(reaxmetal_core STATIC
   src/core/sha256.cpp
   src/io/ffield_parser.cpp
   src/io/control_parser.cpp
+  src/io/pair_settings.cpp
   src/io/table_dump.cpp)
 set_target_properties(reaxmetal_core PROPERTIES POSITION_INDEPENDENT_CODE ON)  # linked into the LAMMPS plugin (a shared module)
 target_include_directories(reaxmetal_core PUBLIC include)

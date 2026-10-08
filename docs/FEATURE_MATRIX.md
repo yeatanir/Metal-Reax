@@ -13,8 +13,9 @@ test fails if this file and the code table disagree):
 | Rejected | Deliberately unsupported (no plan). Requesting it throws `UnsupportedFeatureError` (an error, never a warning). |
 | Ignored | Accepted; has no effect on physics in this engine; a notice is logged. |
 
-**Only `compat.flag_derivation` is Implemented** (pure predicates with boundary tests). M0 and M0.5 deliver audit, specification,
-decisions, a build skeleton and a host-contract probe; no physics exists yet.
+**Implemented so far** (tested, see VALIDATION.md): `compat.flag_derivation` (M0.5); the force-field/control-file parser rows `ffield.*` and the
+adapter rows `lammps.plugin_loadable`, `lammps.extract_chi_eta_gamma`, `lammps.single_rank_only` (M2: PARSE-1, PARSE-2, EEM-3, INT-3, LINT-1).
+No energy term exists yet and `pair_style reaxff/metal` refuses to compute (it never returns zero energy).
 Milestone letters follow the mission statement (M2 parser … M8 optimisation) as re-planned in `ARCHITECTURE_DECISIONS.md` ADR-013
 (M0.5 integration architecture; M7 is now LAMMPS-hosted validation, not a standalone MD engine).
 
@@ -42,14 +43,14 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `ffield.standard` | Planned | M2 | `ffield general/atom/bond/angle/torsion/hbond blocks` | 39-parameter general block |
-| `ffield.atom_line5_lgvdw` | Planned | M2 | `ffield 5-line atom block` | only meaningful with lgvdw |
-| `ffield.offdiagonal` | Planned | M2 | `ffield off-diagonal block` | |
-| `ffield.torsion_compact` | Planned | M2 | `ffield 4-body entry 0-X-Y-0` | order-dependent overwrite (ENGINE_SPEC 2.5) |
-| `ffield.hbond_block` | Planned | M2 | `ffield hydrogen-bond block` | may be absent; LAMMPS warns and disables |
-| `ffield.control_file` | Planned | M2 | `pair_style reaxff <control file>` | cutoff keywords only |
-| `ffield.strict_missing_pairs` | Planned | M2 | `(no LAMMPS equivalent)` | we **reject** absent 2-body pairs; LAMMPS zero-fills creating a phantom bond with BO'=1 at every r <= bond_cut (ENGINE_SPEC Q-12, executed in M1) |
-| `ffield.reject_three_body_overrun` | Planned | M2 | `(no LAMMPS equivalent)` | reject >2 parameter sets for a j==l angle triple (ENGINE_SPEC Q-09: LAMMPS doubles the slot count and reads past prm[4]; executed in M1) |
+| `ffield.standard` | Implemented | - | `ffield general/atom/bond/angle/torsion/hbond blocks` | 39-parameter general block |
+| `ffield.atom_line5_lgvdw` | Implemented | - | `ffield 5-line atom block` | only meaningful with lgvdw |
+| `ffield.offdiagonal` | Implemented | - | `ffield off-diagonal block` | |
+| `ffield.torsion_compact` | Implemented | - | `ffield 4-body entry 0-X-Y-0` | order-dependent overwrite (ENGINE_SPEC 2.5) |
+| `ffield.hbond_block` | Implemented | - | `ffield hydrogen-bond block` | may be absent; LAMMPS warns and disables |
+| `ffield.control_file` | Implemented | - | `pair_style reaxff <control file>` | cutoff keywords only |
+| `ffield.strict_missing_pairs` | Implemented | - | `(no LAMMPS equivalent)` | we **reject** absent 2-body pairs; LAMMPS zero-fills creating a phantom bond with BO'=1 at every r <= bond_cut (ENGINE_SPEC Q-12, executed in M1) |
+| `ffield.reject_three_body_overrun` | Implemented | - | `(no LAMMPS equivalent)` | reject >2 parameter sets for a j==l angle triple (ENGINE_SPEC Q-09: LAMMPS doubles the slot count and reads past prm[4]; executed in M1) |
 
 ## 3. LAMMPS-compat flags (element knowledge expressed as data — ADR-003)
 
@@ -144,10 +145,10 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `lammps.pair_style_reaxff_metal` | Planned | M2 | `pair_style reaxff/metal` | thin Pair-derived adapter; parameters via our parser |
-| `lammps.plugin_loadable` | Planned | M2 | `plugin load <reaxmetal plugin>` | DSO built against the pinned LAMMPS; version-matched |
-| `lammps.extract_chi_eta_gamma` | Planned | M2 | `Pair::extract(chi\|eta\|gamma)` | arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value |
-| `lammps.single_rank_only` | Planned | M2 | `comm->nprocs == 1` | multi-rank runs fail explicitly (checked in init_style) |
+| `lammps.pair_style_reaxff_metal` | Planned | M4 | `pair_style reaxff/metal` | A1 exists (parse, extract, host checks; `compute()` refuses explicitly); planned = computes energies/forces |
+| `lammps.plugin_loadable` | Implemented | - | `plugin load <reaxmetal plugin>` | DSO built against the pinned LAMMPS; version-matched |
+| `lammps.extract_chi_eta_gamma` | Implemented | - | `Pair::extract(chi\|eta\|gamma)` | arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value |
+| `lammps.single_rank_only` | Implemented | - | `comm->nprocs == 1` | multi-rank runs fail explicitly (checked in init_style) |
 | `lammps.multi_rank` | Deferred | - | `mpirun -np N>1 with reaxff/metal` | deferred; needs distributed ghost/QEq handling |
 | `lammps.newton_off` | Rejected | - | `newton off (newton_pair off)` | forces on ghosts must be reverse-communicated |
 | `lammps.ghost_native_contract` | Planned | M3 | `ghost atoms from LAMMPS borders` | engine consumes owned+ghost atom set (LAMMPS_INTEGRATION 4) |
@@ -160,7 +161,7 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `eem.external_cpu_fix` | Planned | M2 | `fix qeq/reaxff \| fix qeq/shielded (stock CPU)` | first prototype: stock fix drives q through extract() |
+| `eem.external_cpu_fix` | Planned | M4 | `fix qeq/reaxff \| fix qeq/shielded (stock CPU)` | extract() half verified in M2 (EEM-3); the stock fix drives q once `compute()` exists |
 | `eem.charge_verification` | Planned | M5 | `(no LAMMPS equivalent)` | adapter checks the EEM residual so strictness holds with the stock fix |
 | `eem.taper_within_ghost_shell` | Planned | M5 | `(no LAMMPS equivalent)` | error if the QEq taper radius exceeds the ghost shell: the stock fix silently truncates (ENGINE_SPEC Q-35) |
 | `eem.strict_convergence` | Planned | M5 | `(no LAMMPS equivalent)` | default: non-convergence is an error/status, never silently accepted |

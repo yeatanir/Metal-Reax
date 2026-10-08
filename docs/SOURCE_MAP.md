@@ -151,3 +151,15 @@ patch kept in this repository and hash-pinned. Open question Q1 in the M0 report
 | `tools/reaxref/{conditioning,noise_floor,make_tolerances,compare_builds}.py` | conditioning classifier, noise floor, frozen tolerances, bitwise comparison |
 | `tools/reaxref/exp_*.py`, `fd_check.py` | periodic-image, ghost-range, Q-09/Q-12/Q-32/Q-34 and finite-difference experiments |
 | `tools/reaxref/m1_gate.py`, `tools/m1_reproduce.sh` | acceptance gate and end-to-end reproduction |
+
+## M2 additions — parser, settings, adapter A1 (this repository's own code; upstream semantics re-implemented, no upstream source copied)
+| Item | Mirrors (pinned LAMMPS) | Role |
+|---|---|---|
+| `src/io/text_reader.hpp`, `src/io/ffield_parser.cpp`, `include/reaxmetal/forcefield.hpp` | `src/REAXFF/reaxff_ffield.cpp` (+ `TextFileReader`, `ValueTokenizer` semantics) | ffield reader, tables, compat flags, strict-mode checks |
+| `src/io/control_parser.cpp` | `src/REAXFF/reaxff_control.cpp` | control file |
+| `src/io/pair_settings.cpp`, `include/reaxmetal/pair_settings.hpp` | `PairReaxFF::settings` (`pair_reaxff.cpp`) | `pair_style` keywords; capability gating |
+| `src/io/table_dump.cpp`, `tools/ffield_dump.cpp`, `tools/reaxref/canonical_tables.py` | patch 0001 `params.txt` | canonical lossless table dump on both sides (PARSE-1) |
+| `src/core/sha256.cpp` | — | FIPS 180-4 SHA-256 for table hashes |
+| `tools/reaxref/parse_tables_check.py`, `parse_diff.py` | — | PARSE-1 and the differential mutation fuzz (PARSE-3) |
+| `plugin/adapter/*` | `PairReaxFF::{settings,coeff,init_style,init_one,extract}` | adapter A1 (no physics); `lammps_fmt_abi.h` see LAMMPS_INTEGRATION addenda |
+| `tests/lammps/run_a1.py` | — | adapter differential test through the LAMMPS C library |

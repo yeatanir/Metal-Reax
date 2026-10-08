@@ -29,7 +29,7 @@ std::string sha256_hex(std::string_view data) {
   for (int i = 7; i >= 0; --i) msg.push_back(static_cast<unsigned char>((bitlen >> (8 * i)) & 0xff));
   for (std::size_t off = 0; off < msg.size(); off += 64) {
     std::uint32_t w[64];
-    for (int i = 0; i < 16; ++i)
+    for (std::size_t i = 0; i < 16; ++i)
       w[i] = (std::uint32_t(msg[off + 4 * i]) << 24) | (std::uint32_t(msg[off + 4 * i + 1]) << 16) | (std::uint32_t(msg[off + 4 * i + 2]) << 8) |
              std::uint32_t(msg[off + 4 * i + 3]);
     for (int i = 16; i < 64; ++i) {

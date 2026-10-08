@@ -4,7 +4,7 @@ A native Apple **Metal** GPU backend for a general-purpose **ReaxFF** molecular-
 against a pinned LAMMPS release. Element-agnostic: ordinary ReaxFF `ffield` files are read at runtime and no
 chemical system is built in.
 
-**Current status: M0 + M0.5 (audit, specification, decisions, LAMMPS integration architecture, skeleton, host-contract probe). No ReaxFF physics is implemented.**
+**Current status: M0, M0.5, M1 (LAMMPS reference oracle) and M2 (ffield/control parser, tables with compat flags, adapter A1: parse + `extract()` + host checks, no force backend). No ReaxFF physics is implemented.**
 Nothing in this repository computes an energy, force or charge yet, and nothing has been run on a GPU. The target is a **LAMMPS plugin `pair_style reaxff/metal`** (LAMMPS provides integrators, thermostats, minimisers, ghosts); there is no standalone MD engine.
 
 | Where to look | What it is |
@@ -52,3 +52,14 @@ tools/fetch_lammps.sh /path/to/new/empty/dir     # shallow sparse clone, verifie
 ## License
 GPL-2.0-only (owner-approved). See `LICENSE`, `REUSE.toml`, `docs/ARCHITECTURE_DECISIONS.md` ADR-010, `THIRD_PARTY_NOTICES.md`
 and the per-file upstream audit `third_party/lammps/LICENSE_AUDIT.tsv`.
+
+## M2 — parser and adapter A1 (Linux; `ffield_tables` and `lammps_a1` are opt-in)
+```
+# the plugin must be built like the target LAMMPS (shared lib, LAMMPS_EXCEPTIONS; see docs/LAMMPS_INTEGRATION.md M2 addenda)
+cmake -S . -B build -DREAXMETAL_FFIELD_DIR=<dir with the 11 bundled ffield.reax.* files> \
+      -DREAXMETAL_BUILD_LAMMPS_PLUGIN=ON -DREAXMETAL_LAMMPS_SOURCE_DIR=/path/lammps/src -DREAXMETAL_LAMMPS_PREFIX=/path/install
+cmake --build build -j && ctest --test-dir build --output-on-failure     # adds ffield_tables, lammps_probe, lammps_a1
+build/reaxmetal_ffield_dump --sha256 <ffield>                              # canonical table hash
+python3 tools/reaxref/parse_diff.py --lmp <instrumented lmp> --dump-tool build/reaxmetal_ffield_dump --ffield-dir <ff> --workdir <w>   # differential fuzz
+```
+`pair_style reaxff/metal` loads and parses, but **refuses to compute** until M4.

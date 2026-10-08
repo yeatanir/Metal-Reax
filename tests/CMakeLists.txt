@@ -15,6 +15,7 @@ reaxmetal_add_test(docs_sync)
 reaxmetal_add_test(license_headers)
 reaxmetal_add_test(compat_flags)
 reaxmetal_add_test(ffield_parser)
+reaxmetal_add_test(pair_settings)
 
 # ---- M1: frozen artefacts and the reference-harness self-tests (no LAMMPS needed) --------------------------------------
 add_test(NAME tolerances_frozen

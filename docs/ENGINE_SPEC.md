@@ -136,6 +136,14 @@ only if `> 0.0` (`lgcij`: `>= 0.0`); `r_vdW` is stored as `2*value`.
   (no symmetrisation). `r0_hb` is pre-set to `-1`; `r0_hb ≤ 0` means "no hydrogen bond for this triple".
   The block may be missing (EOF → warning, hydrogen bonds then simply absent).
 
+### 2.6 How the C++ reader (M2) relates to the reference reader — executed in M2
+`src/io/ffield_parser.cpp` follows `reaxff_ffield.cpp` / `reaxff_control.cpp` token for token (PARSE-1: bit-identical tables for all 11 bundled files; PARSE-3: 1200 differential mutants, 0 disagreements). Reproduced on purpose:
+* `ignore_comments = false`: a trailing `!` word counts as a column; blank lines are skipped by value lines but `skip_line` consumes exactly one raw line; numbers must parse completely (`stod`/`stoi` semantics); `p_hbond` is **truncated** to int; `eta` is stored as 2 × the file value; names are upper-cased and cut to 3 characters.
+* 3-body sets are kept in the reference summation order (slots for `j==l` triples are doubled and mirrored); compact `0-X-Y-0` torsions overwrite in file order (Q-10); the H-bond block may be absent (`r0_hb = -1`).
+* Derived values: `vdw_type` from the atom blocks, `bo_cut = 0.01·gp[29]`, `nonb_low/nonb_cut = gp[11]/gp[12]`, `gamma_ij = (γ_i γ_j)^-1.5` (the only libm-dependent table value, hence the *portable* dump hash without it), and the compat flags (`valency_val` override with the upstream warning, C2, heavy-atom, triple-bond stabilisation) — computed once, never re-derived from names in kernels.
+
+Deliberate, documented deviations (strict mode, default): reject a truncated file (except a missing H-bond block), non-finite numbers, fewer than 38 general parameters, and >5 three-body slots (Q-09). Q-12 is enforced **per used element pair** at `pair_coeff` time (`ForceField::require_bond_blocks`) and not at file level, because several bundled files (AB, FC, V_O_C_H, ZnOH, lg) omit pairs that are never used together; of the 66 `(file, type map)` combinations of the A1 test, 10 are rejected for this reason and LAMMPS accepts them. `FfieldOptions::reproduce_lammps_leniency` re-enables only the truncation leniency (with a warning). The vdw-conflict diagnostics of the reference are not separately mirrored (VALIDATION PARSE-2).
+
 ## 3. Geometry, cutoffs and interaction lists
 
 Cutoffs (`reaxff_ffield.cpp:620-624`, `pair_reaxff.cpp:189-274`, `reaxff_control.cpp`):

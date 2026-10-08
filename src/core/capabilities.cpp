@@ -13,7 +13,7 @@ constexpr Status D = Status::Deferred;
 constexpr Status I = Status::Ignored;
 
 // Keep in lock-step with docs/FEATURE_MATRIX.md (enforced by tests/test_docs_sync.cpp).
-// No row is `Implemented` at M0: nothing physical exists yet.
+// `Implemented` rows have passing tests recorded in docs/VALIDATION.md; no energy term exists yet (M4+).
 constexpr std::array kFeatures{
     // ---- energy terms -------------------------------------------------------------------------
     Feature{"term.bond", P, "M4", "ReaxFF::Bonds", "includes terminal-triple-bond stabilisation"},
@@ -32,14 +32,14 @@ constexpr std::array kFeatures{
     Feature{"term.coulomb", P, "M5", "ReaxFF::vdW_Coulomb_Energy", "taper-shielded"},
     Feature{"term.polarization", P, "M5", "ReaxFF::Compute_Polarization_Energy", "QEq self energy"},
     // ---- parameter file -------------------------------------------------------------------------
-    Feature{"ffield.standard", P, "M2", "ffield general/atom/bond/angle/torsion/hbond blocks", "39-parameter layout"},
-    Feature{"ffield.atom_line5_lgvdw", P, "M2", "ffield 5-line atom block", "only with lgvdw"},
-    Feature{"ffield.offdiagonal", P, "M2", "ffield off-diagonal block", ""},
-    Feature{"ffield.torsion_compact", P, "M2", "ffield 4-body entry 0-X-Y-0", "order-dependent overwrite, see ENGINE_SPEC 2.5"},
-    Feature{"ffield.hbond_block", P, "M2", "ffield hydrogen-bond block", "may be absent (LAMMPS warns)"},
-    Feature{"ffield.control_file", P, "M2", "pair_style reaxff <control file>", "cutoff keywords only"},
-    Feature{"ffield.strict_missing_pairs", P, "M2", "(no LAMMPS equivalent)", "reject, do not zero-fill, absent 2-body pairs (Q-12: zero-fill creates a phantom bond of BO'=1 at every r <= bond_cut)"},
-    Feature{"ffield.reject_three_body_overrun", P, "M2", "(no LAMMPS equivalent)", "reject >2 parameter sets for a j==l angle triple (Q-09: LAMMPS doubles the slot count and reads past prm[4])"},
+    Feature{"ffield.standard", Status::Implemented, "-", "ffield general/atom/bond/angle/torsion/hbond blocks", "39-parameter layout"},
+    Feature{"ffield.atom_line5_lgvdw", Status::Implemented, "-", "ffield 5-line atom block", "only with lgvdw"},
+    Feature{"ffield.offdiagonal", Status::Implemented, "-", "ffield off-diagonal block", ""},
+    Feature{"ffield.torsion_compact", Status::Implemented, "-", "ffield 4-body entry 0-X-Y-0", "order-dependent overwrite, see ENGINE_SPEC 2.5"},
+    Feature{"ffield.hbond_block", Status::Implemented, "-", "ffield hydrogen-bond block", "may be absent (LAMMPS warns)"},
+    Feature{"ffield.control_file", Status::Implemented, "-", "pair_style reaxff <control file>", "cutoff keywords only"},
+    Feature{"ffield.strict_missing_pairs", Status::Implemented, "-", "(no LAMMPS equivalent)", "reject, do not zero-fill, absent 2-body pairs (Q-12: zero-fill creates a phantom bond of BO'=1 at every r <= bond_cut)"},
+    Feature{"ffield.reject_three_body_overrun", Status::Implemented, "-", "(no LAMMPS equivalent)", "reject >2 parameter sets for a j==l angle triple (Q-09: LAMMPS doubles the slot count and reads past prm[4])"},
     // ---- LAMMPS-compat flags (element knowledge expressed as data, ADR-003) -----------------------
     Feature{"compat.c2_correction", P, "M4", "strcmp(name,\"C\") in Atom_Energy", "per-type flag derived at load time"},
     Feature{"compat.triple_bond_stabilisation", P, "M4", "gp.l[37]==2 or mass pair 12.0000/15.9990", "per-pair flag"},
@@ -47,16 +47,16 @@ constexpr std::array kFeatures{
     Feature{"compat.hbond_donor_image_exclusion", P, "M4", "orig_id[i] != orig_id[k] in Hydrogen_Bonds", "reproduce by default (Q-32): acceptor that is a periodic image of the donor is dropped; identity-based variant needs owner decision"},
     Feature{"compat.ovun_heavy_neighbor_force", P, "M6", "dDelta_lp[j] where the energy uses Delta_lp_temp[j] (Atom_Energy force loop)", "reproduce LAMMPS forces by default (Q-34: analytic force != gradient of the reported energy for heavy atoms with pi bonds); corrected variant is opt-in"},
     // ---- LAMMPS integration (M0.5) ----------------------------------------------------------------
-    Feature{"lammps.pair_style_reaxff_metal", P, "M2", "pair_style reaxff/metal", "thin Pair-derived adapter; parameters via our parser"},
-    Feature{"lammps.plugin_loadable", P, "M2", "plugin load <reaxmetal plugin>", "DSO built against the pinned LAMMPS; version-matched"},
-    Feature{"lammps.extract_chi_eta_gamma", P, "M2", "Pair::extract(chi|eta|gamma)", "arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value"},
-    Feature{"lammps.single_rank_only", P, "M2", "comm->nprocs == 1", "multi-rank runs fail explicitly (checked in init_style)"},
+    Feature{"lammps.pair_style_reaxff_metal", P, "M4", "pair_style reaxff/metal", "A1 exists (parse, extract, host checks; compute() refuses explicitly); planned = computes energies/forces"},
+    Feature{"lammps.plugin_loadable", Status::Implemented, "-", "plugin load <reaxmetal plugin>", "DSO built against the pinned LAMMPS; version-matched"},
+    Feature{"lammps.extract_chi_eta_gamma", Status::Implemented, "-", "Pair::extract(chi|eta|gamma)", "arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value"},
+    Feature{"lammps.single_rank_only", Status::Implemented, "-", "comm->nprocs == 1", "multi-rank runs fail explicitly (checked in init_style)"},
     Feature{"lammps.multi_rank", D, "-", "mpirun -np N>1 with reaxff/metal", "deferred; needs distributed ghost/QEq handling"},
     Feature{"lammps.newton_off", R, "-", "newton off (newton_pair off)", "forces on ghosts must be reverse-communicated"},
     Feature{"lammps.ghost_native_contract", P, "M3", "ghost atoms from LAMMPS borders", "engine consumes owned+ghost atom set (LAMMPS_INTEGRATION 4)"},
     Feature{"lammps.virial_fdotr", P, "M6", "Pair::virial_fdotr_compute", "global virial/pressure from forces on owned+ghost atoms"},
     // ---- EEM charge model (naming: EEM == the standard ReaxFF charge model; not a different physics) ---
-    Feature{"eem.external_cpu_fix", P, "M2", "fix qeq/reaxff | fix qeq/shielded (stock CPU)", "first prototype: stock fix drives q through extract()"},
+    Feature{"eem.external_cpu_fix", P, "M4", "fix qeq/reaxff | fix qeq/shielded (stock CPU)", "extract() half verified in M2 (EEM-3); the stock fix drives q once compute() exists"},
     Feature{"eem.charge_verification", P, "M5", "(no LAMMPS equivalent)", "adapter checks the EEM residual so strictness holds with the stock fix"},
     Feature{"eem.taper_within_ghost_shell", P, "M5", "(no LAMMPS equivalent)", "error if the QEq taper radius exceeds the ghost shell: stock fix silently truncates (Q-35)"},
     Feature{"eem.strict_convergence", P, "M5", "(no LAMMPS equivalent)", "default: non-convergence is an error/status, never silently accepted"},

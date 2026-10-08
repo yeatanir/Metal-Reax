@@ -157,3 +157,35 @@ macOS/Metal anything; engine physics (none exists); AMS comparison; Kokkos OpenM
 
 ### Awaiting owner confirmation
 (1) the G1 split above; (2) conditioning amendment X1/X2 (ADR-020); (3) C3 neutrality/equalization-residual thresholds `2e-5 e/atom`, `2e-3 eV` (proposed in the frozen file; not derived from FP64 noise); (4) ADR-021: reproduce Q-32/Q-34 by default (and whether to report them upstream); (5) ADR-005/015 follow-through at M4/M5 as approved.
+
+## M2 — ffield/control parser, tables with compat flags, adapter A1 (2026-10-08)
+
+### Instruction and how I read it
+"M1 approved, proceed to M2 only." I treated this as accepting M1 **including the four proposals I had flagged**: (1) the G1 split into G1a (strict-IEEE, bitwise, required) and G1b (FMA builds, reported); (2) the conditioning amendment X1/X2 (ADR-020); (3) the proposed C3 neutrality/equalization-residual thresholds (2e-5 e/atom, 2e-3 eV); (4) ADR-021, reproduce Q-32/Q-34 by default behind compat flags. **This is an interpretation; if you meant only the gate result, say so and I will reopen those items.** M3 was not started.
+
+### What was built
+* `reaxmetal::ForceField` and `parse_force_field` / `read_force_field_file` (`src/io/ffield_parser.cpp`, `include/reaxmetal/forcefield.hpp`): token-for-token re-implementation of the pinned reader's semantics (ENGINE_SPEC §2.6), tables as `SingleBody/TwoBody/ThreeBodySet/FourBody/HBondParams`, per-type and per-pair compat flags computed once. Strict by default (Q-09 overrun, non-finite numbers, truncation, <38 general parameters); Q-12 per used element pair via `require_bond_blocks`.
+* Control-file parser, `pair_style` settings parser with capability gating (`tabulate` etc. raise `UnsupportedFeatureError`), SHA-256, canonical lossless table dump (C++ and Python sides), `reaxmetal_ffield_dump` tool.
+* Adapter A1 (`plugin/adapter`): `reaxff/metal` with parse, `pair_coeff` element mapping, `extract(chi|eta|gamma)`, host checks, explicit refusal in `compute()`.
+* Tests: `ffield_parser`, `pair_settings` (unit), `ffield_tables` (PARSE-1 hashes; opt-in via `REAXMETAL_FFIELD_DIR`), `lammps_a1` (opt-in via `REAXMETAL_LAMMPS_PREFIX`), `tools/reaxref/parse_diff.py` (not in CTest: needs the instrumented LAMMPS build).
+
+### Results (actual runs; VALIDATION PARSE-1/2/3, EEM-3, LINT-1, INT-3, INT-6)
+* PARSE-1: 11/11 bundled force fields give tables bit-identical to those LAMMPS stored (full and portable dumps).
+* PARSE-3: 1200 differential mutants (3 seeds), 0 problems; class counts in VALIDATION.
+* EEM-3: `extract()` bit-identical to stock for 56 `(ffield, type map)` combinations; 11 rejected by both; 10 rejected by us only for Q-12 (justified, counted separately); 0 mismatches.
+* Host checks, explicit `compute()` refusal and the 2-rank refusal (OpenMPI) pass.
+* **CTest: 15/15 pass with g++ 13.3 and clang++ 18.1, 0 warnings** (fresh build trees, with the two opt-in LAMMPS tests enabled).
+
+### Mistakes made and corrected during M2
+* First C++ build: `parse_force_field` could not reach private members (friend declaration missing). Synthetic `lgvdw` test file lacked the extra off-diagonal column. A six-set three-body test wrote six lines under a count of five. All fixed.
+* **A parser mutation survived**: rounding instead of truncating `p_hbond` (bundled values are integers). A dedicated truncation test now catches it; all 5 parser mutations tried are caught.
+* The fuzz driver first reported 6 BAD-ACCEPT: LAMMPS' "Non-existent ReaxFF type" error was hidden by `-screen none`; the driver now captures stdout. Its `crlf` operator returned a bare string (unpack error).
+* The ctypes harness sent multi-line strings to `lammps_command` (does nothing), loaded `liblammps` without `RTLD_GLOBAL` (plugin symbols unresolved → "Unrecognized pair style"), and two of my own host-check expectations were wrong (qtpie needs a Gaussian-exponent file; the control-file message text). All harness bugs, not adapter bugs.
+* **The harness first accepted a broken adapter**: dropping the Q-12 check left it passing (it counted the 10 combinations as parity). The harness now fails when ours accepts an element pair without a bond block; the mutation is caught (10 failures). Halving `eta` in `extract()` is caught (56 failures).
+* The clang++ build of the plugin failed to load (fmt/`std::format` ABI split, LAMMPS_INTEGRATION M2 addenda) and `plugin load` hides that. Found only because I built with both compilers; fixed with `lammps_fmt_abi.h`, and the harness now fails with a clear message. Also: clang `-Wsign-conversion` in `sha256.cpp`, and the capability-table convention (Implemented rows use milestone `-`) caught by the `capabilities` test.
+
+### Not run
+macOS/Metal anything (the plugin has not been built with Apple clang or loaded in a macOS LAMMPS); engine physics (none); `acks2`, `qeq/rel`, efield and non-neutral-group refusals; vdw-conflict / lg-on-type-1 diagnostics (not implemented); the parser mutation check against the PARSE-1 hashes beyond the 5 unit mutations; multi-rank beyond np=2; LAMMPS builds with C++20/`std::format` (`REAXMETAL_LAMMPS_STD_FORMAT=ON` untested).
+
+### Awaiting owner confirmation
+(a) the reading of "M1 approved" above; (b) ADR-022: Q-12 enforced per used element pair rather than per file; (c) whether the adapter should keep the real style name `reaxff/metal` while `compute()` refuses (my choice) or stay unregistered until M4.
