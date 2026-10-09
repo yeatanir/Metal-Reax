@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "tools" / "reaxref"))
 import runner  # noqa: E402
 
 
-def run(lmp, case, ffield_dir, wd, env, plugin=None, backend=None):
+def run(lmp, case, ffield_dir, wd, env, plugin=None, backend=None, np_=1):
     wd.mkdir(parents=True, exist_ok=True)
     ffpath = Path(ffield_dir) / case["ffield"]["name"]
     runner.write_data(case, runner.parse_ffield(ffpath), wd / "data.lmp")
@@ -26,8 +26,9 @@ def run(lmp, case, ffield_dir, wd, env, plugin=None, backend=None):
                    "thermo_style custom step pe c_pv[1] c_pv[2] c_pv[3] c_pv[4] c_pv[5] c_pv[6]\nthermo_modify format float %.15g\nrun 0\n"
                    'write_dump all custom out.dump id c_pea c_sta[1] c_sta[2] c_sta[3] c_sta[4] c_sta[5] c_sta[6] modify sort id format line "%d %.15g %.15g %.15g %.15g %.15g %.15g %.15g"\n')
     (wd / "in.lmp").write_text(text)
-    r = subprocess.run([lmp, "-in", "in.lmp", "-log", "none", "-nocite"], cwd=wd, env=env, capture_output=True, text=True)
-    if r.returncode: raise RuntimeError((r.stdout + r.stderr)[-400:])
+    launcher = ["mpirun", "--oversubscribe", "-np", str(np_)] if np_ > 1 else []
+    r = subprocess.run(launcher + [lmp, "-in", "in.lmp", "-log", "none", "-nocite"], cwd=wd, env=env, capture_output=True, text=True, timeout=180)
+    if r.returncode: raise RuntimeError((r.stdout + r.stderr)[-2500:])
     rows = [l.split() for l in r.stdout.splitlines()]
     th = None
     for k, l in enumerate(r.stdout.splitlines()):
@@ -39,7 +40,7 @@ def run(lmp, case, ffield_dir, wd, env, plugin=None, backend=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lmp", required=True); ap.add_argument("--plugin", required=True); ap.add_argument("--ffield-dir", required=True)
-    ap.add_argument("--backend", default="cpu64"); ap.add_argument("--only")
+    ap.add_argument("--backend", default="cpu64"); ap.add_argument("--only"); ap.add_argument("--np", type=int, default=1)
     a = ap.parse_args()
     env = dict(os.environ, DYLD_LIBRARY_PATH=str(Path(a.lmp).resolve().parents[1] / "lib"), LAMMPS_POTENTIALS=a.ffield_dir)
     fails, n, worst = [], 0, 0.0
@@ -52,8 +53,8 @@ def main():
             used = sorted(set(int(t) for t in ref["types"]))
             for k, c in enumerate([case, dict(case, elements=[case["elements"][u - 1] for u in used])]):
                 try:
-                    s_th, s = run(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_s"), env)
-                    o_th, o = run(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_o"), env, a.plugin, a.backend)
+                    s_th, s = run(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_s"), env, np_=a.np)
+                    o_th, o = run(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_o"), env, a.plugin, a.backend, a.np)
                     break
                 except RuntimeError as e:
                     if k == 0 and "bond-parameter block" in str(e): continue

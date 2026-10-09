@@ -34,7 +34,8 @@ NonbondedDeviceInput make_nonbonded_device_input(const ForceField& ff, const Nei
                                                  const std::function<FarRowsF32(const DeviceListInput&)>& build_rows,
                                                  const DeviceListInput* shared_list,
                                                  std::shared_ptr<const FarRowsF32> shared_rows) {
-  if (q_owned.size() != atoms.nlocal) throw SystemError("make_nonbonded_device_input: need one charge per owned atom");
+  const bool per_atom_q = q_owned.size() == atoms.nall();
+  if (q_owned.size() != atoms.nlocal && !per_atom_q) throw SystemError("make_nonbonded_device_input: need one charge per owned atom or per atom");
   NonbondedDeviceInput in;
   in.list = shared_list ? *shared_list : make_device_list_input(atoms, box, cut);
   in.rows = shared_rows ? shared_rows : std::make_shared<const FarRowsF32>(build_rows(in.list));
@@ -47,7 +48,7 @@ NonbondedDeviceInput make_nonbonded_device_input(const ForceField& ff, const Nei
     const std::int64_t t = atoms.tag[i];
     if (t > 0x7FFFFFFF || t < -0x7FFFFFFF) throw SystemError("make_nonbonded_device_input: atom tag does not fit 32 bits");
     in.tag[i] = static_cast<std::int32_t>(t);
-    in.q[i] = static_cast<float>(q_owned[static_cast<std::size_t>(atoms.owner[i])]);
+    in.q[i] = static_cast<float>(per_atom_q ? q_owned[i] : q_owned[static_cast<std::size_t>(atoms.owner[i])]);
   }
   const int nt = ff.num_types();
   in.ntypes = static_cast<std::uint32_t>(nt);

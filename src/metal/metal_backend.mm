@@ -8,6 +8,10 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -43,6 +47,19 @@ struct Pool {
   Pool() = default;
   Pool(const Pool&) = delete;
   Pool& operator=(const Pool&) = delete;
+};
+
+// Several processes (MPI ranks) compiling the same shader source at once can deadlock inside Apple's compiler file cache (one process blocked in
+// flock() on libraries.data while another waits for it in MPI). Context creation is therefore serialised across processes by a lock of our own.
+struct CompileLock {
+  int fd = -1;
+  CompileLock() {
+    fd = ::open("/tmp/reaxmetal-metal-compile.lock", O_CREAT | O_RDWR, 0666);
+    if (fd >= 0) ::flock(fd, LOCK_EX);
+  }
+  ~CompileLock() { if (fd >= 0) { ::flock(fd, LOCK_UN); ::close(fd); } }
+  CompileLock(const CompileLock&) = delete;
+  CompileLock& operator=(const CompileLock&) = delete;
 };
 
 struct Dispatch {
@@ -214,6 +231,7 @@ struct MetalBondedBackend final : BondedBackend {
 
 Context::Context() : impl_(new Impl) {
   Pool pool;
+  CompileLock compile_lock;
   Impl& m = *impl_;
   m.device = MTLCreateSystemDefaultDevice();
   if (m.device == nil) throw MetalError("MTLCreateSystemDefaultDevice() returned nil: no Metal device");

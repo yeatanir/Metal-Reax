@@ -76,6 +76,7 @@ void AtomSet::validate(const Box& box, double tol) const {
         throw SystemError("owned atom " + std::to_string(i) + " has an owner/shift");
       continue;
     }
+    if (distributed) continue;   // owners live on other ranks; the ghost contract is then LAMMPS' own
     const std::int32_t o = owner[i];
     if (o < 0 || static_cast<std::size_t>(o) >= nlocal) throw SystemError("ghost " + std::to_string(i) + " has an invalid owner");
     const auto os = static_cast<std::size_t>(o);

@@ -162,7 +162,6 @@ void PairReaxFFMetal::init_style()
   if (!atom->q_flag) error->all(FLERR, "Pair style reaxff requires atom attribute q");
   if (atom->tag_enable == 0) error->all(FLERR, "Pair style reaxff requires atom IDs");
   if (force->newton_pair == 0) error->all(FLERR, "Pair style reaxff requires newton pair on");
-  if (comm->nprocs != 1) error->all(FLERR, "Pair style reaxff/metal supports a single MPI rank only");
 
   // charge fix: standard EEM only (fix qeq/reaxff or fix qeq/shielded); the other ReaxFF charge models are Deferred
   const std::size_t acks2 = modify->get_fix_by_style("^acks2/reax").size();
@@ -235,6 +234,7 @@ reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) con
   a.type.resize(static_cast<std::size_t>(nall));
   a.tag.resize(static_cast<std::size_t>(nall));
   a.owner.resize(static_cast<std::size_t>(nall));
+  a.distributed = comm->nprocs > 1;
   a.shift.assign(static_cast<std::size_t>(nall), {0, 0, 0});
   std::unordered_map<tagint, int> owned_by_tag;
   owned_by_tag.reserve(static_cast<std::size_t>(nlocal) * 2);
@@ -249,6 +249,7 @@ reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) con
   }
   for (int g = nlocal; g < nall; ++g) {
     const auto sg = static_cast<std::size_t>(g);
+    if (a.distributed) { a.owner[sg] = -1; continue; }   // multi-rank: the owner may be on another rank
     const auto it = owned_by_tag.find(atom->tag[g]);
     if (it == owned_by_tag.end()) throw SystemError("ghost " + std::to_string(g) + " has no owned atom with id " + std::to_string(atom->tag[g]));
     a.owner[sg] = it->second;
@@ -370,8 +371,8 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     a = view ? view->a : host_atom_set(box);
     lap("host_view");
     const NeighborCutoffs cut = cutoffs();
-    std::vector<double> q(a.nlocal);
-    for (std::size_t i = 0; i < a.nlocal; ++i) q[i] = atom->q[i];
+    std::vector<double> q(a.nall());   // per atom: ghost charges are the ones LAMMPS communicated (as the reference reads them)
+    for (std::size_t i = 0; i < a.nall(); ++i) q[i] = atom->q[i];
     BondedOptions bo;
     bo.enobonds = settings_.enobonds;
     bo.per_atom = per_atom;

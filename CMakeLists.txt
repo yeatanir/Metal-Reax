@@ -43,6 +43,8 @@ add_library(reaxmetal_core STATIC
   src/core/system.cpp
   src/cpu/bonded.cpp
   src/cpu/nonbonded.cpp
+  src/cpu/bonded_fp32.cpp
+  src/cpu/nonbonded_fp32.cpp
   src/neighbor/neighbor.cpp
   src/neighbor/nonbonded_device.cpp
   src/neighbor/qeq_device.cpp
@@ -56,6 +58,8 @@ target_include_directories(reaxmetal_core PUBLIC include)
 target_include_directories(reaxmetal_core PRIVATE ${CMAKE_SOURCE_DIR}/src/metal/shaders)
 target_compile_features(reaxmetal_core PUBLIC cxx_std_20)
 reaxmetal_apply_warnings(reaxmetal_core)
+# the single-precision twin rounds double inputs on purpose
+set_source_files_properties(src/cpu/bonded_fp32.cpp src/cpu/nonbonded_fp32.cpp PROPERTIES COMPILE_OPTIONS "-Wno-conversion;-Wno-float-conversion")
 # Reference-quality FP: no contraction, no fast-math (docs/NUMERICAL_POLICY.md section 2).
 reaxmetal_apply_strict_fp(reaxmetal_core)
 

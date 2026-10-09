@@ -28,8 +28,11 @@ struct NonbondedResult {
   std::vector<std::array<double, 6>> vatom;   // nall, only with per_atom
 };
 
-// q: charge per OWNED atom (nlocal entries).
+// q: charge per OWNED atom (nlocal entries; ghosts use their owner's) or per atom (nall entries, the multi-rank form).
 NonbondedResult compute_nonbonded_core(const ForceField& ff, const NeighborCutoffs& cut, const AtomSet& atoms, const FarList& far,
                                        const std::vector<double>& q, const NonbondedOptions& opt = {});
+
+NonbondedResult compute_nonbonded_core_fp32(const ForceField& ff, const NeighborCutoffs& cut, const AtomSet& atoms, const FarList& far,
+                                           const std::vector<double>& q, const NonbondedOptions& opt = {});
 
 }  // namespace reaxmetal

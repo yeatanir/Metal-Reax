@@ -120,7 +120,7 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
 | `backend.cpu_fp64` | Implemented | - | `-` | reference backend |
-| `backend.cpu_fp32_twin` | Planned | M4 | `-` | same term functions in float; calibrates GPU tolerance (NUMERICAL_POLICY 5) |
+| `backend.cpu_fp32_twin` | Implemented | - | `-` | the CPU engine compiled with float (Real = float, term values in float, energy sums in double); FP32 error envelope vs CPU-64 on 58 fixtures: E/atom 6e-5, force max 4.7e-3, RMS 2.2e-3 (FP32-1); Metal stays within it |
 | `backend.metal_fp32` | Implemented | - | `-` | Apple GPUs have no FP64 |
 | `metal.runtime_compile` | Implemented | - | `(no LAMMPS equivalent)` | shaders compiled at run time from source (no Xcode / metal compiler); written, NOT built or run on Apple hardware (MET-1) |
 | `metal.device_neighbor_rows` | Implemented | - | `(no LAMMPS equivalent)` | device far-neighbor rows over owned+ghost atoms with grow-and-retry; kernel logic verified by CPU emulation only (NBR-1 Metal part) |
@@ -150,8 +150,8 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 | `lammps.pair_style_reaxff_metal` | Implemented | - | `pair_style reaxff/metal` | computes energies, forces, the virial and per-atom energy/virial (backend cpu64 | metal); INT-2 vs stock pair reaxff on 58 fixtures |
 | `lammps.plugin_loadable` | Implemented | - | `plugin load <reaxmetal plugin>` | DSO built against the pinned LAMMPS; version-matched |
 | `lammps.extract_chi_eta_gamma` | Implemented | - | `Pair::extract(chi\|eta\|gamma)` | arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value |
-| `lammps.single_rank_only` | Implemented | - | `comm->nprocs == 1` | multi-rank runs fail explicitly (checked in init_style) |
-| `lammps.multi_rank` | Deferred | - | `mpirun -np N>1 with reaxff/metal` | deferred; needs distributed ghost/QEq handling |
+| `qeq.gpu_single_rank` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal builds the matrix on the GPU only with one MPI rank; with several ranks it uses the stock CPU matrix (the pair style itself runs on any number of ranks) |
+| `lammps.multi_rank` | Implemented | - | `mpirun -np N>1 with reaxff/metal` | ghost atoms whose owner lives on another rank are taken as LAMMPS delivers them (owner-computes rules as the reference); INT-2 vs stock on 58 fixtures with 2 and 4 ranks (cpu64 under C1, metal under C3); 5 184-atom NVT water on 4 ranks agrees with stock |
 | `lammps.newton_off` | Rejected | - | `newton off (newton_pair off)` | forces on ghosts must be reverse-communicated |
 | `lammps.ghost_native_contract` | Implemented | - | `ghost atoms from LAMMPS borders` | adapter A2 builds the owned+ghost view from LAMMPS arrays and verifies ghost = owner + shift (INT-7, 58 fixtures); far list equals LAMMPS' own list row by row |
 | `lammps.virial_fdotr` | Implemented | - | `Pair::virial_fdotr_compute` | global virial/pressure from forces on owned+ghost atoms; pressure equals stock pair reaxff in INT-2 (cpu64 1e-10, metal 2.9e-4 relative); NPT water 40 000 steps agrees with stock |

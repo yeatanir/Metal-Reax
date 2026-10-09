@@ -32,7 +32,7 @@ void FixQEqReaxFFMetal::compute_H()
 {
   pair_ = dynamic_cast<PairReaxFFMetal *>(force->pair_match("^reaxff/metal", 0));
   gpu_ = false;
-  if (pair_ && pair_->uses_metal() && igroup == 0) {
+  if (pair_ && pair_->uses_metal() && igroup == 0 && comm->nprocs == 1) {
     try {
       using namespace reaxmetal;
       auto &ctx = pair_->metal_context();
@@ -57,7 +57,7 @@ void FixQEqReaxFFMetal::compute_H()
     }
   }
   if (!gpu_) {
-    if (!warned_ && comm->me == 0) error->warning(FLERR, "Fix qeq/reaxff/metal is using the stock CPU matrix (needs pair reaxff/metal backend metal, group all, taper radius <= nonb_cut)");
+    if (!warned_ && comm->me == 0) error->warning(FLERR, "Fix qeq/reaxff/metal is using the stock CPU matrix (needs pair reaxff/metal backend metal, one MPI rank, group all, taper radius <= nonb_cut)");
     warned_ = true;
     FixQEqReaxFF::compute_H();
   }

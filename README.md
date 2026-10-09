@@ -18,12 +18,15 @@ The complete ReaxFF force field (all 13 energy terms, forces, global virial) run
 | NVT (water 648 atoms, VO oxide 512 atoms, 40 000 steps) | ⟨T⟩, ⟨PE⟩, ⟨P⟩ agree with stock within block σ |
 | NPT (water, 40 000 steps) | ⟨T⟩, ⟨V⟩, ⟨P⟩ agree with stock within block σ |
 | NVE (20 ps) | water passes; **oxide shows more energy noise than stock** (FP32 bonded terms, drift +4e-4 vs +4e-6 kcal/mol/atom/ps). Owner decision: NVE drift is reported, not gated; prefer NVT |
+| Per-atom energy / virial (`compute pe/atom`, `stress/atom`) | equal stock on 58 fixtures (≤ 5e-10 relative); produced by the CPU-64 engine's tallies, so a step that requests them runs on CPU-64 even with `backend metal` |
+| Multi-rank MPI (2 and 4 ranks) | A/B vs stock on the same rank count passes on 58 fixtures (cpu64 under C1, metal under C3); the GPU QEq matrix is single-rank only (stock CPU matrix on several ranks) |
+| CPU-32 twin / FP32 envelope | same CPU source compiled with float: E/atom 6e-5, force 4.7e-3 max / 2.2e-3 RMS vs CPU-64; satisfies C3 and Metal sits inside it |
 | Speed vs stock `reaxff` (serial, CHO water, NVT) | 0.9× at 648 atoms, 3.5× at 5k, 7.2× at 24k, 10.5× at 66k atoms |
 
-**Not implemented / not validated**: per-atom energy and virial output (refused explicitly), multi-rank MPI (refused), the CPU-32 twin,
-vdW type 2 and `enobonds no` tests, `fix acks2/qtpie/qeq/rel`, and the Linux/CPU-only paths beyond the CPU-64 reference. The barostat/`out.virial`
-capability rows stay "Planned" in `docs/FEATURE_MATRIX.md` until the open items in `docs/VALIDATION.md` close. The honest record of every
-run, including failures, is in `docs/VALIDATION.md` (results register) and `docs/DEVELOPMENT_LOG.md`.
+**Not implemented / not validated**: `fix acks2/qtpie/qeq/rel` and `efield`+QEq (rejected explicitly), vdW type 2 and `enobonds no` tests, a decision-mismatch census
+for FP32 threshold crossings, a GPU charge matrix on several ranks, and speed measurements beyond serial CHO water. Metal NVE energy conservation is noisier than stock
+on the oxide test (see above). The honest record of every run, including failures and the open decisions, is in `docs/VALIDATION.md` (results register)
+and `docs/DEVELOPMENT_LOG.md`.
 
 Reference: LAMMPS `stable_30Sep2026`, commit `8de817dd79bfe4525d5d39246a212d833e6dee07`, GPL-2.0.
 
@@ -50,9 +53,12 @@ Then:
 cmake -S . -B build -DREAXMETAL_ENABLE_METAL=ON -DREAXMETAL_BUILD_LAMMPS_PLUGIN=ON \
       -DREAXMETAL_LAMMPS_SOURCE_DIR=/path/lammps/src -DREAXMETAL_LAMMPS_PREFIX=/path/install \
       -DREAXMETAL_FFIELD_DIR=/path/lammps/potentials
-cmake --build build -j && ctest --test-dir build -j4 --output-on-failure      # 35 tests
+cmake --build build -j && ctest --test-dir build -j4 --output-on-failure      # 38 tests (41+ with the MPI tree)
 ```
 Shaders are compiled at run time from source (no Xcode needed; Command Line Tools suffice). Without `-DREAXMETAL_ENABLE_METAL=ON` (Linux, or macOS CPU-only) the CPU-64 engine, parser, neighbor code and reference tooling still build and test.
+
+Multi-rank: build the pinned LAMMPS with MPI (`tools/build_lammps_reference.sh <src> <build> <install> -DBUILD_MPI=on`), configure a second tree with
+`-DREAXMETAL_LAMMPS_MPI=ON` and that install prefix; `ctest` then adds `lammps_int2_mpi{2,4}_{cpu64,metal}` (needs `mpirun`).
 
 Longer protocol runs (not in CTest):
 ```

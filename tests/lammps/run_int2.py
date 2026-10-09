@@ -17,7 +17,7 @@ import runner  # noqa: E402
 SLOTS = ["eb", "ea", "elp", "emol", "ev", "epen", "ecoa", "ehb", "et", "eco", "ew", "ep", "efi", "eqeq"]
 
 
-def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None, gpu_qeq=False):
+def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None, gpu_qeq=False, np_=1):
     workdir = Path(workdir); workdir.mkdir(parents=True, exist_ok=True)
     ffpath = Path(ffield_dir) / case["ffield"]["name"]
     ffp = runner.parse_ffield(ffpath)
@@ -31,10 +31,11 @@ def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None,
             text = text.replace(" qeq/reaxff ", " qeq/reaxff/metal ")
     text = text.replace("thermo_style custom step pe", "thermo_style custom step pe press", 1)
     inp.write_text(text)
-    r = subprocess.run([lmp, "-in", str(inp), "-log", "none", "-nocite"], cwd=workdir, capture_output=True, text=True, env=env)
+    launcher = ["mpirun", "--oversubscribe", "-np", str(np_)] if np_ > 1 else []
+    r = subprocess.run(launcher + [lmp, "-in", str(inp), "-log", "none", "-nocite"], cwd=workdir, capture_output=True, text=True, env=env, timeout=180)
     out = r.stdout + r.stderr
     if r.returncode != 0:
-        raise RuntimeError(out[-600:])
+        raise RuntimeError(out[-2500:])
     th = runner.parse_thermo(out)
     if th is None:
         raise RuntimeError("no thermo line: " + out[-400:])
@@ -45,7 +46,7 @@ def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lmp", required=True); ap.add_argument("--plugin", required=True); ap.add_argument("--ffield-dir", required=True)
-    ap.add_argument("--backend", default="cpu64"); ap.add_argument("--only"); ap.add_argument("--gpu-qeq", action="store_true", help="plugin runs use fix qeq/reaxff/metal (needs --backend metal to use the GPU)")
+    ap.add_argument("--backend", default="cpu64"); ap.add_argument("--only"); ap.add_argument("--np", type=int, default=1, help="MPI ranks for BOTH the stock and the plugin run (needs an MPI LAMMPS and a plugin built with REAXMETAL_LAMMPS_MPI)"); ap.add_argument("--gpu-qeq", action="store_true", help="plugin runs use fix qeq/reaxff/metal (needs --backend metal to use the GPU)")
     ap.add_argument("--fixtures", default=str(ROOT / "tests" / "fixtures"))
     a = ap.parse_args()
     fx = Path(a.fixtures)
@@ -71,8 +72,8 @@ def main():
             res = None
             for k, c in enumerate(tried):
                 try:
-                    s_th, s_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_stock"), env=env)
-                    o_th, o_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_ours"), plugin=a.plugin, backend=a.backend, env=env, gpu_qeq=a.gpu_qeq)
+                    s_th, s_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_stock"), env=env, np_=a.np)
+                    o_th, o_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_ours"), plugin=a.plugin, backend=a.backend, env=env, gpu_qeq=a.gpu_qeq, np_=a.np)
                     res = (s_th, s_dump, o_th, o_dump); break
                 except RuntimeError as e:
                     if k == 0 and "bond-parameter block" in str(e):

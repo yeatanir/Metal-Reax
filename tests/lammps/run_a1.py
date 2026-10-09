@@ -7,7 +7,7 @@
   E2 the same inputs are accepted/rejected by both, except the documented strict rejection of element pairs without a bond block (Q-12);
   E3 host checks: no charge fix, newton off, no charge attribute, deferred charge models, unsupported options, bad control file;
   E4 with every check passed compute() runs (CPU-64 engine since M4);
-  E5 (optional, --mpi-lib/--mpi-plugin) a 2-rank run is refused.
+  E5 (optional, --mpi-lmp/--mpi-plugin) a 2-rank run computes (multi-rank is supported since the MPI work).
 usage: run_a1.py --lib <liblammps.so> --plugin <reaxmetaladapterplugin.so> --ffield-dir DIR"""
 import argparse, ctypes, itertools, os, subprocess, sys
 from pathlib import Path
@@ -152,9 +152,9 @@ def main():
         for np_ in (1, 2):
             pr = subprocess.run([*a.mpirun.split(), "-np", str(np_), a.mpi_lmp, "-in", str(d / "in.lmp"), "-log", "none", "-nocite"], cwd=d, env=env, capture_output=True, text=True)
             out = pr.stdout + pr.stderr
-            want = "Loop time of" if np_ == 1 else "single MPI rank only"
+            want = "Loop time of"
             if want not in out: fails.append(f"MPI np={np_}: expected {want!r}; got {out[-200:]!r}")
-        print("E5 multi-rank checked (np=1 reaches compute, np=2 refused)")
+        print("E5 multi-rank checked (np=1 and np=2 reach compute)")
 
     print("RESULT:", "PASS" if not fails else f"FAIL ({len(fails)})")
     for f in fails[:20]: print("  ", f)

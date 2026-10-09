@@ -8,6 +8,9 @@ if(NOT REAXMETAL_LAMMPS_SOURCE_DIR OR NOT EXISTS "${REAXMETAL_LAMMPS_SOURCE_DIR}
   message(FATAL_ERROR "Set REAXMETAL_LAMMPS_SOURCE_DIR to the 'src' directory of the pinned LAMMPS tree")
 endif()
 option(REAXMETAL_LAMMPS_MPI "The target LAMMPS was built with MPI" OFF)
+if(REAXMETAL_LAMMPS_MPI)
+  find_package(MPI REQUIRED COMPONENTS CXX)   # only for the mpi.h that the LAMMPS headers include
+endif()
 option(REAXMETAL_LAMMPS_STD_FORMAT "The target LAMMPS was built as C++20 and uses std::format for fmt (see adapter/lammps_fmt_abi.h)" OFF)
 
 add_library(reaxmetal_probe_plugin MODULE probe/probe_plugin.cpp probe/pair_reaxff_metal_probe.cpp)
@@ -17,6 +20,8 @@ target_include_directories(reaxmetal_probe_plugin PRIVATE "${REAXMETAL_LAMMPS_SO
 target_compile_definitions(reaxmetal_probe_plugin PRIVATE LAMMPS_EXCEPTIONS)
 if(NOT REAXMETAL_LAMMPS_MPI)
   target_include_directories(reaxmetal_probe_plugin PRIVATE "${REAXMETAL_LAMMPS_SOURCE_DIR}/STUBS")
+else()
+  target_include_directories(reaxmetal_probe_plugin PRIVATE ${MPI_CXX_INCLUDE_DIRS})
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_target_properties(reaxmetal_probe_plugin PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
@@ -36,6 +41,8 @@ endif()
 target_link_libraries(reaxmetal_adapter_plugin PRIVATE reaxmetal_metal)   # reaxmetal_metal = the Metal backend (REAXMETAL_ENABLE_METAL=ON) or its 'not available' stub; pulls reaxmetal_core
 if(NOT REAXMETAL_LAMMPS_MPI)
   target_include_directories(reaxmetal_adapter_plugin PRIVATE "${REAXMETAL_LAMMPS_SOURCE_DIR}/STUBS")
+else()
+  target_include_directories(reaxmetal_adapter_plugin PRIVATE ${MPI_CXX_INCLUDE_DIRS})
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_target_properties(reaxmetal_adapter_plugin PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
@@ -78,6 +85,19 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
   add_test(NAME lammps_peratom COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_peratom.py
            --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
   set_tests_properties(lammps_peratom PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  if(REAXMETAL_LAMMPS_MPI)
+    # multi-rank A/B against stock run with the same number of ranks (needs mpirun on PATH)
+    foreach(_np 2 4)
+      add_test(NAME lammps_int2_mpi${_np}_cpu64 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+               --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64 --np ${_np})
+      set_tests_properties(lammps_int2_mpi${_np}_cpu64 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+      if(REAXMETAL_ENABLE_METAL)
+        add_test(NAME lammps_int2_mpi${_np}_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+                 --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal --gpu-qeq --np ${_np})
+        set_tests_properties(lammps_int2_mpi${_np}_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+      endif()
+    endforeach()
+  endif()
   add_test(NAME lammps_min1_cpu64 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_min.py
            --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
   set_tests_properties(lammps_min1_cpu64 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")

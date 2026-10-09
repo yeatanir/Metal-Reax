@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
       r = finish_bonded(bout, a.nall());
       r.stats.bonds = bout.bond_cap;   // (not the bond count: the capacity that was needed)
     } else {
-      r = compute_bonded_core(ff, ctl, a, f, bo);
+      r = backend == "cpu32" ? compute_bonded_core_fp32(ff, ctl, a, f, bo) : compute_bonded_core(ff, ctl, a, f, bo);
     }
     if (bonded_gpu_ms >= 0) std::printf("bonded_gpu_ms %.6g\nbond_cap %zu\n", bonded_gpu_ms, r.stats.bonds);
     std::printf("e_bond %.17g\ne_lp %.17g\ne_ov %.17g\ne_un %.17g\nbonds %zu\n", r.e[EnergyTerm::Bond], r.e[EnergyTerm::LonePair],
@@ -116,7 +116,7 @@ int main(int argc, char** argv) {
         gpu_ms = 1e3 * ctx.last_gpu_seconds();
         nb = finish_nonbonded(ff, a, q, dout);
       } else {
-        nb = compute_nonbonded_core(ff, cut, a, f, q, no);
+        nb = backend == "cpu32" ? compute_nonbonded_core_fp32(ff, cut, a, f, q, no) : compute_nonbonded_core(ff, cut, a, f, q, no);
       }
       if (gpu_ms >= 0) std::printf("gpu_ms %.6g\n", gpu_ms);
       std::printf("e_vdW %.17g\ne_ele %.17g\ne_pol %.17g\npairs %zu\n", nb.e[EnergyTerm::VdW], nb.e[EnergyTerm::Coulomb], nb.e[EnergyTerm::Polarization], nb.pairs);

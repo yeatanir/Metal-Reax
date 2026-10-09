@@ -42,4 +42,8 @@ struct BondedResult {
 BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl, const AtomSet& atoms, const FarList& far,
                                  const BondedOptions& opt = {});
 
+// The same engine compiled in single precision (CPU-32 twin, FP32-1): inputs rounded to float on entry, results widened to double.
+BondedResult compute_bonded_core_fp32(const ForceField& ff, const ControlParams& ctl, const AtomSet& atoms, const FarList& far,
+                                      const BondedOptions& opt = {});
+
 }  // namespace reaxmetal
