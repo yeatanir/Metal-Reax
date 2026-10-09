@@ -133,24 +133,24 @@ kernel void rm_qeq_h(device const float* x [[buffer(0)]],
 }
 
 // rm_qeq_mv: y = (diag(eta) + H) x for the owned atoms of a serial run. H is stored as upper rows; the symmetric product gathers
-//   row part  : sum over the own row of hv * x[owner(j)]   (ghost images map to their owner: owned-ghost pairs are seen from both ends)
+//   row part  : sum over the own row of hv * x[j]   (x holds owned AND ghost entries, as LAMMPS' forward communication keeps them equal to their
+//               owners': an owned atom sees all its neighbors, so its row sum is complete on every rank and needs no reverse communication)
 //   column part: sum over the owned rows that name i       (owned-owned pairs, from the host column index)
 // both in ascending entry order, so the float result is the same on every run.
 kernel void rm_qeq_mv(device const float* hv [[buffer(0)]],
                       device const int* nbr [[buffer(1)]],
                       device const uint* count [[buffer(2)]],
-                      device const int* owner [[buffer(3)]],
-                      device const uint* col_start [[buffer(4)]],
-                      device const uint* col_items [[buffer(5)]],
-                      device const float* xv [[buffer(6)]],
-                      device const float* eta_atom [[buffer(7)]],
-                      device float* yv [[buffer(8)]],
-                      constant RmQeqParams& p [[buffer(9)]],
+                      device const uint* col_start [[buffer(3)]],
+                      device const uint* col_items [[buffer(4)]],
+                      device const float* xv [[buffer(5)]],
+                      device const float* eta_atom [[buffer(6)]],
+                      device float* yv [[buffer(7)]],
+                      constant RmQeqParams& p [[buffer(8)]],
                       uint i [[thread_position_in_grid]]) {
   if (i >= p.nlocal) return;
   float y = eta_atom[i] * xv[i];
   const uint n = (count[i] < p.cap) ? count[i] : p.cap;
-  for (uint e = 0; e < n; ++e) y += hv[i * p.cap + e] * xv[owner[nbr[i * p.cap + e]]];
+  for (uint e = 0; e < n; ++e) y += hv[i * p.cap + e] * xv[nbr[i * p.cap + e]];
   for (uint t = col_start[i]; t < col_start[i + 1]; ++t) {
     const uint id = col_items[t];
     y += hv[id] * xv[id / p.cap];

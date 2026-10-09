@@ -17,7 +17,6 @@ struct QeqDeviceInput {
   std::shared_ptr<const FarRowsF32> rows;
   ColumnIndex column;
   std::vector<std::int32_t> type;    // per atom (nall), LAMMPS type - 1
-  std::vector<std::int32_t> owner;   // per atom (nall): index of the owned atom a ghost images
   std::vector<float> shld;           // ntypes * ntypes: (gamma_i * gamma_j)^-1.5
   std::vector<float> eta_atom;       // per owned atom
   std::uint32_t ntypes = 0;

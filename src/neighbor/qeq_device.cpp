@@ -19,10 +19,8 @@ QeqDeviceInput make_qeq_device_input(const NeighborCutoffs& cut, const AtomSet& 
   in.rows = shared_rows ? shared_rows : std::make_shared<const FarRowsF32>(build_rows(in.list));
   in.column = build_column_index(*in.rows, in.list.nlocal);
   in.type.resize(N);
-  in.owner.resize(N);
   for (std::size_t i = 0; i < N; ++i) {
     in.type[i] = lammps_type[i] - 1;
-    in.owner[i] = static_cast<std::int32_t>(i < atoms.nlocal ? i : static_cast<std::size_t>(atoms.owner[i]));
   }
   in.ntypes = static_cast<std::uint32_t>(ntypes);
   in.shld.resize(static_cast<std::size_t>(ntypes) * static_cast<std::size_t>(ntypes));

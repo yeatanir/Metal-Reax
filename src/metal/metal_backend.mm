@@ -411,11 +411,10 @@ void Context::qeq_setup(const QeqDeviceInput& in) {
   id<MTLBuffer> bnbr = m.slot_from("qeq_nbr", in.rows->nbr.data(), in.rows->nbr.size() * sizeof(std::int32_t));
   id<MTLBuffer> bcount = m.slot_from("qeq_count", in.rows->count.data(), in.rows->count.size() * sizeof(std::uint32_t));
   id<MTLBuffer> bhv = m.slot("qeq_hv", nlocal * cap * sizeof(float));
-  m.slot_from("qeq_owner", in.owner.data(), in.owner.size() * sizeof(std::int32_t));
   m.slot_from("qeq_colstart", in.column.start.data(), in.column.start.size() * sizeof(std::uint32_t));
   m.slot_from("qeq_colitems", in.column.items.data(), in.column.items.size() * sizeof(std::uint32_t));
   m.slot_from("qeq_eta", in.eta_atom.data(), in.eta_atom.size() * sizeof(float));
-  m.slot("qeq_xv", nlocal * sizeof(float));
+  m.slot("qeq_xv", in.list.nall * sizeof(float));
   m.slot("qeq_yv", nlocal * sizeof(float));
   Dispatch d = m.make("rm_qeq_h", nlocal);
   d.buffers = {bx, bxlo, btype, bshld, bnbr, bcount, bhv};
@@ -423,7 +422,7 @@ void Context::qeq_setup(const QeqDeviceInput& in) {
   m.run({d});
 }
 
-void Context::qeq_matvec(const double* x, double* y) {
+void Context::qeq_matvec(const double* x, std::size_t nx, double* y) {
   Pool pool;
   Impl& m = *impl_;
   const std::size_t n = m.qeq_nlocal;
@@ -431,11 +430,11 @@ void Context::qeq_matvec(const double* x, double* y) {
   id<MTLBuffer> bxv = m.slots["qeq_xv"];
   id<MTLBuffer> byv = m.slots["qeq_yv"];
   float* xf = static_cast<float*>([bxv contents]);
-  for (std::size_t i = 0; i < n; ++i) xf[i] = static_cast<float>(x[i]);
+  for (std::size_t i = 0; i < nx; ++i) xf[i] = static_cast<float>(x[i]);   // owned entries and the ghost entries LAMMPS keeps in step
   Dispatch d = m.make("rm_qeq_mv", n);
-  d.buffers = {m.slots["qeq_hv"], m.slots["qeq_nbr"], m.slots["qeq_count"], m.slots["qeq_owner"],
+  d.buffers = {m.slots["qeq_hv"], m.slots["qeq_nbr"], m.slots["qeq_count"],
                m.slots["qeq_colstart"], m.slots["qeq_colitems"], bxv, m.slots["qeq_eta"], byv};
-  set_params(d, m.qeq_params, 9);
+  set_params(d, m.qeq_params, 8);
   m.run({d});
   const float* yf = static_cast<const float*>([byv contents]);
   for (std::size_t i = 0; i < n; ++i) y[i] = static_cast<double>(yf[i]);

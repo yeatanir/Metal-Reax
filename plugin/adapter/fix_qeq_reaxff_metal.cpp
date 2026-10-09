@@ -32,7 +32,7 @@ void FixQEqReaxFFMetal::compute_H()
 {
   pair_ = dynamic_cast<PairReaxFFMetal *>(force->pair_match("^reaxff/metal", 0));
   gpu_ = false;
-  if (pair_ && pair_->uses_metal() && igroup == 0 && comm->nprocs == 1) {
+  if (pair_ && pair_->uses_metal() && igroup == 0) {
     try {
       using namespace reaxmetal;
       auto &ctx = pair_->metal_context();
@@ -57,7 +57,7 @@ void FixQEqReaxFFMetal::compute_H()
     }
   }
   if (!gpu_) {
-    if (!warned_ && comm->me == 0) error->warning(FLERR, "Fix qeq/reaxff/metal is using the stock CPU matrix (needs pair reaxff/metal backend metal, one MPI rank, group all, taper radius <= nonb_cut)");
+    if (!warned_ && comm->me == 0) error->warning(FLERR, "Fix qeq/reaxff/metal is using the stock CPU matrix (needs pair reaxff/metal backend metal, group all, taper radius <= nonb_cut)");
     warned_ = true;
     FixQEqReaxFF::compute_H();
   }
@@ -71,7 +71,7 @@ void FixQEqReaxFFMetal::sparse_matvec(sparse_matrix *A, double *x, double *b)
   }
   try {
     const double t0 = now();
-    pair_->metal_context().qeq_matvec(x, b);
+    pair_->metal_context().qeq_matvec(x, static_cast<std::size_t>(atom->nlocal + atom->nghost), b);
     prof.mv += now() - t0; ++prof.nmv;
   } catch (const std::exception &e) {
     error->all(FLERR, "Fix qeq/reaxff/metal: {}", e.what());

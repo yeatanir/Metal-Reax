@@ -24,7 +24,7 @@ FarRowsF32 Context::far_rows(const DeviceListInput&, std::uint32_t, unsigned*) {
 NonbondedDeviceOutput Context::nonbonded(const NonbondedDeviceInput&) { unavailable(); }
 BondedDeviceOutput Context::bonded(const BondedDeviceInput&) { unavailable(); }
 void Context::qeq_setup(const QeqDeviceInput&) { unavailable(); }
-void Context::qeq_matvec(const double*, double*) { unavailable(); }
+void Context::qeq_matvec(const double*, std::size_t, double*) { unavailable(); }
 std::vector<float> Context::partial_sums(std::span<const float>, std::uint32_t) { unavailable(); }
 float Context::sum(std::span<const float>, std::uint32_t) { unavailable(); }
 
