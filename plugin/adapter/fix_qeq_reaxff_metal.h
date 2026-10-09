@@ -21,11 +21,14 @@ class PairReaxFFMetal;
 // Extra keywords of this fix, split off before the stock constructor (which rejects unknown keywords):
 //   strict          non-convergence of the CG is an error (stock: a warning, and the run continues); the taper radius must lie inside the
 //                   ghost shell (stock: silently truncates the matrix, ENGINE_SPEC Q-35)
+//   resident        the EEM solve runs on the GPU (single rank): residuals and matrix in double-single arithmetic, correction solves by an FP32 CG on the device,
+//                   so the requested tolerance (down to 1e-11) is reached
 //   verify <eV>     after every solve the equalisation residual max_i |(H q)_i + chi_i - mu| is evaluated with the matrix of the solve and must not
 //                   exceed <eV> (an error otherwise); implies nothing else
 struct QeqExtraArgs {
   std::vector<char *> filtered;
   bool strict = false;
+  bool resident = false;
   double verify_ev = 0.0;
   std::string problem;
   QeqExtraArgs(int narg, char **arg);
@@ -48,7 +51,10 @@ class FixQEqReaxFFMetal : private QeqExtraArgs, public FixQEqReaxFF {
   PairReaxFFMetal *pair_ = nullptr;
   bool gpu_ = false;
   bool warned_ = false;
+  bool warned_tol_ = false;
   bool shell_checked_ = false;
+  bool resident_ok_ = false;     // this step: resident solve possible
+  int resident_iters_t_ = 0;
 };
 
 }    // namespace LAMMPS_NS

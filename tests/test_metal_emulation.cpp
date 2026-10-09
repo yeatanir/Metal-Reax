@@ -448,6 +448,80 @@ static void test_bonded_pipeline_vs_cpu64() {
 #endif
 }
 
+// The double-single EEM kernels (rm_qeq_h, rm_cg_res_df) against a double precision reference on a random cluster: the matrix entries must agree to
+// ~1e-11 relative (single precision would give 1e-7), the residual to the 1e-7 of its float output.
+void test_qeq_double_single() {
+  Rng r(20261009);
+  const std::uint32_t N = 60;
+  const double swa = 0.0, swb = 10.0, c144 = 14.4;
+  std::vector<double> xd(3 * N);
+  for (auto& v : xd) v = 14.0 * r.u();
+  std::vector<float> xh(3 * N), xl(3 * N);
+  for (std::size_t k = 0; k < xd.size(); ++k) { xh[k] = static_cast<float>(xd[k]); xl[k] = static_cast<float>(xd[k] - static_cast<double>(xh[k])); }
+  const std::uint32_t cap = N;
+  FarRowsF32 rows;
+  rows.nall = N; rows.cap = cap; rows.count.assign(N, 0); rows.nbr.assign(static_cast<std::size_t>(N) * cap, -1); rows.r2.assign(static_cast<std::size_t>(N) * cap, 0.0f);
+  for (std::uint32_t i = 0; i < N; ++i)
+    for (std::uint32_t j = i + 1; j < N; ++j) rows.nbr[static_cast<std::size_t>(i) * cap + rows.count[i]++] = static_cast<std::int32_t>(j);   // all pairs; the kernel applies r <= swb
+  const ColumnIndex col = build_column_index(rows, N);
+  const double gamma = 0.8, gi = std::pow(gamma * gamma, -1.5), eta = 8.5;
+  auto split = [](double v, float& h, float& l) { h = static_cast<float>(v); l = static_cast<float>(v - static_cast<double>(h)); };
+  float shld_h, shld_l, eta_h, eta_l;
+  split(gi, shld_h, shld_l); split(eta, eta_h, eta_l);
+  RmQeqDfParams dp{};
+  dp.nlocal = N; dp.cap = cap; dp.ntypes = 1; dp.swb = static_cast<float>(swb);
+  float swa_h; split(swa, swa_h, dp.swa_lo); dp.swa_hi = swa_h;
+  split(swb - swa, dp.d_hi, dp.d_lo); split(c144, dp.c_hi, dp.c_lo);
+  std::vector<std::int32_t> type(N, 0);
+  std::vector<float> hv(static_cast<std::size_t>(N) * cap, 0.0f), hvl(hv.size(), 0.0f);
+  for (std::uint32_t i = 0; i < N; ++i) rm_qeq_h(xh.data(), xl.data(), type.data(), &shld_h, &shld_l, rows.nbr.data(), rows.count.data(), hv.data(), hvl.data(), dp, i);
+  const terms::TaperCoeffs tap = terms::taper_coeffs(swa, swb);
+  double worst = 0;
+  std::size_t checked = 0;
+  std::vector<double> Href(static_cast<std::size_t>(N) * N, 0.0);
+  for (std::uint32_t i = 0; i < N; ++i)
+    for (std::uint32_t e = 0; e < rows.count[i]; ++e) {
+      const std::uint32_t j = static_cast<std::uint32_t>(rows.nbr[static_cast<std::size_t>(i) * cap + e]);
+      const double dx = xd[3 * j] - xd[3 * i], dy = xd[3 * j + 1] - xd[3 * i + 1], dz = xd[3 * j + 2] - xd[3 * i + 2];
+      const double rr = std::sqrt(dx * dx + dy * dy + dz * dz);
+      double ref = 0.0;
+      if (rr <= swb) {
+        double Tap, dTap;
+        terms::taper_horner<double>(tap.c, rr, Tap, dTap);
+        ref = Tap * c144 / std::cbrt(rr * rr * rr + gi);
+      }
+      const double got = static_cast<double>(hv[static_cast<std::size_t>(i) * cap + e]) + static_cast<double>(hvl[static_cast<std::size_t>(i) * cap + e]);
+      if (rr <= swb - 1e-3) { worst = std::fmax(worst, std::fabs(got - ref)); ++checked; }   // absolute error in eV (float arithmetic gives ~1e-8 .. 1e-6 here)
+      Href[static_cast<std::size_t>(i) * N + j] = Href[static_cast<std::size_t>(j) * N + i] = ref;
+    }
+  RM_CHECK(checked > 500);
+  RM_CHECK_MSG(worst < 5e-11, "double-single H entries differ from double by more than 5e-11 eV");
+  // residual of a random x for two systems
+  const std::uint32_t n2 = 2 * N;
+  std::vector<double> xs(n2), bs(n2);
+  for (auto& v : xs) v = r.u() - 0.5;
+  for (auto& v : bs) v = 2.0 * r.u() - 1.0;
+  std::vector<float> xsh(n2), xsl(n2), bsh(n2), bsl(n2), eh(N, eta_h), el(N, eta_l), rout(n2, 0.0f);
+  for (std::uint32_t k = 0; k < n2; ++k) { split(xs[k], xsh[k], xsl[k]); split(bs[k], bsh[k], bsl[k]); }
+  std::vector<std::int32_t> owner(N);
+  for (std::uint32_t i = 0; i < N; ++i) owner[i] = static_cast<std::int32_t>(i);
+  RmCgParams cp{};
+  cp.nlocal = N; cp.cap = cap;
+  for (std::uint32_t g = 0; g < n2; ++g)
+    rm_cg_res_df(hv.data(), hvl.data(), rows.nbr.data(), rows.count.data(), owner.data(), col.start.data(), col.items.data(), xsh.data(), xsl.data(), eh.data(), el.data(),
+                 bsh.data(), bsl.data(), rout.data(), cp, g);
+  double rworst = 0;
+  for (std::uint32_t sys = 0; sys < 2; ++sys)
+    for (std::uint32_t i = 0; i < N; ++i) {
+      double y = eta * xs[sys * N + i];
+      for (std::uint32_t j = 0; j < N; ++j) y += Href[static_cast<std::size_t>(i) * N + j] * xs[sys * N + j];
+      const double rref = bs[sys * N + i] - y;
+      rworst = std::fmax(rworst, std::fabs(static_cast<double>(rout[sys * N + i]) - rref) / (std::fabs(bs[sys * N + i]) + std::fabs(y)));
+    }
+  RM_CHECK_MSG(rworst < 2e-7, "double-single residual differs from double by more than 2e-7 of |b| + |A x| (the float output rounding is 6e-8)");
+  std::printf("  double-single EEM: %zu matrix entries, worst absolute error %.2e eV (float would be ~1e-8..1e-6); residual worst %.2e of |b|+|Ax|\n", checked, worst, rworst);
+}
+
 int main() {
   test_shader_source_lints();
   test_saxpy_and_probe();
@@ -457,6 +531,7 @@ int main() {
   test_reduction_kernels();
   test_nonbonded_vs_cpu64();
   test_bonded_pipeline_vs_cpu64();
+  test_qeq_double_single();
   if (rmtest::failures() != 0) {
     std::fprintf(stderr, "%d check(s) failed\n", rmtest::failures());
     return 1;

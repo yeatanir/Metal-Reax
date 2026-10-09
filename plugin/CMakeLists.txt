@@ -124,6 +124,14 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
     add_test(NAME lammps_peratom_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_peratom.py
              --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal)
     set_tests_properties(lammps_peratom_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # the same with the GPU-resident EEM solve (double-single residual + FP32 device CG): charges must equal the stock fix's to ~1e-10
+    add_test(NAME lammps_int2_metal_qeq_resident COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal --gpu-qeq --qeq-extra resident)
+    set_tests_properties(lammps_int2_metal_qeq_resident PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # mixed mode: bond-order terms in double on the host, non-bonded + GPU QEq on the device
+    add_test(NAME lammps_int2_metal_mixed COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} "--backend=metal bonded cpu64" --gpu-qeq --qeq-extra resident)
+    set_tests_properties(lammps_int2_metal_mixed PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     # MIN-1: LAMMPS `minimize` reaches the stock minimum (energies, displacement) on the perturbed fixtures, with the GPU charge fix
     add_test(NAME lammps_min1_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_min.py
              --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal --gpu-qeq)

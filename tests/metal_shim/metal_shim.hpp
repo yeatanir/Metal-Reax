@@ -20,6 +20,8 @@ using std::acos;
 using std::atan2;
 using std::cos;
 using std::exp;
+using std::fma;
+using std::isfinite;
 using std::fabs;
 using std::log;
 using std::pow;

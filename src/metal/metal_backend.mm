@@ -411,18 +411,122 @@ void Context::qeq_setup(const QeqDeviceInput& in) {
   id<MTLBuffer> bxlo = m.slot_from("qeq_xlo", in.list.x_lo.data(), in.list.x_lo.size() * sizeof(float));
   id<MTLBuffer> btype = m.slot_from("qeq_type", in.type.data(), in.type.size() * sizeof(std::int32_t));
   id<MTLBuffer> bshld = m.slot_from("qeq_shld", in.shld.data(), in.shld.size() * sizeof(float));
+  id<MTLBuffer> bshldlo = m.slot_from("qeq_shldlo", in.shld_lo.data(), in.shld_lo.size() * sizeof(float));
   id<MTLBuffer> bnbr = m.slot_from("qeq_nbr", in.rows->nbr.data(), in.rows->nbr.size() * sizeof(std::int32_t));
   id<MTLBuffer> bcount = m.slot_from("qeq_count", in.rows->count.data(), in.rows->count.size() * sizeof(std::uint32_t));
   id<MTLBuffer> bhv = m.slot("qeq_hv", nlocal * cap * sizeof(float));
+  id<MTLBuffer> bhvlo = m.slot("qeq_hvlo", nlocal * cap * sizeof(float));
+  m.slot_from("qeq_etalo", in.eta_lo.data(), in.eta_lo.size() * sizeof(float));
+  if (!in.owner.empty()) m.slot_from("qeq_owner", in.owner.data(), in.owner.size() * sizeof(std::int32_t));
   m.slot_from("qeq_colstart", in.column.start.data(), in.column.start.size() * sizeof(std::uint32_t));
   m.slot_from("qeq_colitems", in.column.items.data(), in.column.items.size() * sizeof(std::uint32_t));
   m.slot_from("qeq_eta", in.eta_atom.data(), in.eta_atom.size() * sizeof(float));
   m.slot("qeq_xv", in.list.nall * sizeof(float));
   m.slot("qeq_yv", nlocal * sizeof(float));
+  RmQeqDfParams dp{};
+  dp.nlocal = m.qeq_nlocal; dp.cap = m.qeq_cap; dp.ntypes = in.ntypes; dp.swb = in.swb;
+  dp.swa_hi = in.swa; dp.swa_lo = in.swa_lo; dp.d_hi = in.d_hi; dp.d_lo = in.d_lo; dp.c_hi = in.c_hi; dp.c_lo = in.c_lo;
   Dispatch d = m.make("rm_qeq_h", nlocal);
-  d.buffers = {bx, bxlo, btype, bshld, bnbr, bcount, bhv};
-  set_params(d, m.qeq_params, 7);
+  d.buffers = {bx, bxlo, btype, bshld, bshldlo, bnbr, bcount, bhv, bhvlo};
+  set_params(d, dp, 9);
   m.run({d});
+}
+
+Context::CgOutcome Context::qeq_solve(const double* b, const double* x0, const double* hinv, std::size_t n, int maxiter, double tol, double* x_out) {
+  // Mixed-precision iterative refinement: the residual r = b - A x is evaluated in double-single arithmetic (matrix, x, eta, accumulation), the correction
+  // A d = r is solved by a float preconditioned CG on the device (loose tolerance), x += d is kept in double on the host. Converges to the requested
+  // tolerance (down to ~1e-11) although every device iteration is FP32.
+  Pool pool;
+  Impl& m = *impl_;
+  CgOutcome out{};
+  if (n == 0) return out;
+  if (n != m.qeq_nlocal) throw MetalError("qeq_solve: size differs from the last qeq_setup");
+  if (m.slots["qeq_owner"] == nil) throw MetalError("qeq_solve: the setup had no owner map (multi-rank input)");
+  const std::size_t n2 = 2 * n;
+  const std::uint32_t chunk = 128, nchunk = static_cast<std::uint32_t>((n + chunk - 1) / chunk);
+  auto split_to = [&](const char* nh, const char* nl, const std::vector<double>& v) {
+    id<MTLBuffer> bh = m.slot(nh, v.size() * sizeof(float)), bl = m.slot(nl, v.size() * sizeof(float));
+    float* h = static_cast<float*>([bh contents]);
+    float* l = static_cast<float*>([bl contents]);
+    for (std::size_t i = 0; i < v.size(); ++i) { h[i] = static_cast<float>(v[i]); l[i] = static_cast<float>(v[i] - static_cast<double>(h[i])); }
+  };
+  id<MTLBuffer> bh_ = m.slot("cg_hinv", n * sizeof(float));
+  { float* f = static_cast<float*>([bh_ contents]); for (std::size_t i = 0; i < n; ++i) f[i] = static_cast<float>(hinv[i]); }
+  id<MTLBuffer> bb = m.slot("cg_b", n2 * sizeof(float)), bx = m.slot("cg_x", n2 * sizeof(float));
+  id<MTLBuffer> br = m.slot("cg_r", n2 * sizeof(float)), bd = m.slot("cg_d", n2 * sizeof(float)), bq = m.slot("cg_q", n2 * sizeof(float)), bp = m.slot("cg_p", n2 * sizeof(float));
+  id<MTLBuffer> bpa = m.slot("cg_pa", 2 * nchunk * sizeof(float)), bpb = m.slot("cg_pb", 2 * nchunk * sizeof(float)), bsc = m.slot("cg_sc", 2 * RM_CG_SCALARS * sizeof(float));
+  id<MTLBuffer> bres = m.slot("cg_res", n2 * sizeof(float));
+  const std::vector<double> bvec(b, b + n2);
+  split_to("cg_bhi", "cg_blo", bvec);
+  double bnorm[2] = {0.0, 0.0};
+  for (std::size_t k = 0; k < 2; ++k) { for (std::size_t i = 0; i < n; ++i) bnorm[k] += b[k * n + i] * b[k * n + i]; bnorm[k] = std::sqrt(bnorm[k]); }
+  RmCgParams pr{};
+  pr.nlocal = static_cast<std::uint32_t>(n); pr.cap = m.qeq_cap; pr.chunk = chunk; pr.nchunk = nchunk;
+  const auto hv = m.slots["qeq_hv"], hvlo = m.slots["qeq_hvlo"], nbr = m.slots["qeq_nbr"], cnt = m.slots["qeq_count"], own = m.slots["qeq_owner"],
+             cs = m.slots["qeq_colstart"], ci = m.slots["qeq_colitems"], eta = m.slots["qeq_eta"], etalo = m.slots["qeq_etalo"];
+  auto mv = [&](RmCgParams q, id<MTLBuffer> in_, id<MTLBuffer> out_) { Dispatch d = m.make("rm_cg_mv", n2); d.buffers = {hv, nbr, cnt, own, cs, ci, in_, eta, out_}; set_params(d, q, 9); return d; };
+  auto dot = [&](RmCgParams q, id<MTLBuffer> u, id<MTLBuffer> v, id<MTLBuffer> part) { Dispatch d = m.make("rm_cg_dot", 2 * nchunk); d.buffers = {u, v, part}; set_params(d, q, 3); return d; };
+  auto scalar = [&](RmCgParams q, std::uint32_t mode, id<MTLBuffer> part) { q.mode = mode; Dispatch d = m.make("rm_cg_scalar", 2); d.buffers = {part, bpb, bsc}; set_params(d, q, 3); return d; };
+  // inner float CG for A d = rhs (rhs in cg_b, solution in cg_x, started from zero); returns performed iterations per system and the device status
+  auto inner = [&](double tol_in, int maxit, int performed[2], int status[2]) {
+    RmCgParams q = pr; q.maxiter = static_cast<std::uint32_t>(std::max(maxit, 2)); q.tol = static_cast<float>(tol_in);
+    std::memset([bx contents], 0, n2 * sizeof(float));
+    std::vector<Dispatch> list;
+    Dispatch st = m.make("rm_cg_start", n2); st.buffers = {bb, bq, bh_, br, bd}; set_params(st, q, 5);
+    list = {mv(q, bx, bq), st, dot(q, br, bd, bpa), dot(q, bb, bb, bpb), scalar(q, 0, bpa)};
+    const int per_chunk = 8, max_chunks = (maxit + per_chunk - 1) / per_chunk + 1;
+    for (int c = 0; c < max_chunks; ++c) {
+      for (int k = 0; k < per_chunk; ++k) {
+        Dispatch up = m.make("rm_cg_update", n2); up.buffers = {bx, br, bd, bq, bh_, bp, bsc}; set_params(up, q, 7);
+        Dispatch dr = m.make("rm_cg_dir", n2); dr.buffers = {bd, bp, bsc}; set_params(dr, q, 3);
+        list.push_back(mv(q, bd, bq)); list.push_back(dot(q, bd, bq, bpa)); list.push_back(scalar(q, 1, bpa)); list.push_back(up);
+        list.push_back(dot(q, br, bp, bpa)); list.push_back(scalar(q, 2, bpa)); list.push_back(dr);
+      }
+      m.run(list);
+      list.clear();
+      const float* sc = static_cast<const float*>([bsc contents]);
+      if (sc[6] != 0.0f && sc[RM_CG_SCALARS + 6] != 0.0f) break;
+    }
+    const float* sc = static_cast<const float*>([bsc contents]);
+    for (int k = 0; k < 2; ++k) { performed[k] = static_cast<int>(sc[k * RM_CG_SCALARS + 7]); status[k] = static_cast<int>(sc[k * RM_CG_SCALARS + 6]); }
+  };
+  std::vector<double> x(x0, x0 + n2);
+  int total[2] = {0, 0};
+  bool done[2] = {false, false};
+  out.status[0] = out.status[1] = 3;
+  for (int outer = 0; outer < 10; ++outer) {
+    split_to("cg_xhi", "cg_xlo", x);
+    Dispatch rs = m.make("rm_cg_res_df", n2);
+    rs.buffers = {hv, hvlo, nbr, cnt, own, cs, ci, m.slots["cg_xhi"], m.slots["cg_xlo"], eta, etalo, m.slots["cg_bhi"], m.slots["cg_blo"], bres};
+    set_params(rs, pr, 14);
+    m.run({rs});
+    const float* rf = static_cast<const float*>([bres contents]);
+    bool all = true;
+    for (std::size_t k = 0; k < 2; ++k) {
+      double sig = 0.0;
+      for (std::size_t i = 0; i < n; ++i) sig += static_cast<double>(rf[k * n + i]) * static_cast<double>(rf[k * n + i]) * hinv[i];
+      out.rel[k] = bnorm[k] > 0 ? std::sqrt(sig) / bnorm[k] : 0.0;
+      done[k] = !(out.rel[k] > tol);
+      if (done[k]) out.status[k] = 1;
+      all = all && done[k];
+    }
+    if (all) break;
+    if (total[0] + total[1] >= 2 * (maxiter - 1)) break;
+    std::memcpy([bb contents], rf, n2 * sizeof(float));
+    for (std::size_t k = 0; k < 2; ++k) if (done[k]) std::memset(static_cast<float*>([bb contents]) + k * n, 0, n * sizeof(float));   // nothing to correct
+    int performed[2], status[2];
+    inner(1e-4, maxiter - 1 - std::max(total[0], total[1]), performed, status);
+    const float* dx = static_cast<const float*>([bx contents]);
+    for (std::size_t k = 0; k < 2; ++k) {
+      if (done[k]) continue;
+      for (std::size_t i = 0; i < n; ++i) x[k * n + i] += static_cast<double>(dx[k * n + i]);
+      total[k] += performed[k];
+      if (status[k] == 2) { out.status[k] = 2; done[k] = true; }
+    }
+  }
+  for (std::size_t i = 0; i < n2; ++i) x_out[i] = x[i];
+  for (int k = 0; k < 2; ++k) out.iters[k] = total[k] + 1;
+  return out;
 }
 
 void Context::qeq_matvec(const double* x, std::size_t nx, double* y) {

@@ -35,6 +35,7 @@ QeqExtraArgs::QeqExtraArgs(int narg, char **arg)
 {
   for (int i = 0; i < narg; ++i) {
     if (i >= 8 && std::strcmp(arg[i], "strict") == 0) strict = true;
+    else if (i >= 8 && std::strcmp(arg[i], "resident") == 0) resident = true;
     else if (i >= 8 && std::strcmp(arg[i], "verify") == 0) {
       if (i + 1 >= narg) { problem = "keyword verify needs a residual in eV"; break; }
       verify_ev = std::atof(arg[++i]);
@@ -63,6 +64,28 @@ void FixQEqReaxFFMetal::pre_force(int vflag)
 // The stock CG loop (fix_qeq_reaxff.cpp), kept line for line, with the stopping state reported: strict mode turns non-convergence into an error.
 int FixQEqReaxFFMetal::CG(double *b, double *x)
 {
+  if (resident && resident_ok_) {   // both systems at once on the device; the call for b_t only hands back the result
+    if (b != b_s) return resident_iters_t_;
+    const std::size_t n = static_cast<std::size_t>(atom->nlocal);
+    std::vector<double> bb(2 * n), x0(2 * n), xo(2 * n), hinv(n);
+    for (std::size_t i = 0; i < n; ++i) { bb[i] = b_s[i]; bb[n + i] = b_t[i]; x0[i] = s[i]; x0[n + i] = t[i]; hinv[i] = Hdia_inv[i]; }
+    const double tol_eff = std::max(tolerance, 1e-11);   // the device residual is double-single: about 1e-13 of |b| at best
+    try {
+      const auto out = pair_->metal_context().qeq_solve(bb.data(), x0.data(), hinv.data(), n, imax, tol_eff, xo.data());
+      for (std::size_t i = 0; i < n; ++i) { s[i] = xo[i]; t[i] = xo[n + i]; }
+      resident_iters_t_ = out.iters[1];
+      for (int k = 0; k < 2; ++k) {
+        if (out.status[k] == 2) error->all(FLERR, "Fix qeq/reaxff/metal resident: CG breakdown (system {}) at step {}", k == 0 ? "s" : "t", update->ntimestep);
+        if (out.status[k] == 3) {
+          if (strict) error->all(FLERR, "Fix qeq/reaxff/metal strict: CG did not converge after {} iterations (relative residual {:.3e} > tolerance {:.3e}) at step {}", imax, out.rel[k], tol_eff, update->ntimestep);
+          if (maxwarn && comm->me == 0) error->warning(FLERR, "Fix qeq/reaxff CG convergence failed after {} iterations at step {}", imax, update->ntimestep);
+        }
+      }
+      return out.iters[0];
+    } catch (const std::exception &e) {
+      error->all(FLERR, "Fix qeq/reaxff/metal: {}", e.what());
+    }
+  }
   if (!strict) return FixQEqReaxFF::CG(b, x);
   double alpha, beta, b_norm, sig_old, sig_new;
   int i;
@@ -131,6 +154,7 @@ void FixQEqReaxFFMetal::compute_H()
 {
   pair_ = dynamic_cast<PairReaxFFMetal *>(force->pair_match("^reaxff/metal", 0));
   gpu_ = false;
+  resident_ok_ = false;
   if (pair_ && pair_->uses_metal() && igroup == 0) {
     try {
       using namespace reaxmetal;
@@ -150,6 +174,7 @@ void FixQEqReaxFFMetal::compute_H()
         ctx.qeq_setup(in);
         prof.setup += now() - t0;
         gpu_ = true;
+        resident_ok_ = resident && comm->nprocs == 1 && !in.owner.empty();
       }
     } catch (const std::exception &e) {
       error->all(FLERR, "Fix qeq/reaxff/metal: {}", e.what());

@@ -36,6 +36,6 @@ std::string shader_source() {
          std::string(kKernels4) + "\n" + std::string(kKernels6);
 }
 
-std::vector<std::string> kernel_names() { return {"rm_saxpy", "rm_math_probe", "rm_far_rows", "rm_partial_sums", "rm_sum_partials", "rm_nb_pairs", "rm_nb_gather", "rm_qeq_h", "rm_qeq_mv", "rm_b_build", "rm_h_build", "rm_b_prime", "rm_b_correct", "rm_b_atom", "rm_b_valence", "rm_b_torsion", "rm_b_hbond", "rm_b_hbgather", "rm_b_cdgather", "rm_b_dbond", "rm_b_force"}; }
+std::vector<std::string> kernel_names() { return {"rm_saxpy", "rm_math_probe", "rm_far_rows", "rm_partial_sums", "rm_sum_partials", "rm_nb_pairs", "rm_nb_gather", "rm_qeq_h", "rm_qeq_mv", "rm_cg_res_df", "rm_cg_mv", "rm_cg_start", "rm_cg_dot", "rm_cg_scalar", "rm_cg_update", "rm_cg_dir", "rm_b_build", "rm_h_build", "rm_b_prime", "rm_b_correct", "rm_b_atom", "rm_b_valence", "rm_b_torsion", "rm_b_hbond", "rm_b_hbgather", "rm_b_cdgather", "rm_b_dbond", "rm_b_force"}; }
 
 }  // namespace reaxmetal::mtl

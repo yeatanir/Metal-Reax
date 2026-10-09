@@ -79,7 +79,11 @@ class Context {
   // fix qeq/reaxff/metal: qeq_setup uploads the rows and assembles H (rm_qeq_h); qeq_matvec then computes y = (diag(eta) + H) x for the nlocal
   // owned atoms (doubles in and out, FP32 on the device, fixed summation order)
   void qeq_setup(const QeqDeviceInput& in);
-  void qeq_matvec(const double* x, std::size_t nx, double* y);   // x: nx = nall entries (owned then ghost); y: nlocal entries
+  void qeq_matvec(const double* x, std::size_t nx, double* y);
+  // Resident preconditioned CG of both EEM systems on the device (after qeq_setup of an input WITH owner map). b, x0, x_out hold 2 * n entries (system s,
+  // then system t); hinv n entries (1 / eta). Iteration limit and convergence as the stock loop (iters = performed + 1). status: 1 converged, 2 breakdown, 3 limit.
+  struct CgOutcome { int iters[2]; double rel[2]; int status[2]; };
+  CgOutcome qeq_solve(const double* b, const double* x0, const double* hinv, std::size_t n, int maxiter, double tol, double* x_out);   // x: nx = nall entries (owned then ghost); y: nlocal entries
   // FORCE-2
   std::vector<float> partial_sums(std::span<const float> v, std::uint32_t chunk);
   float sum(std::span<const float> v, std::uint32_t chunk);   // partial_sums + rm_sum_partials in one command buffer

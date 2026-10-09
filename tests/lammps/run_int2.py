@@ -17,7 +17,7 @@ import runner  # noqa: E402
 SLOTS = ["eb", "ea", "elp", "emol", "ev", "epen", "ecoa", "ehb", "et", "eco", "ew", "ep", "efi", "eqeq"]
 
 
-def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None, gpu_qeq=False, np_=1):
+def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None, gpu_qeq=False, np_=1, qeq_extra=""):
     workdir = Path(workdir); workdir.mkdir(parents=True, exist_ok=True)
     ffpath = Path(ffield_dir) / case["ffield"]["name"]
     ffp = runner.parse_ffield(ffpath)
@@ -29,6 +29,9 @@ def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None,
         text = text.replace("compute pp all pair reaxff", "compute pp all pair reaxff/metal")
         if gpu_qeq:   # fixtures with fixed charges have no fix to replace
             text = text.replace(" qeq/reaxff ", " qeq/reaxff/metal ")
+            if qeq_extra:
+                import re
+                text = re.sub(r"(fix q all qeq/reaxff/metal [^\n]*)", lambda m: m.group(1) + " " + qeq_extra, text)
     text = text.replace("thermo_style custom step pe", "thermo_style custom step pe press", 1)
     inp.write_text(text)
     launcher = ["mpirun", "--oversubscribe", "-np", str(np_)] if np_ > 1 else []
@@ -46,14 +49,14 @@ def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lmp", required=True); ap.add_argument("--plugin", required=True); ap.add_argument("--ffield-dir", required=True)
-    ap.add_argument("--backend", default="cpu64"); ap.add_argument("--only"); ap.add_argument("--np", type=int, default=1, help="MPI ranks for BOTH the stock and the plugin run (needs an MPI LAMMPS and a plugin built with REAXMETAL_LAMMPS_MPI)"); ap.add_argument("--gpu-qeq", action="store_true", help="plugin runs use fix qeq/reaxff/metal (needs --backend metal to use the GPU)")
+    ap.add_argument("--backend", default="cpu64"); ap.add_argument("--only"); ap.add_argument("--qeq-extra", default="", help="extra keywords for fix qeq/reaxff/metal (e.g. resident)"); ap.add_argument("--np", type=int, default=1, help="MPI ranks for BOTH the stock and the plugin run (needs an MPI LAMMPS and a plugin built with REAXMETAL_LAMMPS_MPI)"); ap.add_argument("--gpu-qeq", action="store_true", help="plugin runs use fix qeq/reaxff/metal (needs --backend metal to use the GPU)")
     ap.add_argument("--fixtures", default=str(ROOT / "tests" / "fixtures"))
     a = ap.parse_args()
     fx = Path(a.fixtures)
     tol = json.loads((ROOT / "tolerances" / "tolerances.json").read_text())["C1"]["primary"]["threshold"]
     rtol, fcomp, frms, qtol = tol["energy_slot_rel_to_max1"], tol["force_component_abs"], tol["force_rms"], tol["charge_abs"]
     c3 = json.loads((ROOT / "tolerances" / "tolerances.json").read_text())["C3"]
-    metal = a.backend == "metal"   # Metal-32 is judged by the owner-set C3 criteria (energy per atom, force max / RMS, charge), not the FP64 parity thresholds of C1
+    metal = a.backend.startswith("metal")   # Metal-32 is judged by the owner-set C3 criteria (energy per atom, force max / RMS, charge), not the FP64 parity thresholds of C1
     if metal:
         fcomp, frms, qtol = c3["force_max_component_kcal_mol_A"], c3["force_rms_kcal_mol_A"], c3["charge_max_abs_e"]
     env = dict(os.environ, DYLD_LIBRARY_PATH=str(Path(a.lmp).resolve().parents[1] / "lib"), LD_LIBRARY_PATH=str(Path(a.lmp).resolve().parents[1] / "lib"),
@@ -73,7 +76,7 @@ def main():
             for k, c in enumerate(tried):
                 try:
                     s_th, s_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_stock"), env=env, np_=a.np)
-                    o_th, o_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_ours"), plugin=a.plugin, backend=a.backend, env=env, gpu_qeq=a.gpu_qeq, np_=a.np)
+                    o_th, o_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_ours"), plugin=a.plugin, backend=a.backend, env=env, gpu_qeq=a.gpu_qeq, np_=a.np, qeq_extra=a.qeq_extra)
                     res = (s_th, s_dump, o_th, o_dump); break
                 except RuntimeError as e:
                     if k == 0 and "bond-parameter block" in str(e):

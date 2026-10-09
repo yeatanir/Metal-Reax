@@ -17,10 +17,12 @@ struct QeqDeviceInput {
   std::shared_ptr<const FarRowsF32> rows;
   ColumnIndex column;
   std::vector<std::int32_t> type;    // per atom (nall), LAMMPS type - 1
-  std::vector<float> shld;           // ntypes * ntypes: (gamma_i * gamma_j)^-1.5
-  std::vector<float> eta_atom;       // per owned atom
+  std::vector<std::int32_t> owner;   // per atom (nall): the owned atom a ghost images; EMPTY on a multi-rank host (needed only by the resident solve)
+  std::vector<float> shld, shld_lo;  // ntypes * ntypes: (gamma_i * gamma_j)^-1.5 as a double-single pair (hi, lo)
+  std::vector<float> eta_atom, eta_lo;   // per owned atom: eta as a double-single pair
   std::uint32_t ntypes = 0;
   float swa = 0, swb = 0;
+  float swa_lo = 0, d_hi = 0, d_lo = 0, c_hi = 0, c_lo = 0;   // double-single taper constants: swa = swa + swa_lo, swb - swa = d_hi + d_lo, 14.4 = c_hi + c_lo
 };
 
 // `lammps_type` has nall entries (1-based LAMMPS types); chi/eta/gamma are indexed by LAMMPS type (index 0 unused), as fix qeq/reaxff holds them.

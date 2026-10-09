@@ -25,6 +25,7 @@ NonbondedDeviceOutput Context::nonbonded(const NonbondedDeviceInput&) { unavaila
 BondedDeviceOutput Context::bonded(const BondedDeviceInput&) { unavailable(); }
 void Context::qeq_setup(const QeqDeviceInput&) { unavailable(); }
 void Context::qeq_matvec(const double*, std::size_t, double*) { unavailable(); }
+Context::CgOutcome Context::qeq_solve(const double*, const double*, const double*, std::size_t, int, double, double*) { unavailable(); }
 std::vector<float> Context::partial_sums(std::span<const float>, std::uint32_t) { unavailable(); }
 float Context::sum(std::span<const float>, std::uint32_t) { unavailable(); }
 
