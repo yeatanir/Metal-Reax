@@ -1,49 +1,79 @@
 # ReaxMetal
 
-A native Apple **Metal** GPU backend for **ReaxFF** molecular dynamics, delivered as a **LAMMPS plugin**
-(`pair_style reaxff/metal` and `fix qeq/reaxff/metal`) and validated against a pinned stock LAMMPS release.
-Element-agnostic: ordinary ReaxFF `ffield` files are read at runtime and no chemical system is built in.
-LAMMPS provides the integrators, thermostats, barostats, minimisers and neighbor/ghost machinery; there is no standalone MD engine.
+**ReaxFF molecular dynamics on the Apple Metal GPU, as a LAMMPS plugin.**
+`pair_style reaxff/metal` evaluates the complete ReaxFF force field (all 13 energy terms, forces, virial, per-atom energy and virial) and `fix qeq/reaxff/metal` solves the charge equilibration on the GPU.
+Everything else (integrators, thermostats, barostats, minimisers, neighbor lists, MPI) is LAMMPS. Every number is validated against stock `pair_style reaxff` of LAMMPS `stable_30Sep2026`.
+Element-agnostic: ordinary ReaxFF `ffield` files are read at run time.
 
-## Status (Apple M5 Max, macOS, serial LAMMPS)
+<p align="center"><img src="docs/img/graphitization_renders.png" width="100%" alt="random carbon turning into a graphitic network"></p>
 
-The complete ReaxFF force field (all 13 energy terms, forces, global virial) runs on the Metal GPU inside LAMMPS, together with a GPU charge-equilibration fix.
+*30,000 random carbon atoms, 1 g/cm³, NVT at 4000 K with the "2013 C" ReaxFF (Srinivasan, van Duin, Ganesh, J. Phys. Chem. A 119, 571), run with `reaxff/metal` on an M5 Max.
+A 14 Å slab coloured by coordination: the random packing (left, 16 % 3-coordinated) condenses into a connected sp²-like network of 6-membered rings (right, 85 % after 90 ps).
+The run was stopped at 90 ps of the planned 100 ps.*
 
-| Area | State |
+<p align="center"><img src="docs/img/graphitization_timeseries.png" width="80%"></p>
+
+## Results
+
+<p align="center"><img src="docs/img/speedup.png" width="85%"></p>
+
+*Time per MD step, CHO water, NVT, serial stock LAMMPS (1 core) vs `reaxff/metal` + `qeq/reaxff/metal` on the GPU, measured on an idle M5 Max. Below about 1,000 atoms the GPU does not help.*
+
+| | |
 |---|---|
-| CPU-64 engine (double precision reference) | matches pinned LAMMPS to ~3e-15 relative in energy and ~3e-12 in force on 58 fixtures (frozen limits 2e-9 / 1e-9) |
-| Metal-32 engine (FP32 kernels, no atomics, deterministic) | in-LAMMPS A/B vs stock on 58 fixtures passes the owner-set C3 criteria (PE ≤ 1e-4 kcal/mol/atom, force max 4e-3 / RMS 9e-4 kcal/mol/Å); two launches are bitwise identical |
-| GPU QEq (`fix qeq/reaxff/metal`) | EEM matrix (double-single arithmetic) and matvec on the GPU, stock double-precision CG, any number of ranks; charges within 1.1e-5 e of stock. Keyword `resident`: residual in double-single, correction CG on the device, charges equal stock's to 1e-10 e (single rank). Keywords `strict` (non-convergence and a taper radius outside the ghost shell are errors) and `verify <eV>` (equalisation residual check) |
-| Minimisation (MIN-1) | same minimum as stock on 9 perturbed fixtures |
-| NVT (water 648 atoms, VO oxide 512 atoms, 40 000 steps) | ⟨T⟩, ⟨PE⟩, ⟨P⟩ agree with stock within block σ |
-| NPT (water, 40 000 steps) | ⟨T⟩, ⟨V⟩, ⟨P⟩ agree with stock within block σ |
-| NVE (20 ps) | water passes; **oxide shows more energy noise than stock** (FP32 bonded terms, drift +4e-4 vs +4e-6 kcal/mol/atom/ps). Owner decision: NVE drift is reported, not gated; prefer NVT |
-| Per-atom energy / virial (`compute pe/atom`, `stress/atom`) | equal stock on 58 fixtures (≤ 5e-10 relative); produced by the CPU-64 engine's tallies, so a step that requests them runs on CPU-64 even with `backend metal` |
-| Multi-rank MPI (2 and 4 ranks) | A/B vs stock on the same rank count passes on 58 fixtures (cpu64 under C1, metal under C3), including the GPU charge matrix; all ranks share one GPU, so more ranks do not add speed |
-| CPU-32 twin / FP32 envelope | same CPU source compiled with float: E/atom 6e-5, force 4.7e-3 max / 2.2e-3 RMS vs CPU-64; satisfies C3 and Metal sits inside it |
-| Decision census | Metal and the CPU-32 twin take the same discrete decisions (bonds, angle sets, torsions, H-bonds, non-bonded pairs) as CPU-64 on 58 fixtures + 232 displaced configurations; threshold scans of 30 crossings show flip windows of 1e-9 .. 1e-7 Å |
-| Mixed mode `backend metal bonded cpu64` | bond-order terms in double on the host, everything else on the GPU: stock-like NVE energy conservation on the oxide, about 2x faster than stock at 24k atoms |
-| Speed vs stock `reaxff` (serial, CHO water, NVT) | 0.9× at 648 atoms, 3.5× at 5k, 7.2× at 24k, 10.5× at 66k atoms |
+| <img src="docs/img/accuracy.png" width="100%"> | <img src="docs/img/nve_noise.png" width="100%"> |
+| Force error against stock on 58 reference configurations: `cpu64` is the double-precision reference, `metal` the all-FP32 GPU engine, `mixed` runs the bond-order terms in double on the host and everything else on the GPU. | Energy conservation in NVE (VO oxide, 20 ps): the all-FP32 GPU mode is noisier than stock, the mixed mode is not. FP32 is fine for NVT/NPT; use `bonded cpu64` for NVE. |
+| <img src="docs/img/charge_models.png" width="100%"> | <img src="docs/img/decision_windows.png" width="100%"> |
+| All ReaxFF charge models of LAMMPS (QEq, QEq-R, QTPIE, ACKS2, each with and without an electric field) on a 3000-atom water system: the energy matches stock to 1e-5 kcal/mol/atom on Metal and 1e-9 on `cpu64`. | Every discrete decision of the force field (bond-order cut-offs, 3-/4-body gates, H-bond gate, SBO branches, the lone-pair truncation, the non-bonded cut-off) is taken as in the reference except within about 1e-7 Å of a threshold. |
 
-**Not implemented / not validated**: `fix acks2/qtpie/qeq/rel` and `efield`+QEq (rejected explicitly); scans of the SBO region boundaries and the Δe/2 crossing for FP32 decision flips; a threaded or GPU double-precision bonded engine (the all-FP32 bonded kernels remain noisier than stock in NVE on the oxide, which is why the mixed mode exists); speed measurements beyond serial CHO water (and the ones taken while the machine was loaded are marked as such). The honest record of every run, including failures and the open decisions, is in `docs/VALIDATION.md` (results register) and `docs/DEVELOPMENT_LOG.md`.
+## What is validated against stock LAMMPS
 
-Reference: LAMMPS `stable_30Sep2026`, commit `8de817dd79bfe4525d5d39246a212d833e6dee07`, GPL-2.0.
+| Area | Result |
+|---|---|
+| CPU-64 engine | energy 3e-15 relative, forces 3e-12 kcal/mol/Å on 58 reference configurations (frozen limits 2e-9 / 1e-9) |
+| Metal-32 engine (FP32, no atomics, bitwise repeatable) | energy ≤ 1e-4 kcal/mol/atom, force max 4e-3 / RMS 9e-4 kcal/mol/Å (limits 1e-3 / 0.05 / 5e-3) |
+| Charge models | `qeq/reaxff`, `qeq/rel/reaxff`, `qtpie/reaxff`, `acks2/reaxff`, `qeq/shielded`, parameter-file QEq, QEq on a subgroup, each with `fix efield` where applicable |
+| `fix qeq/reaxff/metal` | GPU charge matrix on any number of ranks; `resident` (whole solve on the GPU, charges equal stock's to 1e-10 e), `strict`, `verify <eV>` |
+| Dynamics | NVE, NVT, NPT, `minimize`, `hybrid/overlay` (charge-implicit ReaxFF + tabulated ZBL), shrink-wrapped boundaries, `fix wall/reflect`; NVT/NPT averages equal stock within block σ |
+| Analysis | `compute pe/atom`, `stress/atom`, and the stock `fix reaxff/bonds`, `fix reaxff/species`, `compute reaxff/atom`, `compute SPEC/ATOM` work unmodified |
+| MPI | 2 and 4 ranks equal stock on the same rank count (all ranks share one GPU: more ranks do not add speed) |
+| FP32 decisions | 48 thresholds scanned, 290 configurations censused, no flip outside the FP32 window |
+| Precision modes | `backend cpu64` · `backend metal` (GPU, FP32) · `backend metal bonded cpu64` (mixed, stock-like NVE conservation, ≈ 2× stock speed at 24k atoms) |
+
+Test suite: 52 tests (56 with the MPI build tree). Every run, including the failures and the bugs found along the way, is recorded in [`docs/VALIDATION.md`](docs/VALIDATION.md) and [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md).
+
+## Limitations
+
+* `backend metal` is single precision: in NVE the oxide test shows more total-energy noise than stock (use `bonded cpu64`); nearly linear atom triples (sin θ < 1e-3) carry an intrinsic FP32 force error.
+* A step on which `pe/atom` / `stress/atom` is evaluated runs on the CPU engine.
+* `tabulate` is accepted but non-bonded terms are evaluated analytically; the plugin checks the ghost shell width (`shellcheck no` disables the error, as stock never checks).
+* `units real`, `newton on`, atom IDs and the `q` attribute are required (as stock). No Kokkos/OpenMP suffix styles. About 75 KB of memory per atom.
+* Full list and the troubleshooting table: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) §11.
 
 ## Use
 
 ```
 plugin load /path/to/reaxmetaladapterplugin.so
-pair_style reaxff/metal NULL backend metal          # backend cpu64 (default, double precision on the host) | metal
+pair_style reaxff/metal NULL backend metal          # backend cpu64 (default) | metal ; add "bonded cpu64" for stock-like NVE conservation
 pair_coeff * * ffield.reax.cho C H O
-fix q all qeq/reaxff/metal 1 0.0 10.0 1e-6 reaxff   # or the stock qeq/reaxff (CPU)
+fix q all qeq/reaxff/metal 1 0.0 10.0 1e-6 reaxff   # or any other ReaxFF charge fix; "checkqeq no" for fixed charges
 fix integ all nvt temp 300 300 25.0                 # any LAMMPS integrator
 ```
-`fix qeq/reaxff/metal` uses the GPU only with `backend metal`, fix group `all` and a taper radius ≤ `nonb_cut`; otherwise it falls back to the stock CPU matrix with a warning.
+Full manual (syntax of every keyword, charge models, precision modes, MPI, performance, limitations, troubleshooting): [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md).
 `REAXMETAL_PROFILE=1` prints per-phase wall times at exit.
+
+### Example: random carbon at 1 g/cm³ (the renders above)
+```
+examples/graphitization/make_ffield.sh jp510274e_si_001.pdf ffield.reax.C2013    # force field from the paper's Supporting Information (not redistributed)
+python3 examples/graphitization/make_box.py c30000.data --n 30000 --density 1.0  # random packing, 84.265 Å box
+lmp -in examples/graphitization/in.graphitization -var data c30000.data -var ffield ffield.reax.C2013 -var plugin $PWD/build/plugin/reaxmetaladapterplugin.so
+python3 examples/graphitization/analyze.py --box 84.26481 g4000.*.dump           # coordination and ring statistics
+python3 docs/make_figures.py <dir with the dumps>                                # regenerates the figures of this README
+```
 
 ## Build and test (macOS, Apple Silicon)
 
-Stock pinned LAMMPS is built once, outside the repository (shared, serial, `LAMMPS_EXCEPTIONS`):
+Stock pinned LAMMPS is built once, outside the repository (shared library, `LAMMPS_EXCEPTIONS`; add `-DBUILD_MPI=on` for an MPI LAMMPS):
 ```
 tools/fetch_lammps.sh --full /path/lammps && tools/build_lammps_reference.sh /path/lammps /path/build /path/install
 ```
@@ -51,36 +81,27 @@ Then:
 ```
 cmake -S . -B build -DREAXMETAL_ENABLE_METAL=ON -DREAXMETAL_BUILD_LAMMPS_PLUGIN=ON \
       -DREAXMETAL_LAMMPS_SOURCE_DIR=/path/lammps/src -DREAXMETAL_LAMMPS_PREFIX=/path/install \
-      -DREAXMETAL_FFIELD_DIR=/path/lammps/potentials
-cmake --build build -j && ctest --test-dir build -j4 --output-on-failure      # 45 tests (49 with the MPI tree)
+      -DREAXMETAL_FFIELD_DIR=/path/lammps/potentials            # + -DREAXMETAL_LAMMPS_MPI=ON for an MPI LAMMPS
+cmake --build build -j && ctest --test-dir build -j4 --output-on-failure
 ```
-Shaders are compiled at run time from source (no Xcode needed; Command Line Tools suffice). Without `-DREAXMETAL_ENABLE_METAL=ON` (Linux, or macOS CPU-only) the CPU-64 engine, parser, neighbor code and reference tooling still build and test.
-
-Multi-rank: build the pinned LAMMPS with MPI (`tools/build_lammps_reference.sh <src> <build> <install> -DBUILD_MPI=on`), configure a second tree with
-`-DREAXMETAL_LAMMPS_MPI=ON` and that install prefix; `ctest` then adds `lammps_int2_mpi{2,4}_{cpu64,metal}` (needs `mpirun`).
-
-Longer protocol runs (not in CTest):
-```
-python3 tests/lammps/run_nve.py --lmp <lmp> --plugin <so> --ffield-dir <ff> --case cho_water_box_8 --replicate 3 --steps 80000 --gpu-qeq          # NVE-1
-python3 tests/lammps/run_nve.py ... --nvt --steps 40000      # NVT stability   (--npt for NPT)
-python3 tests/lammps/run_min.py --lmp <lmp> --plugin <so> --ffield-dir <ff> --backend metal --gpu-qeq    # MIN-1
-```
+Shaders are compiled at run time (Command Line Tools suffice, no Xcode). Without `-DREAXMETAL_ENABLE_METAL=ON` the plugin still runs the double-precision CPU engine.
+Long protocol runs (not in CTest): `tests/lammps/run_nve.py` (NVE 20 ps; `--nvt`, `--npt`), `tests/lammps/run_min.py`.
 
 ## Layout
 
 | Where to look | What it is |
 |---|---|
-| `include/reaxmetal/terms.hpp` | pure ReaxFF term functions shared by CPU-64 and the Metal shaders |
-| `src/cpu`, `src/neighbor` | CPU-64 engine, neighbor/ghost machinery, packing of device inputs |
-| `src/metal` | Objective-C++ host and the MSL kernels (`reaxmetal_m3/m4/m6.metal`) |
-| `plugin/adapter` | the LAMMPS plugin: `pair_style reaxff/metal`, `fix qeq/reaxff/metal` |
-| `tests/` | unit tests, fixtures (58 cases, frozen hashes), in-LAMMPS A/B and dynamics harnesses |
-| `tools/` | reference-oracle tooling, LAMMPS fetch/build scripts, Mac check scripts (`tools/mac`) |
-| `docs/ENGINE_SPEC.md` | the functional form as implemented by the pinned reference, plus its quirks |
-| `docs/NUMERICAL_POLICY.md` | precision tiers and tolerance protocol |
-| `docs/VALIDATION.md` | test matrix and results register |
-| `docs/ARCHITECTURE_DECISIONS.md`, `docs/DEVELOPMENT_LOG.md` | ADR log; what was actually done, including mistakes |
-| `docs/FEATURE_MATRIX.md` | implemented / planned / rejected features (mirrors `src/core/capabilities.cpp`) |
+| `include/reaxmetal/terms.hpp` | pure ReaxFF term functions shared by the CPU engines and the Metal shaders |
+| `src/cpu`, `src/neighbor` | CPU-64 engine (and its float twin), neighbor/ghost machinery, packing of device inputs |
+| `src/metal` | Objective-C++ host and the MSL kernels |
+| `plugin/adapter` | the LAMMPS plugin: `pair_style reaxff/metal` and the `/metal` charge fixes |
+| `tests/` | unit tests, 58 reference fixtures (frozen hashes), in-LAMMPS A/B and dynamics harnesses |
+| `examples/graphitization` | the 30,000-atom carbon example |
+| `docs/USER_MANUAL.md` | user manual |
+| `docs/ENGINE_SPEC.md`, `docs/NUMERICAL_POLICY.md` | the functional form as implemented by the reference and its quirks; precision tiers and tolerance protocol |
+| `docs/VALIDATION.md`, `docs/DEVELOPMENT_LOG.md`, `docs/FEATURE_MATRIX.md` | results register, what was actually done (incl. mistakes), feature matrix |
+
+Reference: LAMMPS `stable_30Sep2026`, commit `8de817dd79bfe4525d5d39246a212d833e6dee07`, GPL-2.0.
 
 ## License
 GPL-2.0-only. See `LICENSE`, `REUSE.toml`, `THIRD_PARTY_NOTICES.md` and the per-file upstream audit `third_party/lammps/LICENSE_AUDIT.tsv`.
