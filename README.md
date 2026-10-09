@@ -13,20 +13,19 @@ The complete ReaxFF force field (all 13 energy terms, forces, global virial) run
 |---|---|
 | CPU-64 engine (double precision reference) | matches pinned LAMMPS to ~3e-15 relative in energy and ~3e-12 in force on 58 fixtures (frozen limits 2e-9 / 1e-9) |
 | Metal-32 engine (FP32 kernels, no atomics, deterministic) | in-LAMMPS A/B vs stock on 58 fixtures passes the owner-set C3 criteria (PE ≤ 1e-4 kcal/mol/atom, force max 4e-3 / RMS 9e-4 kcal/mol/Å); two launches are bitwise identical |
-| GPU QEq (`fix qeq/reaxff/metal`) | EEM matrix and matvec on the GPU, stock double-precision CG; charges within 1.6e-5 e of stock |
+| GPU QEq (`fix qeq/reaxff/metal`) | EEM matrix (double-single arithmetic) and matvec on the GPU, stock double-precision CG, any number of ranks; charges within 1.1e-5 e of stock. Keyword `resident`: residual in double-single, correction CG on the device, charges equal stock's to 1e-10 e (single rank). Keywords `strict` (non-convergence and a taper radius outside the ghost shell are errors) and `verify <eV>` (equalisation residual check) |
 | Minimisation (MIN-1) | same minimum as stock on 9 perturbed fixtures |
 | NVT (water 648 atoms, VO oxide 512 atoms, 40 000 steps) | ⟨T⟩, ⟨PE⟩, ⟨P⟩ agree with stock within block σ |
 | NPT (water, 40 000 steps) | ⟨T⟩, ⟨V⟩, ⟨P⟩ agree with stock within block σ |
 | NVE (20 ps) | water passes; **oxide shows more energy noise than stock** (FP32 bonded terms, drift +4e-4 vs +4e-6 kcal/mol/atom/ps). Owner decision: NVE drift is reported, not gated; prefer NVT |
 | Per-atom energy / virial (`compute pe/atom`, `stress/atom`) | equal stock on 58 fixtures (≤ 5e-10 relative); produced by the CPU-64 engine's tallies, so a step that requests them runs on CPU-64 even with `backend metal` |
-| Multi-rank MPI (2 and 4 ranks) | A/B vs stock on the same rank count passes on 58 fixtures (cpu64 under C1, metal under C3); the GPU QEq matrix is single-rank only (stock CPU matrix on several ranks) |
+| Multi-rank MPI (2 and 4 ranks) | A/B vs stock on the same rank count passes on 58 fixtures (cpu64 under C1, metal under C3), including the GPU charge matrix; all ranks share one GPU, so more ranks do not add speed |
 | CPU-32 twin / FP32 envelope | same CPU source compiled with float: E/atom 6e-5, force 4.7e-3 max / 2.2e-3 RMS vs CPU-64; satisfies C3 and Metal sits inside it |
+| Decision census | Metal and the CPU-32 twin take the same discrete decisions (bonds, angle sets, torsions, H-bonds, non-bonded pairs) as CPU-64 on 58 fixtures + 232 displaced configurations; threshold scans of 30 crossings show flip windows of 1e-9 .. 1e-7 Å |
+| Mixed mode `backend metal bonded cpu64` | bond-order terms in double on the host, everything else on the GPU: stock-like NVE energy conservation on the oxide, about 2x faster than stock at 24k atoms |
 | Speed vs stock `reaxff` (serial, CHO water, NVT) | 0.9× at 648 atoms, 3.5× at 5k, 7.2× at 24k, 10.5× at 66k atoms |
 
-**Not implemented / not validated**: `fix acks2/qtpie/qeq/rel` and `efield`+QEq (rejected explicitly), a decision-mismatch census
-for FP32 threshold crossings, a GPU charge matrix on several ranks, and speed measurements beyond serial CHO water. Metal NVE energy conservation is noisier than stock
-on the oxide test (see above). The honest record of every run, including failures and the open decisions, is in `docs/VALIDATION.md` (results register)
-and `docs/DEVELOPMENT_LOG.md`.
+**Not implemented / not validated**: `fix acks2/qtpie/qeq/rel` and `efield`+QEq (rejected explicitly); scans of the SBO region boundaries and the Δe/2 crossing for FP32 decision flips; a threaded or GPU double-precision bonded engine (the all-FP32 bonded kernels remain noisier than stock in NVE on the oxide, which is why the mixed mode exists); speed measurements beyond serial CHO water (and the ones taken while the machine was loaded are marked as such). The honest record of every run, including failures and the open decisions, is in `docs/VALIDATION.md` (results register) and `docs/DEVELOPMENT_LOG.md`.
 
 Reference: LAMMPS `stable_30Sep2026`, commit `8de817dd79bfe4525d5d39246a212d833e6dee07`, GPL-2.0.
 
@@ -53,7 +52,7 @@ Then:
 cmake -S . -B build -DREAXMETAL_ENABLE_METAL=ON -DREAXMETAL_BUILD_LAMMPS_PLUGIN=ON \
       -DREAXMETAL_LAMMPS_SOURCE_DIR=/path/lammps/src -DREAXMETAL_LAMMPS_PREFIX=/path/install \
       -DREAXMETAL_FFIELD_DIR=/path/lammps/potentials
-cmake --build build -j && ctest --test-dir build -j4 --output-on-failure      # 40 tests (44 with the MPI tree)
+cmake --build build -j && ctest --test-dir build -j4 --output-on-failure      # 44 tests (49 with the MPI tree)
 ```
 Shaders are compiled at run time from source (no Xcode needed; Command Line Tools suffice). Without `-DREAXMETAL_ENABLE_METAL=ON` (Linux, or macOS CPU-only) the CPU-64 engine, parser, neighbor code and reference tooling still build and test.
 
