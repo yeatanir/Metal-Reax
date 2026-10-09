@@ -70,20 +70,20 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `opt.lgvdw` | Implemented | - | `pair_style reaxff lgvdw yes` | |
 | `opt.memory_heuristics` | Ignored | - | `safezone / mincap / minhbonds` | allocation heuristics only; notice logged |
 | `opt.list_blocking` | Ignored | - | `list/blocking` | Kokkos performance option only |
-| `opt.tabulate` | Deferred | - | `tabulate N>0 / tabulate_long_range N>0` | deferred; spline tables change the numbers, analytic evaluation only for now |
+| `opt.tabulate` | Implemented | - | `tabulate N>0 / tabulate_long_range N>0` | tabulate N / tabulate_long_range N are accepted; no table is built, the non-bonded terms are evaluated analytically (the stock spline table approximates them: a tabulated stock run differs by its interpolation error). A notice says so |
 
 ## 5. Charge models
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
 | `qeq.reaxff` | Implemented | - | `fix qeq/reaxff ... reaxff` | stock fix, or fix qeq/reaxff/metal (EEM matrix and matvec on the GPU, stock CG); charges within 1.6e-5 e of stock |
-| `qeq.pertype_file` | Planned | M5 | `fix qeq/reaxff ... <param file>` | per-type chi/eta/gamma override |
-| `qeq.shielded` | Planned | M5 | `fix qeq/shielded` | LAMMPS-compatible shielded charge equilibration; same kernel as qeq/reaxff (ENGINE_SPEC 7.2); works through extract() today |
-| `qeq.acks2` | Deferred | - | `fix acks2/reaxff` | deferred; different charge model |
-| `qeq.qtpie` | Deferred | - | `fix qtpie/reaxff` | deferred; different charge model |
-| `qeq.relative` | Deferred | - | `fix qeq/rel/reaxff` | deferred |
-| `qeq.efield` | Deferred | - | `fix efield with fix qeq/reaxff` | deferred; external electric field |
-| `qeq.group_subset` | Deferred | - | `fix qeq/reaxff on a proper subgroup` | deferred; all atoms are equilibrated |
+| `qeq.pertype_file` | Implemented | - | `fix qeq/reaxff ... <param file>` | per-type chi/eta/gamma from a parameter file instead of the pair style: identical to stock (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.shielded` | Implemented | - | `fix qeq/shielded` | LAMMPS-compatible shielded charge equilibration: stock fix, charges drive the plugin (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.acks2` | Implemented | - | `fix acks2/reaxff` | ACKS2: the stock fix supplies the kinetic potentials; the plugin adds the polarization coupling and the bond-softness Coulomb term (energy, forces, per-atom tallies) to the non-bonded terms (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.qtpie` | Implemented | - | `fix qtpie/reaxff` | QTPIE: use fix qtpie/reaxff/metal (the stock fix borrows the pair-style list with ghost rows, which a plugin pair style cannot provide; the derived fix requests its own) (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.relative` | Implemented | - | `fix qeq/rel/reaxff` | QEq-R: use fix qeq/rel/reaxff/metal (same reason as QTPIE) (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.efield` | Implemented | - | `fix efield with fix qeq/reaxff` | external electric field with every charge model above, also with the GPU charge matrix (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.group_subset` | Implemented | - | `fix qeq/reaxff on a proper subgroup` | the stock fix handles the group; the plugin does not depend on it (GPU charge matrix falls back to the CPU one) (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
 
 ## 6. System description
 
@@ -104,7 +104,7 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `out.charges` | Implemented | - | `atom->q` | charges are LAMMPS atom->q set by the stock fix qeq/reaxff or by fix qeq/reaxff/metal; compared with stock in every INT-2 run |
 | `out.virial` | Implemented | - | `virial_fdotr / v_tally*` | global virial by virial_fdotr (INT-2, NPT); per-atom virial by the CPU-64 tallies of the reference (PERATOM-1) |
 | `out.per_atom_energy` | Implemented | - | `compute pe/atom, stress/atom with reaxff` | per-atom energy and virial equal stock on 58 fixtures (PERATOM-1, 5e-10 relative); produced by the CPU-64 engine, so a step on which a compute requests them is evaluated by CPU-64 even with backend metal |
-| `out.bond_analysis` | Deferred | - | `fix reaxff/bonds, fix reaxff/species` | deferred; LAMMPS analysis tools dynamic_cast to PairReaxFF and refuse other styles |
+| `out.bond_analysis` | Implemented | - | `fix reaxff/bonds, fix reaxff/species, compute reaxff/atom, compute spec/atom` | fix reaxff/bonds, fix reaxff/species (incl. its options), compute reaxff/atom and compute SPEC/ATOM work unmodified: the pair style derives from PairReaxFF and fills the bond list, bond orders and lone pairs they read (from the CPU-64 engine or read back from the GPU); ANA-1 on the reactive CHO example equals stock (cpu64 exactly, metal within 1e-3 of the printed bond orders) |
 
 ## 8. Dynamics
 
@@ -151,6 +151,7 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 | `lammps.plugin_loadable` | Implemented | - | `plugin load <reaxmetal plugin>` | DSO built against the pinned LAMMPS; version-matched |
 | `lammps.extract_chi_eta_gamma` | Implemented | - | `Pair::extract(chi\|eta\|gamma)` | arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value |
 | `qeq.gpu_single_rank` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal builds the matrix on the GPU only with one MPI rank; with several ranks it uses the stock CPU matrix (the pair style itself runs on any number of ranks) |
+| `lammps.hybrid` | Implemented | - | `pair_style hybrid/overlay reaxff ... + other styles` | reaxff/metal as a sub-style of hybrid/overlay (type mapping with NULL entries, forces and energies added to the other styles); HYB-1: charge-implicit ReaxFF + tabulated ZBL example equals stock (cpu64 bit-for-bit at printed precision, metal 2e-5 kcal/mol/atom). Keyword shellcheck no accepts a ghost shell narrower than 2*bond_cut as the stock style does |
 | `lammps.multi_rank` | Implemented | - | `mpirun -np N>1 with reaxff/metal` | ghost atoms whose owner lives on another rank are taken as LAMMPS delivers them (owner-computes rules as the reference); INT-2 vs stock on 58 fixtures with 2 and 4 ranks (cpu64 under C1, metal under C3); 5 184-atom NVT water on 4 ranks agrees with stock |
 | `lammps.newton_off` | Rejected | - | `newton off (newton_pair off)` | forces on ghosts must be reverse-communicated |
 | `lammps.ghost_native_contract` | Implemented | - | `ghost atoms from LAMMPS borders` | adapter A2 builds the owned+ghost view from LAMMPS arrays and verifies ghost = owner + shift (INT-7, 58 fixtures); far list equals LAMMPS' own list row by row |

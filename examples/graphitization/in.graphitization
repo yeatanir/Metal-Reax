@@ -1,0 +1,45 @@
+# Random carbon at 1 g/cm3, NVT at 4000 K, with the 2013 C ReaxFF (Srinivasan, van Duin, Ganesh, JPCA 119, 571 (2015)) and pair_style reaxff/metal.
+# usage: lmp -in in.graphitization -var data c30000.data -var ffield ffield.reax.C2013 -var plugin /path/reaxmetaladapterplugin.so
+#        optional: -var backend metal -var bonded metal -var nsteps 400000 -var dt 0.25 -var temp 4000 -var tag run1
+variable data     index c30000.data
+variable ffield   index ffield.reax.C2013
+variable plugin   index reaxmetaladapterplugin.so
+variable backend  index metal
+variable bonded   index metal
+variable nsteps   index 400000
+variable dt       index 0.25
+variable temp     index 4000.0
+variable tag      index run
+variable nmin     index 300
+
+units           real
+atom_style      charge
+boundary        p p p
+read_data       ${data}
+
+plugin load     ${plugin}
+# one element: every atom has the same electronegativity, so the EEM charges are exactly zero and the charge solve is skipped (checkqeq no, q = 0 from the data file)
+pair_style      reaxff/metal NULL checkqeq no backend ${backend} bonded ${bonded}
+pair_coeff      * * ${ffield} C
+neighbor        2.0 bin
+neigh_modify    delay 0 every 1 check yes
+
+thermo          200
+thermo_style    custom step temp pe ke etotal press vol density
+thermo_modify   format float %.8g
+
+# relax the worst overlaps of the random packing before the dynamics
+min_style       cg
+minimize        0.0 1.0e-3 ${nmin} 10000
+reset_timestep  0
+
+velocity        all create ${temp} 20261010 dist gaussian mom yes rot yes
+fix             nvt all nvt temp ${temp} ${temp} 25.0
+timestep        ${dt}
+
+thermo          1000
+dump            traj all custom 40000 ${tag}.*.dump id x y z
+dump_modify     traj sort id format float %.5g
+restart         100000 ${tag}.restart.a ${tag}.restart.b
+run             ${nsteps}
+write_data      ${tag}.final.data

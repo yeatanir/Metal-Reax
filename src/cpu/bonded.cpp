@@ -206,7 +206,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
   BondedResult res;
   std::vector<double> CdDelta(N, Real(0.0));
   const bool pa = opt.per_atom;
-  if (opt.census) { res.census.bonds.assign(n, 0); res.census.angle_sets.assign(n, 0); res.census.torsions.assign(n, 0); res.census.hbonds.assign(n, 0); for (std::size_t i = 0; i < n; ++i) res.census.bonds[i] = static_cast<std::int32_t>(bonds[i].size()); }
+  if (opt.census) { res.census.bonds.assign(n, 0); res.census.angle_sets.assign(n, 0); res.census.torsions.assign(n, 0); res.census.hbonds.assign(n, 0); res.census.sbo_region.assign(n, 0); res.census.lp_trunc.assign(n, 0); for (std::size_t i = 0; i < n; ++i) res.census.lp_trunc[i] = static_cast<std::int32_t>(static_cast<int>(aq[i].Delta_e / Real(2.0))); for (std::size_t i = 0; i < n; ++i) res.census.bonds[i] = static_cast<std::int32_t>(bonds[i].size()); }
   if (pa) { res.eatom.assign(N, Real(0.0)); res.vatom.assign(N, std::array<double, 6>{}); }
   // the reference's tally helpers (pair.cpp ev_tally / ev_tally3 / v_tally3 / v_tally4 / v_tally2_newton)
   auto etally_half = [&](std::size_t i, std::size_t j, Real e) { if (pa) { res.eatom[i] += Real(0.5) * e; res.eatom[j] += Real(0.5) * e; } };
@@ -351,6 +351,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
       else if (SBO > 1 && SBO < 2) { SBO2 = 2 - std::pow(2 - SBO, p_val9); CSBO2 = p_val9 * std::pow(2 - SBO, p_val9 - 1); }
       else { SBO2 = 2; CSBO2 = 0; }
       const Real expval6 = std::exp(p_val6 * Dboc);
+      if (opt.census && j < n) res.census.sbo_region[j] = SBO <= 0 ? 0 : (SBO <= 1 ? 1 : (SBO < 2 ? 2 : 3));
 
       for (std::size_t pi = 0; pi < bj.size(); ++pi) {
         Bond& bij = bj[pi];
@@ -778,6 +779,18 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
   res.grad.resize(3 * N);
   for (std::size_t i = 0; i < N; ++i) for (std::size_t c = 0; c < 3; ++c) res.grad[3 * i + c] = f[i][c];
   res.total_bo = total_bo;
+  if (opt.bond_table) {
+    BondTable& t = res.table;
+    t.start.assign(n + 1, 0);
+    for (std::size_t i = 0; i < n; ++i) t.start[i + 1] = t.start[i] + static_cast<std::int32_t>(bonds[i].size());
+    t.nbr.resize(static_cast<std::size_t>(t.start[n])); t.bo.resize(t.nbr.size());
+    t.total_bo.assign(n, 0.0); t.nlp.assign(n, 0.0);
+    for (std::size_t i = 0; i < n; ++i) {
+      t.total_bo[i] = total_bo[i];
+      t.nlp[i] = aq[i].nlp;
+      for (std::size_t k = 0; k < bonds[i].size(); ++k) { t.nbr[static_cast<std::size_t>(t.start[i]) + k] = bonds[i][k].nbr; t.bo[static_cast<std::size_t>(t.start[i]) + k] = bonds[i][k].BO; }
+    }
+  }
   for (std::size_t i = 0; i < N; ++i) {
     res.stats.bonds += bonds[i].size();
     res.stats.max_bonds_per_atom = std::max(res.stats.max_bonds_per_atom, bonds[i].size());

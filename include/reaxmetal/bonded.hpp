@@ -10,6 +10,7 @@
 // computed terms only; the physical force is -grad (ENGINE_SPEC 1).
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "reaxmetal/census.hpp"
@@ -23,7 +24,16 @@ namespace reaxmetal {
 struct BondedOptions {
   bool enobonds = true;  // pair_style reaxff enobonds yes (default): lone pair / under-coordination energy for atoms without bonds
   bool census = false;   // fill BondedResult::census
+  bool bond_table = false;   // fill BondedResult::table
   bool per_atom = false; // fill eatom / vatom with the reference's per-atom tallies (ev_tally*, v_tally*; owned and ghost atoms, the host folds ghosts)
+};
+
+// Bonds of the owned atoms with their corrected bond orders, for the analysis commands of LAMMPS (fix reaxff/bonds, fix reaxff/species, compute reaxff/atom ...)
+struct BondTable {
+  std::vector<std::int32_t> start;   // nlocal + 1
+  std::vector<std::int32_t> nbr;     // neighbor atom index (owned or ghost), bonds of atom i at [start[i], start[i+1])
+  std::vector<double> bo;            // corrected bond order of that bond
+  std::vector<double> total_bo, nlp; // per owned atom: sum of the corrected bond orders, number of lone pairs
 };
 
 struct BondedStats {
@@ -35,6 +45,7 @@ struct BondedResult {
   EnergyBreakdown e;              // Bond, LonePair, Over, Under filled (others stay 0)
   std::vector<double> grad;       // 3 * nall, dE/dx of those terms, ghosts included (host folds ghost onto owner)
   std::vector<double> total_bo;   // per atom corrected total bond order (nall)
+  BondTable table;                // only with bond_table
   DecisionCensus census;          // bonds, angle_sets, torsions, hbonds (nlocal entries), only with census
   std::vector<double> eatom;      // per-atom energy (nall), only with per_atom
   std::vector<std::array<double, 6>> vatom;   // per-atom virial xx yy zz xy xz yz (nall), only with per_atom

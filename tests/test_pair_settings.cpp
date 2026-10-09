@@ -29,9 +29,8 @@ int main() {
     const PairSettings q = parse({"NULL", "safezone", "1.5", "mincap", "100", "minhbonds", "30", "list/blocking", "yes"});
     RM_CHECK(q.safezone == 1.5 && q.mincap == 100 && q.minhbonds == 30 && q.list_blocking && q.notices.size() == 4);   // Ignored options leave a notice each
   }
-  // Deferred: spline tabulation changes the numbers (opt.tabulate)
-  RM_EXPECT_THROW(parse({"NULL", "tabulate", "1"}), UnsupportedFeatureError);
-  RM_EXPECT_THROW(parse({"NULL", "tabulate", "25"}), UnsupportedFeatureError);
+  // tabulate is accepted; the analytic evaluation replaces the table and a notice says so
+  { const PairSettings t = parse({"NULL", "tabulate", "25"}); RM_CHECK(t.tabulate == 25 && t.notices.size() == 1 && t.notices[0].find("analytically") != std::string::npos); }
   // illegal syntax
   RM_EXPECT_THROW(parse({}), FfieldError);
   RM_EXPECT_THROW(parse({"NULL", "checkqeq"}), FfieldError);
@@ -57,7 +56,7 @@ int main() {
     std::ofstream o(path);
     o << "tabulate_long_range 10\n";
   }
-  RM_EXPECT_THROW(parse({path}), UnsupportedFeatureError);
+  { const PairSettings t = parse({path}); RM_CHECK(t.control.tabulate == 10 && !t.notices.empty()); }
   std::remove(path.c_str());
   return rmtest::finish("pair_settings");
 }

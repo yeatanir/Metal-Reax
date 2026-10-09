@@ -16,7 +16,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(ROOT / "tools" / "reaxref")); sys.path.insert(0, str(HERE))
 from test_full_fixtures import case_text  # noqa: E402
 
-CATS = ["bonds", "angle_sets", "torsions", "hbonds", "nonbonded"]
+CATS = ["bonds", "angle_sets", "torsions", "hbonds", "nonbonded", "sbo_region", "lp_trunc"]
 
 
 def census(tool, ff, extra, txt, backend):

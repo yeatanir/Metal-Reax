@@ -101,6 +101,7 @@ BondedDeviceInput make_bonded_device_input(const ForceField& ff, const ControlPa
   for (std::size_t i = 0; i < g.size() && i < 40; ++i) in.gp[i] = static_cast<float>(g[i]);
   in.enobonds = opt.enobonds ? 1u : 0u;
   in.census = opt.census;
+  in.bond_table = opt.bond_table;
   in.bond_cut = static_cast<float>(ctl.bond_cut);
   in.bo_cut = static_cast<float>(ff.file_control().bo_cut);
   in.thb_cut = static_cast<float>(ctl.thb_cut);
@@ -141,9 +142,31 @@ BondedDeviceOutput run_bonded_pipeline(BondedBackend& backend, const BondedDevic
     backend.run(phase2);
     out.bond_cap = B;
     out.hbond_cap = H;
+    if (in.bond_table) {
+      const std::size_t NBs = L.NB;
+      std::vector<float> bo(NBs), tot(N), nlpv(N);
+      std::vector<std::int32_t> nb2(N), nbr(NBs);
+      backend.read_float(static_cast<std::size_t>(RM_SF_BO) * NBs, NBs, bo.data());
+      backend.read_int(static_cast<std::size_t>(RM_SI_NBR) * NBs, NBs, nbr.data());
+      backend.read_int(L.o_iatom + static_cast<std::size_t>(RM_AI_NB) * N, N, nb2.data());
+      backend.read_float(L.o_atom + static_cast<std::size_t>(RM_AF_TOTBO) * N, N, tot.data());
+      backend.read_float(L.o_atom + static_cast<std::size_t>(RM_AF_NLP) * N, N, nlpv.data());
+      BondTable& t = out.table;
+      t.start.assign(nl + 1, 0);
+      for (std::uint32_t i = 0; i < nl; ++i) t.start[i + 1] = t.start[i] + static_cast<std::int32_t>(std::min<std::uint32_t>(static_cast<std::uint32_t>(nb2[i]), B));
+      t.nbr.resize(static_cast<std::size_t>(t.start[nl])); t.bo.resize(t.nbr.size());
+      t.total_bo.assign(nl, 0.0); t.nlp.assign(nl, 0.0);
+      for (std::uint32_t i = 0; i < nl; ++i) {
+        t.total_bo[i] = static_cast<double>(tot[i]); t.nlp[i] = static_cast<double>(nlpv[i]);
+        for (std::int32_t k = 0; k < t.start[i + 1] - t.start[i]; ++k) {
+          t.nbr[static_cast<std::size_t>(t.start[i] + k)] = nbr[static_cast<std::size_t>(i) * B + static_cast<std::size_t>(k)];
+          t.bo[static_cast<std::size_t>(t.start[i] + k)] = static_cast<double>(bo[static_cast<std::size_t>(i) * B + static_cast<std::size_t>(k)]);
+        }
+      }
+    }
     if (in.census) {
       auto grab = [&](RmAtomI f, std::vector<std::int32_t>& dst) { dst.resize(nl); backend.read_int(L.o_iatom + static_cast<std::size_t>(f) * N, nl, dst.data()); };
-      grab(RM_AI_NB, out.census.bonds); grab(RM_AI_CTHB, out.census.angle_sets); grab(RM_AI_CTOR, out.census.torsions); grab(RM_AI_CHB, out.census.hbonds);
+      grab(RM_AI_NB, out.census.bonds); grab(RM_AI_CTHB, out.census.angle_sets); grab(RM_AI_CTOR, out.census.torsions); grab(RM_AI_CHB, out.census.hbonds); grab(RM_AI_CSBO, out.census.sbo_region); grab(RM_AI_CLP, out.census.lp_trunc);
     }
     out.grad.resize(3 * static_cast<std::size_t>(N));
     std::vector<float> tmp(N);
@@ -171,6 +194,7 @@ BondedResult finish_bonded(const BondedDeviceOutput& out, std::size_t nall) {
   for (std::size_t t = 0; t < kEnergyTermCount; ++t) r.e.e[t] = out.e[t];
   r.grad.assign(out.grad.begin(), out.grad.end());
   r.census = out.census;
+  r.table = out.table;
   (void)nall;
   return r;
 }

@@ -43,6 +43,7 @@ add_library(reaxmetal_core STATIC
   src/core/system.cpp
   src/cpu/bonded.cpp
   src/cpu/nonbonded.cpp
+  src/cpu/acks2.cpp
   src/cpu/bonded_fp32.cpp
   src/cpu/nonbonded_fp32.cpp
   src/neighbor/neighbor.cpp

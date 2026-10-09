@@ -3,15 +3,16 @@
 # SPDX-FileCopyrightText: 2026 Anirban Phukan
 """CENSUS-2: threshold scans (FP32-1, THR-n of the test matrix). For small systems with one geometric parameter d (a C-C pair; a C-C-C and a C-C-C-C chain
 whose last bond is stretched; a water dimer whose O...H distance is stretched) the CPU-64 decision census is evaluated on a grid; wherever it changes,
-the crossing d* is found by bisection to double precision. Around each crossing the decisions of the CPU-32 twin and of Metal-32 are compared with CPU-64
+the crossing d* is found by bisection to double precision. Around each crossing the decisions of the categories that changed there of the CPU-32 twin and of Metal-32 are compared with CPU-64
 at d* +- delta for delta = 1e-3 ... 1e-9 A: the flip WINDOW of single precision (the largest delta that still gives a different decision) is reported,
 together with the energy jump of the discontinuity itself (CPU-64, E(d*+1e-9) - E(d*-1e-9)).
-Gate: no flip at |delta| >= 1e-4 A (a flip further from the threshold than FP32 resolution of a ~5 A distance, 5e-7 A, would be a logic difference).
+Gate: no flip at |delta| >= 1e-4 A (a flip further from the threshold than FP32 resolution of a ~5 A distance, 5e-7 A, would be a logic difference), unless the
+energy jump at that threshold is below 1e-6 kcal/mol (a continuous branch such as the SBO <= 0 region of the valence-angle function).
 usage: test_threshold_scan.py --tool BIN --ffield-dir DIR [--metal]"""
 import argparse, math, subprocess, sys, tempfile
 from pathlib import Path
 
-CATS = ["bonds", "angle_sets", "torsions", "hbonds", "nonbonded"]
+CATS = ["bonds", "angle_sets", "torsions", "hbonds", "nonbonded", "sbo_region", "lp_trunc"]
 TERMS = ["e_bond", "e_lp", "e_ov", "e_un", "e_ang", "e_pen", "e_coa", "e_tor", "e_con", "e_hb", "e_vdW", "e_ele", "e_pol"]
 
 
@@ -76,10 +77,13 @@ def main():
                             dd = ds + sgn * 10.0 ** -k
                             base = run(fam, dd, "cpu64")[0]
                             for b in backends:
-                                if run(fam, dd, b)[0] != base: window[b] = max(window[b], 10.0 ** -k)
+                                other = run(fam, dd, b)[0]
+                                if any(other[c] != base[c] for c in changed): window[b] = max(window[b], 10.0 ** -k)   # only the categories that changed at this crossing
                     rows.append((name, ds, "+".join(changed), jump, window))
                     for b in backends:
-                        if window[b] >= 1e-4: fails.append(f"{name} d*={ds:.9f}: {b} takes a different decision {window[b]:.0e} A from the threshold")
+                        # a wide window is legitimate only for a continuous branch: the energy jump at the threshold itself must then be negligible (SBO <= 0 branch: SBO is ~1e-9 over a wide
+                        # range of distances, SBO2 = 0 on both sides)
+                        if window[b] >= 1e-4 and abs(jump) > 1e-6: fails.append(f"{name} d*={ds:.9f}: {b} takes a different decision {window[b]:.0e} A from the threshold (energy jump {jump:.1e})")
                 prev = (d, cen)
     print(f"{'system':20s} {'d* (A)':>13s} {'decision':>22s} {'energy jump kcal/mol':>22s}   flip window (A) " + "  ".join(backends))
     for name, ds, ch, jump, window in rows:
