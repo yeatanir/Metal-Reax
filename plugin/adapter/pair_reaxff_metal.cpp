@@ -8,10 +8,12 @@
 
 #include "atom.h"
 #include "comm.h"
+#include "compute.h"
 #include "domain.h"
 #include "error.h"
 #include "force.h"
 #include "REAXFF/fix_acks2_reaxff.h"
+#include "REAXFF/reaxff_api.h"
 #include "memory.h"
 #include "modify.h"
 #include "neigh_list.h"
@@ -37,7 +39,7 @@
 
 using namespace LAMMPS_NS;
 
-PairReaxFFMetal::PairReaxFFMetal(LAMMPS *lmp) : Pair(lmp)
+PairReaxFFMetal::PairReaxFFMetal(LAMMPS *lmp) : PairReaxFF(lmp)
 {
   single_enable = 0;
   restartinfo = 0;
@@ -46,8 +48,7 @@ PairReaxFFMetal::PairReaxFFMetal(LAMMPS *lmp) : Pair(lmp)
   ghostneigh = 0;
   centroidstressflag = CENTROID_NOTAVAIL;
   no_virial_fdotr_compute = 0;
-  nextra = 14;                       // compute pair reaxff/metal exposes the 14 energy slots like pair reaxff
-  pvector = new double[nextra];
+  // nextra = 14 and pvector come from the base class (compute pair reaxff/metal exposes the 14 energy slots like pair reaxff)
   for (int i = 0; i < nextra; ++i) pvector[i] = 0.0;
 }
 
@@ -65,12 +66,7 @@ PairReaxFFMetal::~PairReaxFFMetal()
     for (const auto &e : profile_) std::fprintf(stderr, " %s=%.4f", e.first.c_str(), e.second);
     std::fprintf(stderr, "\n");
   }
-  delete[] pvector;
-  if (allocated) {
-    memory->destroy(setflag);
-    memory->destroy(cutsq);
-    memory->destroy(cutghost);
-  }
+  free_bond_list();   // setflag, cutsq, cutghost and pvector are released by the base class
 }
 
 void PairReaxFFMetal::allocate()
@@ -96,6 +92,10 @@ void PairReaxFFMetal::settings(int narg, char **arg)
   } catch (const std::exception &e) {
     error->all(FLERR, "{}", e.what());
   }
+  api->control->bg_cut = settings_.control.bg_cut;     // read by fix reaxff/bonds, compute reaxff/atom
+  api->system->safezone = settings_.safezone;          // read by the stock charge fixes for the capacity of their matrices
+  api->system->mincap = settings_.mincap;
+  api->system->minhbonds = settings_.minhbonds;
   if (comm->me == 0)
     for (const auto &n : settings_.notices) error->warning(FLERR, "{}", n);
 }
@@ -117,6 +117,9 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
   }
   if (comm->me == 0)
     for (const auto &w : ff_->warnings()) error->warning(FLERR, "{}", w);
+
+  eletype.resize(static_cast<std::size_t>(n) + 1);   // read by fix reaxff/species (index 1..ntypes)
+  for (int i = 3; i < nargs; ++i) eletype[static_cast<std::size_t>(i - 2)] = args[i];
 
   // map LAMMPS atom types to force-field elements: "NULL" or a case-insensitive match of the (<=3 char, upper-cased) element
   // symbol; like pair reaxff, every match is counted, so a duplicated symbol in the file fails the count check below.
@@ -179,8 +182,22 @@ void PairReaxFFMetal::init_style()
   if (cutmax_ < 2.0 * settings_.control.bond_cut && comm->me == 0)
     error->warning(FLERR, "Total cutoff < 2*bond cutoff. May need to use an increased neighbor list skin.");
 
+  // stock fixes and computes that do dynamic_cast<PairReaxFF *> use this pair style's half neighbor list with ghost rows (and, for the analysis commands, its bond list)
+  need_list_ = need_bonds_ = false;
+  auto metal_style = [](const std::string &st) { return st.size() >= 6 && st.compare(st.size() - 6, 6, "/metal") == 0; };
+  for (const auto &f : modify->get_fix_list()) {
+    const std::string st = f->style;
+    if (metal_style(st)) continue;
+    if (st.rfind("qeq/reax", 0) == 0 || st.rfind("qeq/rel", 0) == 0 || st.rfind("qtpie", 0) == 0 || st.rfind("acks2", 0) == 0) need_list_ = true;
+    if (st.rfind("reaxff/bonds", 0) == 0 || st.rfind("reaxff/species", 0) == 0) need_list_ = need_bonds_ = true;
+  }
+  for (int i = 0; i < modify->ncompute; ++i) {
+    std::string st = modify->compute[i]->style;
+    std::transform(st.begin(), st.end(), st.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });   // the style is registered as SPEC/ATOM
+    if (st.rfind("reaxff/atom", 0) == 0 || st.rfind("spec/atom", 0) == 0) need_list_ = need_bonds_ = true;
+  }
   // A2 self-check only: ask LAMMPS for the list the reference kernels use (half, newton off, with ghost rows), to compare against
-  if (settings_.selfcheck) neighbor->add_request(this, NeighConst::REQ_GHOST | NeighConst::REQ_NEWTON_OFF);
+  if (settings_.selfcheck || need_list_) neighbor->add_request(this, NeighConst::REQ_GHOST | NeighConst::REQ_NEWTON_OFF);
 }
 
 void PairReaxFFMetal::init_list(int id, NeighList *ptr) { Pair::init_list(id, ptr); }
@@ -300,6 +317,56 @@ const NbView &PairReaxFFMetal::nb_view()
   return *view_;
 }
 
+void PairReaxFFMetal::free_bond_list()
+{
+  if (bond_list_cap_ > 0 || bond_list_n_ > 0) {
+    ReaxFF::Delete_List(api->lists + ReaxFF::BONDS);
+    bond_list_cap_ = bond_list_n_ = 0;
+  }
+}
+
+// Fills what the stock analysis commands read, in the layout of the stock engine: the bond list api->lists[BONDS] (index / end_index per atom, bond_data::nbr and
+// bond_data::bo_data.BO), api->workspace->total_bond_order and nlp, api->system->n / N, and -- while fix reaxff/species runs -- tmpid / tmpbo through the stock FindBond().
+void PairReaxFFMetal::publish_bonds(const reaxmetal::BondTable &t)
+{
+  const int nlocal = atom->nlocal, nall = atom->nlocal + atom->nghost;
+  const int nbonds = t.start.empty() ? 0 : t.start.back();
+  api->system->n = nlocal;
+  api->system->N = nall;
+  ReaxFF::reax_list *l = api->lists + ReaxFF::BONDS;
+  if (nlocal > bond_list_n_ || nbonds > bond_list_cap_ || !l->allocated) {
+    free_bond_list();
+    l->error_ptr = error;
+    bond_list_n_ = std::max(nlocal, 1) + nlocal / 4;
+    bond_list_cap_ = std::max(nbonds, 16) + nbonds / 4;
+    ReaxFF::Make_List(bond_list_n_, bond_list_cap_, ReaxFF::TYP_BOND, l);
+  }
+  for (int i = 0; i < nlocal; ++i) {
+    l->index[i] = t.start[static_cast<std::size_t>(i)];
+    l->end_index[i] = t.start[static_cast<std::size_t>(i) + 1];
+  }
+  for (int k = 0; k < nbonds; ++k) {
+    l->select.bond_list[k].nbr = t.nbr[static_cast<std::size_t>(k)];
+    l->select.bond_list[k].bo_data.BO = t.bo[static_cast<std::size_t>(k)];
+  }
+  bt_total_.assign(t.total_bo.begin(), t.total_bo.end());
+  bt_nlp_.assign(t.nlp.begin(), t.nlp.end());
+  api->workspace->total_bond_order = bt_total_.data();
+  api->workspace->nlp = bt_nlp_.data();
+  if (fixspecies_flag) {   // the stock engine fills tmpid / tmpbo right after its force computation
+    if (nall > nmax) {
+      memory->destroy(tmpid);
+      memory->destroy(tmpbo);
+      nmax = nall;
+      memory->create(tmpid, nmax, MAXSPECBOND, "pair:tmpid");
+      memory->create(tmpbo, nmax, MAXSPECBOND, "pair:tmpbo");
+    }
+    for (int i = 0; i < nall; ++i)
+      for (int j = 0; j < MAXSPECBOND; ++j) { tmpbo[i][j] = 0.0; tmpid[i][j] = 0; }
+    FindBond();
+  }
+}
+
 reaxmetal::mtl::Context &PairReaxFFMetal::metal_context()
 {
   if (!ctx_) ctx_ = std::make_unique<reaxmetal::mtl::Context>();
@@ -385,6 +452,7 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     BondedOptions bo;
     bo.enobonds = settings_.enobonds;
     bo.per_atom = per_atom;
+    bo.bond_table = need_bonds_;
     NonbondedOptions no;
     no.lgvdw = settings_.lgvdw;
     no.per_atom = per_atom;
@@ -426,6 +494,8 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
   } catch (const std::exception &e) {
     error->all(FLERR, "Pair style reaxff/metal: {}", e.what());
   }
+
+  if (need_bonds_) publish_bonds(br.table);
 
   // forces: the engine returns gradients (dE/dx) for owned and ghost atoms; LAMMPS folds the ghost forces onto their owners
   double **f = atom->f;

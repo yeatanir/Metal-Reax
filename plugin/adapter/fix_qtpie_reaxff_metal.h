@@ -15,7 +15,7 @@ namespace LAMMPS_NS {
 
 class FixQtpieReaxFFMetal : public FixQtpieReaxFF {
  public:
-  FixQtpieReaxFFMetal(class LAMMPS *lmp, int narg, char **arg) : FixQtpieReaxFF(lmp, narg, arg) {}
+  FixQtpieReaxFFMetal(class LAMMPS *lmp, int narg, char **arg) : FixQtpieReaxFF(lmp, narg, arg) { reaxff = nullptr; }
   void init() override;
   void init_list(int, class NeighList *) override;
 };
@@ -23,7 +23,7 @@ class FixQtpieReaxFFMetal : public FixQtpieReaxFF {
 // fix qeq/rel/reaxff/metal: QEq-R (stock FixQEqRelReaxFF is a FixQtpieReaxFF with another effective electronegativity) with the same neighbor-list request
 class FixQEqRelReaxFFMetal : public FixQEqRelReaxFF {
  public:
-  FixQEqRelReaxFFMetal(class LAMMPS *lmp, int narg, char **arg) : FixQEqRelReaxFF(lmp, narg, arg) {}
+  FixQEqRelReaxFFMetal(class LAMMPS *lmp, int narg, char **arg) : FixQEqRelReaxFF(lmp, narg, arg) { reaxff = nullptr; }
   void init() override;
   void init_list(int, class NeighList *) override;
 };

@@ -37,7 +37,7 @@ struct QeqExtraArgs {
 class FixQEqReaxFFMetal : private QeqExtraArgs, public FixQEqReaxFF {
  public:
   FixQEqReaxFFMetal(class LAMMPS *lmp, int narg, char **arg) :
-      QeqExtraArgs(narg, arg), FixQEqReaxFF(lmp, static_cast<int>(filtered.size()), filtered.data()) {}
+      QeqExtraArgs(narg, arg), FixQEqReaxFF(lmp, static_cast<int>(filtered.size()), filtered.data()) { reaxff = nullptr; }   // use the fix's own list, not the pair style's
   void init() override;
   void pre_force(int) override;
 

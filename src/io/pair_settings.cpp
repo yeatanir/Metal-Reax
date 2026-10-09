@@ -64,15 +64,15 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     else if (key == "safezone") {
       p.safezone = number(val, "safezone");
       if (p.safezone < 0.0) throw FfieldError("Illegal pair_style reaxff/metal safezone command");
-      p.notices.push_back("pair_style reaxff/metal: 'safezone' is accepted and ignored (allocation heuristic)");
+      p.notices.push_back("pair_style reaxff/metal: 'safezone' sizes the matrices of stock charge fixes; the plugin's own engine does not need it");
     } else if (key == "mincap") {
       p.mincap = integer(val, "mincap");
       if (p.mincap < 0) throw FfieldError("Illegal pair_style reaxff/metal mincap command");
-      p.notices.push_back("pair_style reaxff/metal: 'mincap' is accepted and ignored (allocation heuristic)");
+      p.notices.push_back("pair_style reaxff/metal: 'mincap' sizes the matrices of stock charge fixes; the plugin's own engine does not need it");
     } else if (key == "minhbonds") {
       p.minhbonds = integer(val, "minhbonds");
       if (p.minhbonds < 0) throw FfieldError("Illegal pair_style reaxff/metal minhbonds command");
-      p.notices.push_back("pair_style reaxff/metal: 'minhbonds' is accepted and ignored (allocation heuristic)");
+      p.notices.push_back("pair_style reaxff/metal: 'minhbonds' sizes the matrices of stock charge fixes; the plugin's own engine does not need it");
     } else if (key == "list/blocking") {
       p.list_blocking = logical(val, "list/blocking");
       p.notices.push_back("pair_style reaxff/metal: 'list/blocking' is a Kokkos performance option and is ignored");

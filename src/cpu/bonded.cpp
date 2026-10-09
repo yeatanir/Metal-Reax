@@ -779,6 +779,18 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
   res.grad.resize(3 * N);
   for (std::size_t i = 0; i < N; ++i) for (std::size_t c = 0; c < 3; ++c) res.grad[3 * i + c] = f[i][c];
   res.total_bo = total_bo;
+  if (opt.bond_table) {
+    BondTable& t = res.table;
+    t.start.assign(n + 1, 0);
+    for (std::size_t i = 0; i < n; ++i) t.start[i + 1] = t.start[i] + static_cast<std::int32_t>(bonds[i].size());
+    t.nbr.resize(static_cast<std::size_t>(t.start[n])); t.bo.resize(t.nbr.size());
+    t.total_bo.assign(n, 0.0); t.nlp.assign(n, 0.0);
+    for (std::size_t i = 0; i < n; ++i) {
+      t.total_bo[i] = total_bo[i];
+      t.nlp[i] = aq[i].nlp;
+      for (std::size_t k = 0; k < bonds[i].size(); ++k) { t.nbr[static_cast<std::size_t>(t.start[i]) + k] = bonds[i][k].nbr; t.bo[static_cast<std::size_t>(t.start[i]) + k] = bonds[i][k].BO; }
+    }
+  }
   for (std::size_t i = 0; i < N; ++i) {
     res.stats.bonds += bonds[i].size();
     res.stats.max_bonds_per_atom = std::max(res.stats.max_bonds_per_atom, bonds[i].size());
