@@ -31,6 +31,12 @@ reaxmetal_apply_warnings(test_metal_emulation)
 target_compile_options(test_metal_emulation PRIVATE -Wno-unused-parameter)   # the M6 kernels share one 18-buffer signature; each uses a subset
 reaxmetal_apply_strict_fp(test_metal_emulation)
 add_test(NAME metal_emulation COMMAND test_metal_emulation)
+if(REAXMETAL_ENABLE_METAL)
+  add_executable(test_metal_leak test_metal_leak.cpp)
+  target_link_libraries(test_metal_leak PRIVATE reaxmetal_metal)
+  add_test(NAME metal_no_leak COMMAND test_metal_leak)
+  set_tests_properties(metal_no_leak PROPERTIES FAIL_REGULAR_EXPRESSION "FAIL")
+endif()
 # The Apple-machine check tool, run end to end against a FAKE backend that executes the kernels on the CPU: tests the tool itself
 add_executable(metal_check_emulated metal_check_emulated.cpp ${PROJECT_SOURCE_DIR}/tools/metal_check.cpp ${PROJECT_SOURCE_DIR}/src/metal/metal_source.cpp)
 target_link_libraries(metal_check_emulated PRIVATE reaxmetal_core)

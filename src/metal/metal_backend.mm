@@ -33,6 +33,18 @@ std::string to_std(NSString* s) { return s ? std::string([s UTF8String]) : std::
   throw MetalError(err ? what + ": " + to_std([err localizedDescription]) : what);
 }
 
+// Metal hands out autoreleased objects (buffers, command buffers, encoders), and a C++ host loop such as LAMMPS has no autorelease pool: without
+// one around every entry point the process leaks every buffer it ever allocated (gigabytes per thousand MD steps). Same calls @autoreleasepool makes.
+extern "C" void* objc_autoreleasePoolPush(void);
+extern "C" void objc_autoreleasePoolPop(void*);
+struct Pool {
+  void* p = objc_autoreleasePoolPush();
+  ~Pool() { objc_autoreleasePoolPop(p); }
+  Pool() = default;
+  Pool(const Pool&) = delete;
+  Pool& operator=(const Pool&) = delete;
+};
+
 struct Dispatch {
   id<MTLComputePipelineState> pso = nil;
   NSUInteger threads = 0;
@@ -201,6 +213,7 @@ struct MetalBondedBackend final : BondedBackend {
 }  // namespace
 
 Context::Context() : impl_(new Impl) {
+  Pool pool;
   Impl& m = *impl_;
   m.device = MTLCreateSystemDefaultDevice();
   if (m.device == nil) throw MetalError("MTLCreateSystemDefaultDevice() returned nil: no Metal device");
@@ -267,6 +280,7 @@ double Context::compile_seconds() const { return impl_->compile_seconds; }
 double Context::last_gpu_seconds() const { return impl_->gpu_seconds; }
 
 std::vector<float> Context::saxpy(float a, std::span<const float> x, std::span<const float> y) {
+  Pool pool;
   if (x.size() != y.size()) throw MetalError("saxpy: x and y differ in size");
   const std::size_t n = x.size();
   if (n == 0) return {};
@@ -285,6 +299,7 @@ std::vector<float> Context::saxpy(float a, std::span<const float> x, std::span<c
 }
 
 MathProbe Context::math_probe() {
+  Pool pool;
   Impl& m = *impl_;
   const float nan = std::numeric_limits<float>::quiet_NaN();
   const float a = 1.0f + std::ldexp(1.0f, -13), c = -(1.0f + std::ldexp(1.0f, -12));
@@ -303,11 +318,13 @@ MathProbe Context::math_probe() {
 }
 
 FarRowsF32 Context::far_rows(const DeviceListInput& in, std::uint32_t initial_cap, unsigned* launches) {
+  Pool pool;
   Impl& m = *impl_;
   return build_far_rows_with_growth([&](std::uint32_t cap) { return m.launch_far_rows(in, cap); }, initial_cap, in.nall, 4, launches);
 }
 
 NonbondedDeviceOutput Context::nonbonded(const NonbondedDeviceInput& in) {
+  Pool pool;
   Impl& m = *impl_;
   const std::size_t nall = in.list.nall, nlocal = in.list.nlocal, cap = in.rows.cap;
   NonbondedDeviceOutput out;
@@ -346,6 +363,7 @@ NonbondedDeviceOutput Context::nonbonded(const NonbondedDeviceInput& in) {
 }
 
 BondedDeviceOutput Context::bonded(const BondedDeviceInput& in) {
+  Pool pool;
   MetalBondedBackend be(impl_.get());
   // start from the capacities the previous call needed (a system keeps its bond count), so steady state needs no regrow pass
   BondedDeviceOutput out = run_bonded_pipeline(be, in, impl_->last_bond_cap ? impl_->last_bond_cap : 8, impl_->last_hbond_cap ? impl_->last_hbond_cap : 8);
@@ -356,6 +374,7 @@ BondedDeviceOutput Context::bonded(const BondedDeviceInput& in) {
 }
 
 void Context::qeq_setup(const QeqDeviceInput& in) {
+  Pool pool;
   Impl& m = *impl_;
   const std::size_t nlocal = in.list.nlocal, cap = in.rows.cap;
   if (nlocal * cap > 0xFFFFFFFFull) throw MetalError("qeq: row buffer index exceeds 32 bits");
@@ -384,6 +403,7 @@ void Context::qeq_setup(const QeqDeviceInput& in) {
 }
 
 void Context::qeq_matvec(const double* x, double* y) {
+  Pool pool;
   Impl& m = *impl_;
   const std::size_t n = m.qeq_nlocal;
   if (n == 0) return;
@@ -401,6 +421,7 @@ void Context::qeq_matvec(const double* x, double* y) {
 }
 
 std::vector<float> Context::partial_sums(std::span<const float> v, std::uint32_t chunk) {
+  Pool pool;
   if (chunk == 0) throw MetalError("partial_sums: chunk must be > 0");
   if (v.empty()) return {};
   if (v.size() > 0xFFFFFFFFull) throw MetalError("partial_sums: too many elements");
@@ -419,6 +440,7 @@ std::vector<float> Context::partial_sums(std::span<const float> v, std::uint32_t
 }
 
 float Context::sum(std::span<const float> v, std::uint32_t chunk) {
+  Pool pool;
   if (chunk == 0) throw MetalError("sum: chunk must be > 0");
   if (v.empty()) return 0.0f;
   if (v.size() > 0xFFFFFFFFull) throw MetalError("sum: too many elements");
