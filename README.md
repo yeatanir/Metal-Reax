@@ -52,7 +52,7 @@ Then:
 cmake -S . -B build -DREAXMETAL_ENABLE_METAL=ON -DREAXMETAL_BUILD_LAMMPS_PLUGIN=ON \
       -DREAXMETAL_LAMMPS_SOURCE_DIR=/path/lammps/src -DREAXMETAL_LAMMPS_PREFIX=/path/install \
       -DREAXMETAL_FFIELD_DIR=/path/lammps/potentials
-cmake --build build -j && ctest --test-dir build -j4 --output-on-failure      # 44 tests (49 with the MPI tree)
+cmake --build build -j && ctest --test-dir build -j4 --output-on-failure      # 45 tests (49 with the MPI tree)
 ```
 Shaders are compiled at run time from source (no Xcode needed; Command Line Tools suffice). Without `-DREAXMETAL_ENABLE_METAL=ON` (Linux, or macOS CPU-only) the CPU-64 engine, parser, neighbor code and reference tooling still build and test.
 
