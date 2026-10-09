@@ -15,6 +15,8 @@ struct DecisionCensus {
   std::vector<std::int32_t> torsions;     // (i, k, l) chains of the owned central atom j that pass the four-body gates
   std::vector<std::int32_t> hbonds;       // donor-hydrogen-acceptor triples of the owned hydrogen j that are evaluated (BO >= 0.01, parameters set)
   std::vector<std::int32_t> nonbonded;    // counted non-bonded pairs of the owned row i (cut-off decision)
+  std::vector<std::int32_t> sbo_region;   // branch of the valence-angle SBO function of the owned atom: 0 SBO <= 0, 1 (0,1], 2 (1,2), 3 >= 2
+  std::vector<std::int32_t> lp_trunc;     // (int)(Delta_e / 2) of the owned atom: the truncation that makes the lone-pair number jump at integer Delta_e / 2
 };
 
 }  // namespace reaxmetal

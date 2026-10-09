@@ -126,7 +126,7 @@ int main(int argc, char** argv) {
     if (census) {   // per owned atom decision counts (DecisionCensus), one line per category
       auto dump = [](const char* name, const std::vector<std::int32_t>& v) { std::printf("census %s", name); for (auto x : v) std::printf(" %d", x); std::printf("\n"); };
       dump("bonds", r.census.bonds); dump("angle_sets", r.census.angle_sets); dump("torsions", r.census.torsions); dump("hbonds", r.census.hbonds);
-      dump("nonbonded", nb.census_nonbonded);
+      dump("nonbonded", nb.census_nonbonded); dump("sbo_region", r.census.sbo_region); dump("lp_trunc", r.census.lp_trunc);
     }
     if (grad) {
       std::vector<double> g(3 * a.nlocal, 0.0);

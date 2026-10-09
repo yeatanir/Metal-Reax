@@ -169,6 +169,7 @@ kernel void rm_b_correct(RM_B_ARGS) {
       total, sb_f[ti * RM_B_SB_F + 0], sb_f[ti * RM_B_SB_F + 1], sb_f[ti * RM_B_SB_F + 2], sb_f[ti * RM_B_SB_F + 3], sb_f[ti * RM_B_SB_F + 4],
       sb_i[ti * RM_B_SB_I + 0] != 0, gp[15]);
   AFi(RM_AF_TOTBO, a) = total;
+  AIi(RM_AI_CLP, a) = (int)(q.Delta_e / 2.0f);   // decision census: the truncation of Delta_e / 2
   AFi(RM_AF_DELTA, a) = q.Delta; AFi(RM_AF_DELTA_BOC, a) = q.Delta_boc; AFi(RM_AF_DELTA_VAL, a) = q.Delta_val; AFi(RM_AF_VLPEX, a) = q.vlpex;
   AFi(RM_AF_NLP, a) = q.nlp; AFi(RM_AF_DELTA_LP, a) = q.Delta_lp; AFi(RM_AF_DDELTA_LP, a) = q.dDelta_lp; AFi(RM_AF_DELTA_LP_TEMP, a) = q.Delta_lp_temp;
 }
@@ -319,6 +320,7 @@ kernel void rm_b_valence(RM_B_ARGS) {
   else if (SBO > 1.0f && SBO < 2.0f) { SBO2 = 2.0f - pow(2.0f - SBO, p_val9); CSBO2 = p_val9 * pow(2.0f - SBO, p_val9 - 1.0f); }
   else { SBO2 = 2.0f; CSBO2 = 0.0f; }
   const float expval6 = RMEXP(p_val6 * Dboc);
+  AIi(RM_AI_CSBO, j) = SBO <= 0.0f ? 0 : (SBO <= 1.0f ? 1 : (SBO < 2.0f ? 2 : 3));   // decision census
   const float constpi = 3.14159265f;
   float e_ang = 0.0f, e_pen = 0.0f, e_coa = 0.0f;
   float fsx = 0.0f, fsy = 0.0f, fsz = 0.0f;

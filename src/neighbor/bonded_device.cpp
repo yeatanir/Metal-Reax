@@ -143,7 +143,7 @@ BondedDeviceOutput run_bonded_pipeline(BondedBackend& backend, const BondedDevic
     out.hbond_cap = H;
     if (in.census) {
       auto grab = [&](RmAtomI f, std::vector<std::int32_t>& dst) { dst.resize(nl); backend.read_int(L.o_iatom + static_cast<std::size_t>(f) * N, nl, dst.data()); };
-      grab(RM_AI_NB, out.census.bonds); grab(RM_AI_CTHB, out.census.angle_sets); grab(RM_AI_CTOR, out.census.torsions); grab(RM_AI_CHB, out.census.hbonds);
+      grab(RM_AI_NB, out.census.bonds); grab(RM_AI_CTHB, out.census.angle_sets); grab(RM_AI_CTOR, out.census.torsions); grab(RM_AI_CHB, out.census.hbonds); grab(RM_AI_CSBO, out.census.sbo_region); grab(RM_AI_CLP, out.census.lp_trunc);
     }
     out.grad.resize(3 * static_cast<std::size_t>(N));
     std::vector<float> tmp(N);
