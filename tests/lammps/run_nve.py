@@ -33,7 +33,7 @@ def main():
     ap.add_argument("--case", required=True); ap.add_argument("--replicate", type=int, default=1); ap.add_argument("--steps", type=int, default=80000)
     ap.add_argument("--dt", type=float, default=0.25); ap.add_argument("--temp", type=float, default=300.0); ap.add_argument("--qeq-tol", default="1e-6")
     ap.add_argument("--backend", default="metal"); ap.add_argument("--gpu-qeq", action="store_true"); ap.add_argument("--every", type=int, default=100)
-    ap.add_argument("--keep", default=""); ap.add_argument("--npt", action="store_true", help="INT-4: fix npt iso 1 atm instead of NVE; statistics (<T>, <V>, <P>) compared within 3 block sigma"); ap.add_argument("--equil", type=int, default=4000, help="NVT equilibration steps with the stock style before the compared runs (same start for both)")
+    ap.add_argument("--keep", default=""); ap.add_argument("--reuse", action="store_true", help="with --keep: reuse eq.data and the stock log of an earlier run (only the plugin run is repeated; both series are cut to the shorter one)"); ap.add_argument("--npt", action="store_true", help="INT-4: fix npt iso 1 atm instead of NVE; statistics (<T>, <V>, <P>) compared within 3 block sigma"); ap.add_argument("--equil", type=int, default=4000, help="NVT equilibration steps with the stock style before the compared runs (same start for both)")
     a = ap.parse_args()
     case = json.loads((ROOT / "tests" / "fixtures" / "cases" / f"{a.case}.json").read_text())
     ffpath = Path(a.ffield_dir) / case["ffield"]["name"]
@@ -44,7 +44,8 @@ def main():
     with tempfile.TemporaryDirectory() as td:
         td = Path(a.keep) if a.keep else Path(td); td.mkdir(parents=True, exist_ok=True)
         runner.write_data(case, ffp, td / "data.lmp")
-        if a.equil > 0:   # common starting point: minimised, thermalised by the stock style; the compared runs restart from the data file
+        reuse = a.reuse and (td / 'eq.data').exists() and (td / 'stock.log').exists()
+        if a.equil > 0 and not reuse:   # common starting point: minimised, thermalised by the stock style; the compared runs restart from the data file
             (td / "in.eq").write_text(f"""units real
 atom_style charge
 atom_modify map array
@@ -67,7 +68,7 @@ write_data eq.data nocoeff
             if r.returncode: print(r.stdout[-800:], r.stderr[-800:]); return 1
         INTEG = f'fix integ all npt temp {a.temp} {a.temp} 25.0 iso 1.0 1.0 250.0' if a.npt else 'fix integ all nve'
         procs = {}
-        for tag in ("stock", "ours"):
+        for tag in (("ours",) if reuse else ("stock", "ours")):
             ours = tag == "ours"
             style = f"plugin load {a.plugin}\npair_style reaxff/metal NULL backend {a.backend}" if ours else "pair_style reaxff NULL"
             q = qfix if ours else "qeq/reaxff"
@@ -89,13 +90,18 @@ thermo {a.every}
 timestep {a.dt}
 run {a.steps}
 """)
-            procs[tag] = subprocess.Popen([a.lmp, "-in", f"in.{tag}", "-log", "none", "-nocite"], cwd=td, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        out = {t: p.communicate()[0] for t, p in procs.items()}
+            procs[tag] = subprocess.Popen([a.lmp, "-in", f"in.{tag}", "-log", "none", "-nocite"], cwd=td, env=env, stdout=open(td / f"{tag}.log", "w"), stderr=subprocess.STDOUT, text=True)   # files, not pipes: a full pipe would stall the run that is read second
+        out = {}
+        for t in ("stock", "ours"):
+            if t in procs: procs[t].wait()
+            out[t] = (td / f"{t}.log").read_text()
         res = {}
         for t in out:
             rows = thermo_rows(out[t])
             if len(rows) < 10: print(t, "produced no thermo:\n", out[t][-800:]); return 1
             res[t] = rows
+    m = min(len(res["stock"]), len(res["ours"]))
+    res = {k: v[:m] for k, v in res.items()}   # equal length series
     n = len(case["atoms"]) * a.replicate ** 3
     ok = True
     if a.npt:

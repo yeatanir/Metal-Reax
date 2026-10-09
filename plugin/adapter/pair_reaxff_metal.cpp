@@ -352,14 +352,22 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
       metal_context();
       const BondedDeviceInput bin = make_bonded_device_input(*ff_, settings_.control, a, box, bo);
       lap("bonded_pack");
+      if (std::getenv("REAXMETAL_DEBUG_CPU_BONDED")) {   // diagnostic only
+        br = compute_bonded_core(*ff_, settings_.control, a, build_far_list(a, cut), bo);
+      } else {
       const BondedDeviceOutput bout = ctx_->bonded(bin);
       lap("bonded_device");
       br = finish_bonded(bout, a.nall());
+      }
+      if (std::getenv("REAXMETAL_DEBUG_CPU_NB")) {   // diagnostic only: nonbonded in FP64 on the host, to attribute FP32 force noise
+        nr = compute_nonbonded_core(*ff_, cut, a, build_far_list(a, cut), q, no);
+      } else {
       const NonbondedDeviceInput nin = make_nonbonded_device_input(*ff_, cut, a, box, q, no, [&](const DeviceListInput &l) { return ctx_->far_rows(l); });
       lap("nonbonded_pack_rows");
       const NonbondedDeviceOutput nout = ctx_->nonbonded(nin);
       lap("nonbonded_device");
       nr = finish_nonbonded(*ff_, a, q, nout);
+      }
       lap("finish");
     } else {
       const FarList far = build_far_list(a, cut);
