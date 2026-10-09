@@ -166,10 +166,10 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
 | `eem.external_cpu_fix` | Implemented | - | `fix qeq/reaxff \| fix qeq/shielded (stock CPU)` | extract() half verified in M2 (EEM-3); the stock fix drives q once `compute()` exists |
-| `eem.charge_verification` | Planned | M5 | `(no LAMMPS equivalent)` | adapter checks the EEM residual so strictness holds with the stock fix |
-| `eem.taper_within_ghost_shell` | Planned | M5 | `(no LAMMPS equivalent)` | error if the QEq taper radius exceeds the ghost shell: the stock fix silently truncates (ENGINE_SPEC Q-35) |
-| `eem.strict_convergence` | Planned | M5 | `(no LAMMPS equivalent)` | default: non-convergence is an error/status, never silently accepted |
-| `eem.compat_warn_continue` | Planned | M5 | `fix qeq/reaxff default (warn and continue)` | explicit opt-in only |
+| `eem.charge_verification` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal ... verify <eV>: after every solve max_i |(H q)_i + chi_i - mu| is evaluated with the matrix of the solve and an error is raised above <eV> (EEM-1; sees the FP32 matrix error: 1e-7 eV fails on Metal, passes on the double CPU matrix) |
+| `eem.taper_within_ghost_shell` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal ... strict: error if the taper radius exceeds the ghost cutoff (stock silently truncates the matrix, Q-35); without strict the stock behaviour is kept (EEM-1) |
+| `eem.strict_convergence` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal ... strict: CG non-convergence is an error with the residual and the step (EEM-1). Opt-in keyword, not the default, so that the default stays comparable with the stock fix |
+| `eem.compat_warn_continue` | Implemented | - | `fix qeq/reaxff default (warn and continue)` | the default of fix qeq/reaxff/metal without the keyword strict: warn and continue exactly like the stock fix (EEM-1) |
 | `eem.gpu_resident` | Planned | M5 | `(no LAMMPS equivalent)` | partly done: the EEM matrix and matvec run on the GPU (fix qeq/reaxff/metal) but the CG iteration stays on the host in double; a fully resident solve is not built |
 | `eem.net_charge_nonzero` | Deferred | - | `non-neutral fix group in fix qeq/reaxff` | LAMMPS imposes sum(q)=0; non-zero total charge not supported |
 | `compat.flag_derivation` | Implemented | - | `compat predicates (ENGINE_SPEC Q-06)` | exact upstream predicates, boundary-tested (tests/test_compat_flags.cpp) |

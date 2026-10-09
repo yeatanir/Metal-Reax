@@ -11,22 +11,44 @@
 
 #include "REAXFF/fix_qeq_reaxff.h"
 
+#include <string>
+#include <vector>
+
 namespace LAMMPS_NS {
 
 class PairReaxFFMetal;
 
-class FixQEqReaxFFMetal : public FixQEqReaxFF {
+// Extra keywords of this fix, split off before the stock constructor (which rejects unknown keywords):
+//   strict          non-convergence of the CG is an error (stock: a warning, and the run continues); the taper radius must lie inside the
+//                   ghost shell (stock: silently truncates the matrix, ENGINE_SPEC Q-35)
+//   verify <eV>     after every solve the equalisation residual max_i |(H q)_i + chi_i - mu| is evaluated with the matrix of the solve and must not
+//                   exceed <eV> (an error otherwise); implies nothing else
+struct QeqExtraArgs {
+  std::vector<char *> filtered;
+  bool strict = false;
+  double verify_ev = 0.0;
+  std::string problem;
+  QeqExtraArgs(int narg, char **arg);
+};
+
+class FixQEqReaxFFMetal : private QeqExtraArgs, public FixQEqReaxFF {
  public:
-  FixQEqReaxFFMetal(class LAMMPS *lmp, int narg, char **arg) : FixQEqReaxFF(lmp, narg, arg) {}
+  FixQEqReaxFFMetal(class LAMMPS *lmp, int narg, char **arg) :
+      QeqExtraArgs(narg, arg), FixQEqReaxFF(lmp, static_cast<int>(filtered.size()), filtered.data()) {}
+  void init() override;
+  void pre_force(int) override;
 
  protected:
   void compute_H() override;
   void sparse_matvec(sparse_matrix *, double *, double *) override;
+  int CG(double *, double *) override;
+  void calculate_Q() override;
 
  private:
   PairReaxFFMetal *pair_ = nullptr;
   bool gpu_ = false;
   bool warned_ = false;
+  bool shell_checked_ = false;
 };
 
 }    // namespace LAMMPS_NS
