@@ -83,7 +83,7 @@ struct Context::Impl {
   }
   // persistent buffers for the per-step pipelines: a slot keeps its buffer while it is big enough (no reallocation, no page faults per step)
   std::map<std::string, id<MTLBuffer>> slots;
-  std::uint32_t last_bond_cap = 0, last_hbond_cap = 0;
+  std::uint32_t last_bond_cap = 0, last_hbond_cap = 0, last_far_cap = 0;
   std::uint32_t qeq_nlocal = 0, qeq_cap = 0;   // state of the last qeq_setup (its buffers live in the slots "qeq_*")
   RmQeqParams qeq_params{};
   id<MTLBuffer> slot(const std::string& name, NSUInteger bytes) {
@@ -139,17 +139,17 @@ struct Context::Impl {
     FarRowsF32 rows;
     rows.nall = in.nall;
     rows.cap = cap;
-    rows.count.assign(in.nall, 0);
-    rows.nbr.assign(static_cast<std::size_t>(in.nall) * cap, -1);
-    rows.r2.assign(static_cast<std::size_t>(in.nall) * cap, 0.0f);
+    rows.count.resize(in.nall);
+    rows.nbr.resize(static_cast<std::size_t>(in.nall) * cap);
+    rows.r2.resize(static_cast<std::size_t>(in.nall) * cap);
     if (in.nall == 0) return rows;
-    id<MTLBuffer> bx = buffer_from(in.x.data(), in.x.size() * sizeof(float));
-    id<MTLBuffer> bcell = buffer_from(in.grid.atom_cell.data(), in.grid.atom_cell.size() * sizeof(std::uint32_t));
-    id<MTLBuffer> bstart = buffer_from(in.grid.cell_start.data(), in.grid.cell_start.size() * sizeof(std::uint32_t));
-    id<MTLBuffer> bitems = buffer_from(in.grid.cell_items.data(), in.grid.cell_items.size() * sizeof(std::uint32_t));
-    id<MTLBuffer> bnbr = buffer_from(rows.nbr.data(), rows.nbr.size() * sizeof(std::int32_t));   // pre-filled with -1: deterministic bytes
-    id<MTLBuffer> br2 = buffer_from(rows.r2.data(), rows.r2.size() * sizeof(float));
-    id<MTLBuffer> bcount = buffer_from(rows.count.data(), rows.count.size() * sizeof(std::uint32_t));
+    id<MTLBuffer> bx = slot_from("fr_x", in.x.data(), in.x.size() * sizeof(float));
+    id<MTLBuffer> bcell = slot_from("fr_cell", in.grid.atom_cell.data(), in.grid.atom_cell.size() * sizeof(std::uint32_t));
+    id<MTLBuffer> bstart = slot_from("fr_start", in.grid.cell_start.data(), in.grid.cell_start.size() * sizeof(std::uint32_t));
+    id<MTLBuffer> bitems = slot_from("fr_items", in.grid.cell_items.data(), in.grid.cell_items.size() * sizeof(std::uint32_t));
+    id<MTLBuffer> bnbr = slot("fr_nbr", rows.nbr.size() * sizeof(std::int32_t));   // fully written by the kernel (tail = -1 / 0)
+    id<MTLBuffer> br2 = slot("fr_r2", rows.r2.size() * sizeof(float));
+    id<MTLBuffer> bcount = slot("fr_count", rows.count.size() * sizeof(std::uint32_t));
     RmFarRowsParams p{};
     p.nall = in.nall; p.nlocal = in.nlocal; p.cap = cap;
     p.ncx = in.grid.ncell[0]; p.ncy = in.grid.ncell[1]; p.ncz = in.grid.ncell[2];
@@ -320,32 +320,35 @@ MathProbe Context::math_probe() {
 FarRowsF32 Context::far_rows(const DeviceListInput& in, std::uint32_t initial_cap, unsigned* launches) {
   Pool pool;
   Impl& m = *impl_;
-  return build_far_rows_with_growth([&](std::uint32_t cap) { return m.launch_far_rows(in, cap); }, initial_cap, in.nall, 4, launches);
+  // a system keeps its row capacity: start from the one the previous call needed (the caller's initial_cap is only the first guess)
+  const std::uint32_t start = m.last_far_cap ? std::max(m.last_far_cap, initial_cap) : initial_cap;
+  FarRowsF32 rows = build_far_rows_with_growth([&](std::uint32_t cap) { return m.launch_far_rows(in, cap); }, start, in.nall, 4, launches);
+  m.last_far_cap = rows.cap;
+  return rows;
 }
 
 NonbondedDeviceOutput Context::nonbonded(const NonbondedDeviceInput& in) {
   Pool pool;
   Impl& m = *impl_;
-  const std::size_t nall = in.list.nall, nlocal = in.list.nlocal, cap = in.rows.cap;
+  const std::size_t nall = in.list.nall, nlocal = in.list.nlocal, cap = in.rows->cap;
   NonbondedDeviceOutput out;
   out.grad.assign(3 * nall, 0.0f);
   out.row_e.assign(2 * nlocal, 0.0f);
   if (nall == 0 || nlocal == 0) return out;
   if (nlocal * cap * 3 > 0xFFFFFFFFull) throw MetalError("nonbonded: pair buffer index exceeds 32 bits");
-  std::vector<float> pf_init(nlocal * cap * 3, 0.0f);   // entries that are not counted must read as zero
-  id<MTLBuffer> bx = m.buffer_from(in.list.x.data(), in.list.x.size() * sizeof(float));
-  id<MTLBuffer> btype = m.buffer_from(in.type.data(), in.type.size() * sizeof(std::int32_t));
-  id<MTLBuffer> btag = m.buffer_from(in.tag.data(), in.tag.size() * sizeof(std::int32_t));
-  id<MTLBuffer> bq = m.buffer_from(in.q.data(), in.q.size() * sizeof(float));
-  id<MTLBuffer> btab = m.buffer_from(in.pair_table.data(), in.pair_table.size() * sizeof(float));
-  id<MTLBuffer> bnbr = m.buffer_from(in.rows.nbr.data(), in.rows.nbr.size() * sizeof(std::int32_t));
-  id<MTLBuffer> bcount = m.buffer_from(in.rows.count.data(), in.rows.count.size() * sizeof(std::uint32_t));
-  id<MTLBuffer> bpf = m.buffer_from(pf_init.data(), pf_init.size() * sizeof(float));
-  id<MTLBuffer> brow = m.buffer(out.row_e.size() * sizeof(float));
-  id<MTLBuffer> bcs = m.buffer_from(in.column.start.data(), in.column.start.size() * sizeof(std::uint32_t));
-  id<MTLBuffer> bci = m.buffer_from(in.column.items.data(), in.column.items.size() * sizeof(std::uint32_t));
-  id<MTLBuffer> bgrad = m.buffer(out.grad.size() * sizeof(float));
-  id<MTLBuffer> bxlo = m.buffer_from(in.list.x_lo.data(), in.list.x_lo.size() * sizeof(float));
+  id<MTLBuffer> bx = m.slot_from("nb_x", in.list.x.data(), in.list.x.size() * sizeof(float));
+  id<MTLBuffer> btype = m.slot_from("nb_type", in.type.data(), in.type.size() * sizeof(std::int32_t));
+  id<MTLBuffer> btag = m.slot_from("nb_tag", in.tag.data(), in.tag.size() * sizeof(std::int32_t));
+  id<MTLBuffer> bq = m.slot_from("nb_q", in.q.data(), in.q.size() * sizeof(float));
+  id<MTLBuffer> btab = m.slot_from("nb_tab", in.pair_table.data(), in.pair_table.size() * sizeof(float));
+  id<MTLBuffer> bnbr = m.slot_from("nb_nbr", in.rows->nbr.data(), in.rows->nbr.size() * sizeof(std::int32_t));
+  id<MTLBuffer> bcount = m.slot_from("nb_count", in.rows->count.data(), in.rows->count.size() * sizeof(std::uint32_t));
+  id<MTLBuffer> bpf = m.slot("nb_pf", nlocal * cap * 3 * sizeof(float));   // every entry is written by rm_nb_pairs (zero when not counted)
+  id<MTLBuffer> brow = m.slot("nb_row", out.row_e.size() * sizeof(float));
+  id<MTLBuffer> bcs = m.slot_from("nb_cs", in.column.start.data(), in.column.start.size() * sizeof(std::uint32_t));
+  id<MTLBuffer> bci = m.slot_from("nb_ci", in.column.items.data(), in.column.items.size() * sizeof(std::uint32_t));
+  id<MTLBuffer> bgrad = m.slot("nb_grad", out.grad.size() * sizeof(float));
+  id<MTLBuffer> bxlo = m.slot_from("nb_xlo", in.list.x_lo.data(), in.list.x_lo.size() * sizeof(float));
   RmNbParams p{};
   p.nlocal = static_cast<std::uint32_t>(nlocal); p.cap = static_cast<std::uint32_t>(cap); p.ntypes = in.ntypes;
   p.vdw_type = in.vdw_type; p.lg = in.lg; p.p_vdW1 = in.p_vdW1; p.swa = in.swa; p.swb = in.swb;
@@ -376,7 +379,7 @@ BondedDeviceOutput Context::bonded(const BondedDeviceInput& in) {
 void Context::qeq_setup(const QeqDeviceInput& in) {
   Pool pool;
   Impl& m = *impl_;
-  const std::size_t nlocal = in.list.nlocal, cap = in.rows.cap;
+  const std::size_t nlocal = in.list.nlocal, cap = in.rows->cap;
   if (nlocal * cap > 0xFFFFFFFFull) throw MetalError("qeq: row buffer index exceeds 32 bits");
   m.qeq_nlocal = static_cast<std::uint32_t>(nlocal);
   m.qeq_cap = static_cast<std::uint32_t>(cap);
@@ -387,8 +390,8 @@ void Context::qeq_setup(const QeqDeviceInput& in) {
   id<MTLBuffer> bxlo = m.slot_from("qeq_xlo", in.list.x_lo.data(), in.list.x_lo.size() * sizeof(float));
   id<MTLBuffer> btype = m.slot_from("qeq_type", in.type.data(), in.type.size() * sizeof(std::int32_t));
   id<MTLBuffer> bshld = m.slot_from("qeq_shld", in.shld.data(), in.shld.size() * sizeof(float));
-  id<MTLBuffer> bnbr = m.slot_from("qeq_nbr", in.rows.nbr.data(), in.rows.nbr.size() * sizeof(std::int32_t));
-  id<MTLBuffer> bcount = m.slot_from("qeq_count", in.rows.count.data(), in.rows.count.size() * sizeof(std::uint32_t));
+  id<MTLBuffer> bnbr = m.slot_from("qeq_nbr", in.rows->nbr.data(), in.rows->nbr.size() * sizeof(std::int32_t));
+  id<MTLBuffer> bcount = m.slot_from("qeq_count", in.rows->count.data(), in.rows->count.size() * sizeof(std::uint32_t));
   id<MTLBuffer> bhv = m.slot("qeq_hv", nlocal * cap * sizeof(float));
   m.slot_from("qeq_owner", in.owner.data(), in.owner.size() * sizeof(std::int32_t));
   m.slot_from("qeq_colstart", in.column.start.data(), in.column.start.size() * sizeof(std::uint32_t));

@@ -23,6 +23,15 @@
 
 namespace LAMMPS_NS {
 
+// The host view, device list and far rows of the current positions, built once and shared by the pair style and the GPU charge fix
+struct NbView {
+  reaxmetal::Box box;
+  reaxmetal::AtomSet a;
+  reaxmetal::NeighborCutoffs cut;
+  reaxmetal::DeviceListInput list;
+  std::shared_ptr<const reaxmetal::FarRowsF32> rows;
+};
+
 class PairReaxFFMetal : public Pair {
  public:
   explicit PairReaxFFMetal(class LAMMPS *);
@@ -41,8 +50,12 @@ class PairReaxFFMetal : public Pair {
   reaxmetal::NeighborCutoffs cutoffs() const;
   reaxmetal::Box host_box() const;
   reaxmetal::AtomSet host_atom_set(const reaxmetal::Box &box) const;
+  // rebuilt only when the positions, box or atom counts differ from the cached ones (backend metal only)
+  const NbView &nb_view();
 
  protected:
+  std::unique_ptr<NbView> view_;
+  std::vector<double> view_key_;
   reaxmetal::PairSettings settings_;
   std::unique_ptr<reaxmetal::ForceField> ff_;
   std::vector<int> map_;                       // LAMMPS type (1..ntypes) -> force field element index, -1 = NULL

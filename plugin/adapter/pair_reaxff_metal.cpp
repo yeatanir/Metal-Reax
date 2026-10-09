@@ -263,6 +263,33 @@ reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) con
   return a;
 }
 
+const NbView &PairReaxFFMetal::nb_view()
+{
+  using namespace reaxmetal;
+  const std::size_t nall = static_cast<std::size_t>(atom->nlocal + atom->nghost);
+  std::vector<double> key;
+  key.reserve(3 * nall + 8);
+  key.push_back(static_cast<double>(atom->nlocal));
+  key.push_back(static_cast<double>(atom->nghost));
+  for (int d = 0; d < 3; ++d) { key.push_back(domain->boxlo[d]); key.push_back(domain->boxhi[d]); }
+  for (std::size_t i = 0; i < nall; ++i) for (int d = 0; d < 3; ++d) key.push_back(atom->x[i][d]);
+  if (view_ && key == view_key_) return *view_;
+  auto v = std::make_unique<NbView>();
+  auto t0 = std::chrono::steady_clock::now();
+  auto lap = [&](const char *name) { const auto t1 = std::chrono::steady_clock::now(); prof(name, std::chrono::duration<double>(t1 - t0).count()); t0 = t1; };
+  v->box = host_box();
+  v->a = host_atom_set(v->box);
+  lap("view_atomset");
+  v->cut = cutoffs();
+  v->list = make_device_list_input(v->a, v->box, v->cut);
+  lap("view_binning");
+  v->rows = std::make_shared<const FarRowsF32>(metal_context().far_rows(v->list));
+  lap("view_far_rows");
+  view_ = std::move(v);
+  view_key_ = std::move(key);
+  return *view_;
+}
+
 reaxmetal::mtl::Context &PairReaxFFMetal::metal_context()
 {
   if (!ctx_) ctx_ = std::make_unique<reaxmetal::mtl::Context>();
@@ -337,8 +364,9 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
   auto t0 = clk::now();
   auto lap = [&](const char *name) { const auto t1 = clk::now(); prof(name, std::chrono::duration<double>(t1 - t0).count()); t0 = t1; };
   try {
-    const Box box = host_box();
-    a = host_atom_set(box);
+    const NbView *view = use_metal ? &nb_view() : nullptr;
+    const Box box = view ? view->box : host_box();
+    a = view ? view->a : host_atom_set(box);
     lap("host_view");
     const NeighborCutoffs cut = cutoffs();
     std::vector<double> q(a.nlocal);
@@ -350,7 +378,7 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     if (use_metal) {
       // FP32 on the GPU (deterministic, no atomics); bookkeeping and the final sums in FP64 on the host. Charges come from the stock charge fix.
       metal_context();
-      const BondedDeviceInput bin = make_bonded_device_input(*ff_, settings_.control, a, box, bo);
+      const BondedDeviceInput bin = make_bonded_device_input(*ff_, settings_.control, a, box, bo, &view->list);
       lap("bonded_pack");
       if (std::getenv("REAXMETAL_DEBUG_CPU_BONDED")) {   // diagnostic only
         br = compute_bonded_core(*ff_, settings_.control, a, build_far_list(a, cut), bo);
@@ -362,7 +390,7 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
       if (std::getenv("REAXMETAL_DEBUG_CPU_NB")) {   // diagnostic only: nonbonded in FP64 on the host, to attribute FP32 force noise
         nr = compute_nonbonded_core(*ff_, cut, a, build_far_list(a, cut), q, no);
       } else {
-      const NonbondedDeviceInput nin = make_nonbonded_device_input(*ff_, cut, a, box, q, no, [&](const DeviceListInput &l) { return ctx_->far_rows(l); });
+      const NonbondedDeviceInput nin = make_nonbonded_device_input(*ff_, cut, a, box, q, no, [&](const DeviceListInput &) { return FarRowsF32{}; }, &view->list, view->rows);
       lap("nonbonded_pack_rows");
       const NonbondedDeviceOutput nout = ctx_->nonbonded(nin);
       lap("nonbonded_device");

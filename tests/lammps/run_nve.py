@@ -33,7 +33,7 @@ def main():
     ap.add_argument("--case", required=True); ap.add_argument("--replicate", type=int, default=1); ap.add_argument("--steps", type=int, default=80000)
     ap.add_argument("--dt", type=float, default=0.25); ap.add_argument("--temp", type=float, default=300.0); ap.add_argument("--qeq-tol", default="1e-6")
     ap.add_argument("--backend", default="metal"); ap.add_argument("--gpu-qeq", action="store_true"); ap.add_argument("--every", type=int, default=100)
-    ap.add_argument("--keep", default=""); ap.add_argument("--reuse", action="store_true", help="with --keep: reuse eq.data and the stock log of an earlier run (only the plugin run is repeated; both series are cut to the shorter one)"); ap.add_argument("--npt", action="store_true", help="INT-4: fix npt iso 1 atm instead of NVE; statistics (<T>, <V>, <P>) compared within 3 block sigma"); ap.add_argument("--equil", type=int, default=4000, help="NVT equilibration steps with the stock style before the compared runs (same start for both)")
+    ap.add_argument("--keep", default=""); ap.add_argument("--reuse", action="store_true", help="with --keep: reuse eq.data and the stock log of an earlier run (only the plugin run is repeated; both series are cut to the shorter one)"); ap.add_argument("--nvt", action="store_true", help="thermostatted run (Nose-Hoover, tau 25 fs); statistics <T>, <PE>, <P> compared within 3 block sigma"); ap.add_argument("--npt", action="store_true", help="INT-4: fix npt iso 1 atm instead of NVE; statistics (<T>, <V>, <P>) compared within 3 block sigma"); ap.add_argument("--equil", type=int, default=4000, help="NVT equilibration steps with the stock style before the compared runs (same start for both)")
     a = ap.parse_args()
     case = json.loads((ROOT / "tests" / "fixtures" / "cases" / f"{a.case}.json").read_text())
     ffpath = Path(a.ffield_dir) / case["ffield"]["name"]
@@ -66,7 +66,7 @@ write_data eq.data nocoeff
 """)
             r = subprocess.run([a.lmp, "-in", "in.eq", "-log", "none", "-nocite"], cwd=td, env=env, capture_output=True, text=True)
             if r.returncode: print(r.stdout[-800:], r.stderr[-800:]); return 1
-        INTEG = f'fix integ all npt temp {a.temp} {a.temp} 25.0 iso 1.0 1.0 250.0' if a.npt else 'fix integ all nve'
+        INTEG = f'fix integ all nvt temp {a.temp} {a.temp} 25.0' if a.nvt else f'fix integ all npt temp {a.temp} {a.temp} 25.0 iso 1.0 1.0 250.0' if a.npt else 'fix integ all nve'
         procs = {}
         for tag in (("ours",) if reuse else ("stock", "ours")):
             ours = tag == "ours"
@@ -104,9 +104,9 @@ run {a.steps}
     res = {k: v[:m] for k, v in res.items()}   # equal length series
     n = len(case["atoms"]) * a.replicate ** 3
     ok = True
-    if a.npt:
+    if a.npt or a.nvt:
         def blk(x): return np.mean(x), np.std([b.mean() for b in np.array_split(x, 10)])
-        for name, col in (("T", 1), ("P", 5), ("V", 6)):
+        for name, col in ((("T", 1), ("PE", 2), ("P", 5)) if a.nvt else (("T", 1), ("P", 5), ("V", 6))):
             (ms, ss), (mo, so) = blk(res["stock"][len(res["stock"]) // 5:, col]), blk(res["ours"][len(res["ours"]) // 5:, col])
             good = abs(mo - ms) <= 3 * max(ss, so) and bool(np.isfinite(res["ours"]).all())
             print(f"  {'ok  ' if good else 'FAIL'} <{name}> stock {ms:.5g} +- {ss:.3g}  ours {mo:.5g} +- {so:.3g}"); ok &= good

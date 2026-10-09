@@ -5,6 +5,7 @@
 // The conjugate-gradient iteration stays on the host in double (as in the stock fix); only H assembly and y = (diag(eta) + H) x run in FP32.
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include "reaxmetal/nonbonded_device.hpp"
@@ -13,7 +14,7 @@ namespace reaxmetal {
 
 struct QeqDeviceInput {
   DeviceListInput list;
-  FarRowsF32 rows;
+  std::shared_ptr<const FarRowsF32> rows;
   ColumnIndex column;
   std::vector<std::int32_t> type;    // per atom (nall), LAMMPS type - 1
   std::vector<std::int32_t> owner;   // per atom (nall): index of the owned atom a ghost images
@@ -27,6 +28,8 @@ struct QeqDeviceInput {
 // Throws SystemError when the taper radius exceeds the far-row cutoff of the owned rows (the rows would miss pairs).
 QeqDeviceInput make_qeq_device_input(const NeighborCutoffs& cut, const AtomSet& atoms, const Box& box, const std::vector<int>& lammps_type,
                                      const double* eta, const double* gamma, int ntypes, double swa, double swb,
-                                     const std::function<FarRowsF32(const DeviceListInput&)>& build_rows);
+                                     const std::function<FarRowsF32(const DeviceListInput&)>& build_rows,
+                                     const DeviceListInput* shared_list = nullptr,
+                                     std::shared_ptr<const FarRowsF32> shared_rows = nullptr);
 
 }  // namespace reaxmetal

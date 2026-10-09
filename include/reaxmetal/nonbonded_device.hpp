@@ -6,6 +6,7 @@
 // kernels (metal_backend.hpp), the CPU emulation in tests runs the same kernels as C++.
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <vector>
 
 #include "reaxmetal/forcefield.hpp"
@@ -25,7 +26,7 @@ ColumnIndex build_column_index(const FarRowsF32& rows, std::uint32_t nlocal);
 
 struct NonbondedDeviceInput {
   DeviceListInput list;                // float positions + grid (M3)
-  FarRowsF32 rows;                     // grown far rows built from `list`
+  std::shared_ptr<const FarRowsF32> rows;   // grown far rows built from `list` (shared with the other consumers of the same positions)
   ColumnIndex column;
   std::vector<std::int32_t> type, tag; // per atom (nall)
   std::vector<float> q;                // per atom (nall), ghosts carry their owner's charge
@@ -42,7 +43,9 @@ struct NonbondedDeviceOutput {
 // `rows` must already be the grown far rows of `list` (Context::far_rows or the emulated launch).
 NonbondedDeviceInput make_nonbonded_device_input(const ForceField& ff, const NeighborCutoffs& cut, const AtomSet& atoms, const Box& box,
                                                  const std::vector<double>& q_owned, const NonbondedOptions& opt,
-                                                 const std::function<FarRowsF32(const DeviceListInput&)>& build_rows);
+                                                 const std::function<FarRowsF32(const DeviceListInput&)>& build_rows,
+                                                 const DeviceListInput* shared_list = nullptr,
+                                                 std::shared_ptr<const FarRowsF32> shared_rows = nullptr);   // with shared_rows, build_rows is not called
 
 // FP64 finish: energies = fixed-order double sums of the row partials; polarization on the host in double; gradient widened to double.
 NonbondedResult finish_nonbonded(const ForceField& ff, const AtomSet& atoms, const std::vector<double>& q_owned, const NonbondedDeviceOutput& out);

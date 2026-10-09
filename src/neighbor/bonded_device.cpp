@@ -27,13 +27,14 @@ BondedLayout bonded_layout(std::uint32_t N, std::uint32_t nlocal, std::uint32_t 
   return L;
 }
 
-BondedDeviceInput make_bonded_device_input(const ForceField& ff, const ControlParams& ctl, const AtomSet& atoms, const Box& box, const BondedOptions& opt) {
+BondedDeviceInput make_bonded_device_input(const ForceField& ff, const ControlParams& ctl, const AtomSet& atoms, const Box& box, const BondedOptions& opt,
+                                              const DeviceListInput* shared_list) {
   BondedDeviceInput in;
   NeighborCutoffs cut;
   cut.nonb = ff.file_control().nonb_cut;
   cut.bond = ctl.bond_cut;
   cut.hbond = ctl.hbond_cut;
-  in.list = make_device_list_input(atoms, box, cut);
+  in.list = shared_list ? *shared_list : make_device_list_input(atoms, box, cut);
   const std::size_t N = atoms.nall();
   in.type.assign(atoms.type.begin(), atoms.type.end());
   in.tag.resize(N);

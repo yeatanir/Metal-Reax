@@ -31,12 +31,14 @@ ColumnIndex build_column_index(const FarRowsF32& rows, std::uint32_t nlocal) {
 
 NonbondedDeviceInput make_nonbonded_device_input(const ForceField& ff, const NeighborCutoffs& cut, const AtomSet& atoms, const Box& box,
                                                  const std::vector<double>& q_owned, const NonbondedOptions& opt,
-                                                 const std::function<FarRowsF32(const DeviceListInput&)>& build_rows) {
+                                                 const std::function<FarRowsF32(const DeviceListInput&)>& build_rows,
+                                                 const DeviceListInput* shared_list,
+                                                 std::shared_ptr<const FarRowsF32> shared_rows) {
   if (q_owned.size() != atoms.nlocal) throw SystemError("make_nonbonded_device_input: need one charge per owned atom");
   NonbondedDeviceInput in;
-  in.list = make_device_list_input(atoms, box, cut);
-  in.rows = build_rows(in.list);
-  in.column = build_column_index(in.rows, in.list.nlocal);
+  in.list = shared_list ? *shared_list : make_device_list_input(atoms, box, cut);
+  in.rows = shared_rows ? shared_rows : std::make_shared<const FarRowsF32>(build_rows(in.list));
+  in.column = build_column_index(*in.rows, in.list.nlocal);
   const std::size_t N = atoms.nall();
   in.type.assign(atoms.type.begin(), atoms.type.end());
   in.tag.resize(N);

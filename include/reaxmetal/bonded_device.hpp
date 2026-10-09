@@ -58,7 +58,8 @@ struct BondedDeviceOutput {
   unsigned attempts = 0;
 };
 
-BondedDeviceInput make_bonded_device_input(const ForceField& ff, const ControlParams& ctl, const AtomSet& atoms, const Box& box, const BondedOptions& opt);
+BondedDeviceInput make_bonded_device_input(const ForceField& ff, const ControlParams& ctl, const AtomSet& atoms, const Box& box, const BondedOptions& opt,
+                                              const DeviceListInput* shared_list = nullptr);   // shared_list: the step's list when another consumer already built it
 
 // Runs rm_b_build / rm_h_build, grows the capacities if a row overflowed (then restarts), runs the rest and reads the results.
 BondedDeviceOutput run_bonded_pipeline(BondedBackend& backend, const BondedDeviceInput& in, std::uint32_t initial_bond_cap = 16, std::uint32_t initial_hbond_cap = 16);

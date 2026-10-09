@@ -28,6 +28,8 @@ kernel void rm_nb_pairs(device const float* x [[buffer(0)]],
   if (ti >= 0) {
     const uint n = (count[i] < p.cap) ? count[i] : p.cap;
     for (uint e = 0; e < n; ++e) {
+      const uint id = i * p.cap + e;
+      pf[3 * id] = 0.0f; pf[3 * id + 1] = 0.0f; pf[3 * id + 2] = 0.0f;   // not-counted entries must read as zero by the gather
       const uint j = (uint)nbr[i * p.cap + e];
       const int tj = type[j];
       if (tj < 0) continue;
@@ -61,7 +63,6 @@ kernel void rm_nb_pairs(device const float* x [[buffer(0)]],
           reaxmetal::terms::nonbonded_pair<float>(np, (int)p.vdw_type, p.lg != 0, p.p_vdW1, q[i], q[j], r, Tap, dTap);
       ev += o.e_vdW;
       ee += o.e_ele;
-      const uint id = i * p.cap + e;
       pf[3 * id] = o.CE * dx;
       pf[3 * id + 1] = o.CE * dy;
       pf[3 * id + 2] = o.CE * dz;

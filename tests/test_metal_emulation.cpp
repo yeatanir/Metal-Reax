@@ -274,17 +274,17 @@ static void test_reduction_kernels() {
 
 // Nonbonded kernels emulated vs the CPU-64 reference engine (needs the bundled force field; skipped without REAXMETAL_FFIELD_DIR)
 static void emulate_nonbonded(const NonbondedDeviceInput& in, NonbondedDeviceOutput& out) {
-  const std::uint32_t nall = in.list.nall, nlocal = in.list.nlocal, cap = in.rows.cap;
+  const std::uint32_t nall = in.list.nall, nlocal = in.list.nlocal, cap = in.rows->cap;
   std::vector<float> pf(static_cast<std::size_t>(nlocal) * cap * 3, 0.0f);
   out.grad.assign(3 * static_cast<std::size_t>(nall), 0.0f);
   out.row_e.assign(2 * static_cast<std::size_t>(nlocal), 0.0f);
   RmNbParams p{};
   p.nlocal = nlocal; p.cap = cap; p.ntypes = in.ntypes; p.vdw_type = in.vdw_type; p.lg = in.lg; p.p_vdW1 = in.p_vdW1; p.swa = in.swa; p.swb = in.swb;
   for (std::uint32_t i = 0; i < nlocal; ++i)
-    rm_nb_pairs(in.list.x.data(), in.type.data(), in.tag.data(), in.q.data(), in.pair_table.data(), in.rows.nbr.data(), in.rows.count.data(), pf.data(), out.row_e.data(), in.list.x_lo.data(), p, i);
+    rm_nb_pairs(in.list.x.data(), in.type.data(), in.tag.data(), in.q.data(), in.pair_table.data(), in.rows->nbr.data(), in.rows->count.data(), pf.data(), out.row_e.data(), in.list.x_lo.data(), p, i);
   RmNbGatherParams g{nall, nlocal, cap};
   for (std::uint32_t k = 0; k < nall; ++k)
-    rm_nb_gather(pf.data(), in.rows.count.data(), in.column.start.data(), in.column.items.data(), out.grad.data(), g, k);
+    rm_nb_gather(pf.data(), in.rows->count.data(), in.column.start.data(), in.column.items.data(), out.grad.data(), g, k);
 }
 
 static void test_nonbonded_vs_cpu64() {
