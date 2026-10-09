@@ -260,11 +260,19 @@ kernel void rm_b_atom(RM_B_ARGS) {
 inline float rm_dot3(float ax, float ay, float az, float bx, float by, float bz) { return ax * bx + ay * by + az * bz; }
 
 // theta between vectors u (length du) and v (length dv); cos clamped like the reference
-inline void rm_theta(float ux, float uy, float uz, float du, float vx, float vy, float vz, float dv, thread float& theta, thread float& cth) {
-  cth = rm_dot3(ux, uy, uz, vx, vy, vz) / (du * dv);
+// Angle between two bond vectors. theta = atan2(|u x v|, u.v) and sin(theta) = |u x v| / (|u||v|) are accurate to float rounding over the whole range, whereas
+// acos(cos) of a float cosine near +-1 loses half the digits (error ~3e-4 rad) and sin(theta) then has relative errors of order 1 for nearly collinear atoms,
+// where the angle forces carry a factor 1 / sin(theta). cth is the (clamped) cosine as the reference computes it.
+inline void rm_theta(float ux, float uy, float uz, float du, float vx, float vy, float vz, float dv, thread float& theta, thread float& cth, thread float& sth) {
+  const float dot = rm_dot3(ux, uy, uz, vx, vy, vz);
+  cth = dot / (du * dv);
   if (cth > 1.0f) cth = 1.0f;
   if (cth < -1.0f) cth = -1.0f;
-  theta = acos(cth);
+  const float cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+  const float cr = sqrt(cx * cx + cy * cy + cz * cz);
+  theta = atan2(cr, dot);
+  sth = cr / (du * dv);
+  if (sth > 1.0f) sth = 1.0f;
 }
 
 // derivative of cos(theta) with respect to the three atoms; arguments are dvec_ji (centre -> i) and dvec_jk (centre -> k)
@@ -331,11 +339,11 @@ kernel void rm_b_valence(RM_B_ARGS) {
       AIi(RM_AI_CTHB, j) += 1;
       const float uxi = SFi(RM_SF_DVX, j, pi), uyi = SFi(RM_SF_DVY, j, pi), uzi = SFi(RM_SF_DVZ, j, pi), dij = SFi(RM_SF_D, j, pi);
       const float uxk = SFi(RM_SF_DVX, j, pk), uyk = SFi(RM_SF_DVY, j, pk), uzk = SFi(RM_SF_DVZ, j, pk), djk = SFi(RM_SF_D, j, pk);
-      float theta, cos_theta;
-      rm_theta(uxi, uyi, uzi, dij, uxk, uyk, uzk, djk, theta, cos_theta);
+      float theta, cos_theta, sth_valence;
+      rm_theta(uxi, uyi, uzi, dij, uxk, uyk, uzk, djk, theta, cos_theta, sth_valence);
       float dti[3], dtj[3], dtk[3];
       rm_dcos(uxi, uyi, uzi, dij, uxk, uyk, uzk, djk, dti, dtj, dtk);
-      float sin_theta = sin(theta);
+      float sin_theta = sth_valence;
       if (sin_theta < 1.0e-5f) sin_theta = 1.0e-5f;
       const uint tri = (ti * p.ntypes + tj) * p.ntypes + tk;
       const int start = thb_idx[2 * tri], cnt = thb_idx[2 * tri + 1];
@@ -463,11 +471,11 @@ kernel void rm_b_torsion(RM_B_ARGS) {
       const float BOA_ij = BO_ij - p.thb_cut;
       const float ijx = SFi(RM_SF_DVX, j, pij), ijy = SFi(RM_SF_DVY, j, pij), ijz = SFi(RM_SF_DVZ, j, pij);
       // angle at j: entry of the list of bond j->k (bond atom k) with partner i
-      float theta_ijk, cos_t;
-      rm_theta(jkx, jky, jkz, r_jk, ijx, ijy, ijz, r_ij, theta_ijk, cos_t);
+      float theta_ijk, cos_t, sin_t;
+      rm_theta(jkx, jky, jkz, r_jk, ijx, ijy, ijz, r_ij, theta_ijk, cos_t, sin_t);
       float c1i[3], c1j[3], c1k[3];   // d cos(theta_ijk): wrt k (list "di"), wrt j, wrt i (list "dk")
       rm_dcos(jkx, jky, jkz, r_jk, ijx, ijy, ijz, r_ij, c1i, c1j, c1k);
-      const float sin_ijk = sin(theta_ijk), cos_ijk = cos(theta_ijk);
+      const float sin_ijk = sin_t, cos_ijk = cos_t;
       float tan_ijk_i;
       if (sin_ijk >= 0.0f && sin_ijk <= MIN_SINE) tan_ijk_i = cos_ijk / MIN_SINE;
       else if (sin_ijk <= 0.0f && sin_ijk >= -MIN_SINE) tan_ijk_i = cos_ijk / -MIN_SINE;
@@ -491,11 +499,11 @@ kernel void rm_b_torsion(RM_B_ARGS) {
         const float BOA_kl = BO_kl - p.thb_cut;
         const float klx = SFi(RM_SF_DVX, k, plk), kly = SFi(RM_SF_DVY, k, plk), klz = SFi(RM_SF_DVZ, k, plk);
         const float kjx = SFi(RM_SF_DVX, k, pj), kjy = SFi(RM_SF_DVY, k, pj), kjz = SFi(RM_SF_DVZ, k, pj), r_kj = SFi(RM_SF_D, k, pj);
-        float theta_jkl, cos_t2;
-        rm_theta(kjx, kjy, kjz, r_kj, klx, kly, klz, r_kl, theta_jkl, cos_t2);
+        float theta_jkl, cos_t2, sin_t2;
+        rm_theta(kjx, kjy, kjz, r_kj, klx, kly, klz, r_kl, theta_jkl, cos_t2, sin_t2);
         float c2i[3], c2j[3], c2k[3];   // d cos(theta_jkl): wrt j, wrt k, wrt l
         rm_dcos(kjx, kjy, kjz, r_kj, klx, kly, klz, r_kl, c2i, c2j, c2k);
-        const float sin_jkl = sin(theta_jkl), cos_jkl = cos(theta_jkl);
+        const float sin_jkl = sin_t2, cos_jkl = cos_t2;
         float tan_jkl_i;
         if (sin_jkl >= 0.0f && sin_jkl <= MIN_SINE) tan_jkl_i = cos_jkl / MIN_SINE;
         else if (sin_jkl <= 0.0f && sin_jkl >= -MIN_SINE) tan_jkl_i = cos_jkl / -MIN_SINE;
@@ -647,8 +655,8 @@ kernel void rm_b_hbond(RM_B_ARGS) {
       if (r0_hb <= 0.0f) continue;
       AIi(RM_AI_CHB, j) += 1;
       const float ux = SFi(RM_SF_DVX, j, pi), uy = SFi(RM_SF_DVY, j, pi), uz = SFi(RM_SF_DVZ, j, pi), du = SFi(RM_SF_D, j, pi);
-      float theta, cos_theta;
-      rm_theta(ux, uy, uz, du, jkx, jky, jkz, r_jk, theta, cos_theta);
+      float theta, cos_theta, sth_hb;
+      rm_theta(ux, uy, uz, du, jkx, jky, jkz, r_jk, theta, cos_theta, sth_hb);
       float dti[3], dtj[3], dtk[3];
       rm_dcos(ux, uy, uz, du, jkx, jky, jkz, r_jk, dti, dtj, dtk);
       const float sin_theta2 = sin(theta / 2.0f);

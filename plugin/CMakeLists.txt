@@ -143,6 +143,10 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
     add_test(NAME lammps_int2_metal_mixed COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
              --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} "--backend=metal bonded cpu64" --gpu-qeq --qeq-extra resident)
     set_tests_properties(lammps_int2_metal_mixed PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # DENSE-1: dense random carbon (packed, minimised, hot): nearly collinear triples that broke the float acos angle; forces and energy vs stock
+    add_test(NAME lammps_dense_carbon COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_dense_carbon.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield ${REAXMETAL_FFIELD_DIR}/ffield.reax.cho --n 600 --seeds 2)
+    set_tests_properties(lammps_dense_carbon PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     # MIN-1: LAMMPS `minimize` reaches the stock minimum (energies, displacement) on the perturbed fixtures, with the GPU charge fix
     add_test(NAME lammps_min1_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_min.py
              --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal --gpu-qeq)
