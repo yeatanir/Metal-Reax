@@ -5,6 +5,27 @@
 Everything else (integrators, thermostats, barostats, minimisers, neighbor lists, MPI) is LAMMPS. Every number is validated against stock `pair_style reaxff` of LAMMPS `stable_30Sep2026`.
 Element-agnostic: ordinary ReaxFF `ffield` files are read at run time.
 
+**Why:** most ReaxFF work is single-core CPU, and that is fine for a few hundred atoms. At several thousand atoms and up, on a Mac with a big GPU that sits idle, it is not. This lets LAMMPS use the Apple GPU for ReaxFF (about 3.5× stock at 5k atoms, 7× at 24k, 10× at 66k; no gain below ~1,000 atoms).
+
+## How do I use it with my LAMMPS?
+
+It is a LAMMPS *plugin*: a `.so` you load at run time. You do not patch or rebuild LAMMPS, but the plugin must be built against the same LAMMPS version you run (pinned here: `stable_30Sep2026`; LAMMPS built as a shared library with plugin support, which `tools/build_lammps_reference.sh` does for you).
+
+1. **Build once** (see [Build and test](#build-and-test-macos-apple-silicon)); you get `build/plugin/reaxmetaladapterplugin.so`.
+2. **Change four lines of an existing ReaxFF input** (everything else — `read_data`, integrators, thermostats, `minimize`, dumps, `fix reaxff/bonds`, `fix reaxff/species` — stays as it is):
+
+```diff
++ plugin load /path/to/reaxmetaladapterplugin.so
+- pair_style reaxff NULL
++ pair_style reaxff/metal NULL backend metal
+  pair_coeff * * ffield.reax.cho C H O
+- fix q all qeq/reaxff 1 0.0 10.0 1e-6 reaxff
++ fix q all qeq/reaxff/metal 1 0.0 10.0 1e-6 reaxff
+```
+3. Run `lmp -in in.yours` as usual. Your `ffield` file is used unchanged. `qeq/rel/reaxff`, `qtpie/reaxff` and `acks2/reaxff` have `/metal` versions too.
+
+Use `backend metal` for NVT/NPT and speed. For NVE energy conservation use `backend metal bonded cpu64`. Use `backend cpu64` to check against stock (agrees to ~1e-12). Details: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md).
+
 <p align="center"><img src="docs/img/graphitization_renders.png" width="100%" alt="random carbon turning into a graphitic network"></p>
 
 *30,000 random carbon atoms, 1 g/cm³, NVT at 4000 K with the "2013 C" ReaxFF (Srinivasan, van Duin, Ganesh, J. Phys. Chem. A 119, 571), run with `reaxff/metal` on an M5 Max.
