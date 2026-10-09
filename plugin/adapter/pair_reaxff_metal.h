@@ -23,6 +23,8 @@
 
 namespace LAMMPS_NS {
 
+class FixACKS2ReaxFF;
+
 // The host view, device list and far rows of the current positions, built once and shared by the pair style and the GPU charge fix
 struct NbView {
   reaxmetal::Box box;
@@ -54,12 +56,14 @@ class PairReaxFFMetal : public Pair {
   const NbView &nb_view();
 
  protected:
+  FixACKS2ReaxFF *acks2_fix_ = nullptr;   // the ACKS2 charge fix, if any: it supplies the kinetic potentials s (pair energy and force terms)
   std::unique_ptr<NbView> view_;
   std::vector<double> view_key_;
   reaxmetal::PairSettings settings_;
   std::unique_ptr<reaxmetal::ForceField> ff_;
   std::vector<int> map_;                       // LAMMPS type (1..ntypes) -> force field element index, -1 = NULL
-  std::vector<double> chi_, eta_, gamma_;      // extract() arrays, index 0..ntypes (index 0 unused)
+  std::vector<double> chi_, eta_, gamma_, bcut_acks2_;
+  double bond_softness_ = 0.0;                 // general parameter 35 (index 34), the ACKS2 bond softness      // extract() arrays, index 0..ntypes (index 0 unused)
   double cutmax_ = 0.0;
   std::unique_ptr<reaxmetal::mtl::Context> ctx_;
   std::vector<std::pair<std::string, double>> profile_;   // REAXMETAL_PROFILE=1: accumulated wall seconds per phase of compute(), printed at destruction

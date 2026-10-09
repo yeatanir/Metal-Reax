@@ -5,7 +5,7 @@
   E1 extract(chi|eta|gamma) of `reaxff/metal` equals stock `reaxff` BIT FOR BIT for every bundled force field and a set of type maps
      (full file order, reversed subset, NULL entries, lower-case symbols, repeated elements);
   E2 the same inputs are accepted/rejected by both, except the documented strict rejection of element pairs without a bond block (Q-12);
-  E3 host checks: no charge fix, newton off, no charge attribute, deferred charge models, unsupported options, bad control file;
+  E3 host checks: no charge fix, newton off, no charge attribute, charge models, unsupported options, bad control file;
   E4 with every check passed compute() runs (CPU-64 engine since M4);
   E5 (optional, --mpi-lmp/--mpi-plugin) a 2-rank run computes (multi-rank is supported since the MPI work).
 usage: run_a1.py --lib <liblammps.so> --plugin <reaxmetaladapterplugin.so> --ffield-dir DIR"""
@@ -131,7 +131,7 @@ def main():
     import tempfile
     gauss = os.path.join(tempfile.mkdtemp(prefix="a1gauss"), "gauss.txt")
     with open(gauss, "w") as gf: gf.write("1 0.5\n2 0.5\n3 0.5\n")
-    host("deferred qtpie", "does not support", fixes=(f"fix q all qtpie/reaxff 1 0.0 10.0 1e-6 reaxff {gauss}",))
+    host("qtpie accepted", None, fixes=(f"fix q all qtpie/reaxff/metal 1 0.0 10.0 1e-6 reaxff {gauss}",))
     host("tabulate deferred", "opt.tabulate", style_args="NULL tabulate 20", fixes=())
     host("unknown keyword", "unknown keyword", style_args="NULL frobnicate 1", fixes=())
     host("missing control file", "cannot open ReaxFF control file", style_args="/nonexistent/ctl", fixes=())

@@ -77,13 +77,13 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
 | `qeq.reaxff` | Implemented | - | `fix qeq/reaxff ... reaxff` | stock fix, or fix qeq/reaxff/metal (EEM matrix and matvec on the GPU, stock CG); charges within 1.6e-5 e of stock |
-| `qeq.pertype_file` | Planned | M5 | `fix qeq/reaxff ... <param file>` | per-type chi/eta/gamma override |
-| `qeq.shielded` | Planned | M5 | `fix qeq/shielded` | LAMMPS-compatible shielded charge equilibration; same kernel as qeq/reaxff (ENGINE_SPEC 7.2); works through extract() today |
-| `qeq.acks2` | Deferred | - | `fix acks2/reaxff` | deferred; different charge model |
-| `qeq.qtpie` | Deferred | - | `fix qtpie/reaxff` | deferred; different charge model |
-| `qeq.relative` | Deferred | - | `fix qeq/rel/reaxff` | deferred |
-| `qeq.efield` | Deferred | - | `fix efield with fix qeq/reaxff` | deferred; external electric field |
-| `qeq.group_subset` | Deferred | - | `fix qeq/reaxff on a proper subgroup` | deferred; all atoms are equilibrated |
+| `qeq.pertype_file` | Implemented | - | `fix qeq/reaxff ... <param file>` | per-type chi/eta/gamma from a parameter file instead of the pair style: identical to stock (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.shielded` | Implemented | - | `fix qeq/shielded` | LAMMPS-compatible shielded charge equilibration: stock fix, charges drive the plugin (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.acks2` | Implemented | - | `fix acks2/reaxff` | ACKS2: the stock fix supplies the kinetic potentials; the plugin adds the polarization coupling and the bond-softness Coulomb term (energy, forces, per-atom tallies) to the non-bonded terms (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.qtpie` | Implemented | - | `fix qtpie/reaxff` | QTPIE: use fix qtpie/reaxff/metal (the stock fix borrows the pair-style list with ghost rows, which a plugin pair style cannot provide; the derived fix requests its own) (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.relative` | Implemented | - | `fix qeq/rel/reaxff` | QEq-R: use fix qeq/rel/reaxff/metal (same reason as QTPIE) (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.efield` | Implemented | - | `fix efield with fix qeq/reaxff` | external electric field with every charge model above, also with the GPU charge matrix (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
+| `qeq.group_subset` | Implemented | - | `fix qeq/reaxff on a proper subgroup` | the stock fix handles the group; the plugin does not depend on it (GPU charge matrix falls back to the CPU one) (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal) |
 
 ## 6. System description
 

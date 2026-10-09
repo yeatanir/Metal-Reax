@@ -5,10 +5,13 @@
 #include "version.h"
 #include "pair_reaxff_metal.h"
 #include "fix_qeq_reaxff_metal.h"
+#include "fix_qtpie_reaxff_metal.h"
 
 using namespace LAMMPS_NS;
 
 static Pair *creator(LAMMPS *lmp) { return new PairReaxFFMetal(lmp); }
+static Fix *qtpiecreator(LAMMPS *lmp, int narg, char **arg) { return new FixQtpieReaxFFMetal(lmp, narg, arg); }
+static Fix *qeqrcreator(LAMMPS *lmp, int narg, char **arg) { return new FixQEqRelReaxFFMetal(lmp, narg, arg); }
 static Fix *fixcreator(LAMMPS *lmp, int narg, char **arg) { return new FixQEqReaxFFMetal(lmp, narg, arg); }
 
 extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc)
@@ -33,4 +36,24 @@ extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc)
   qeq.creator.v2 = (lammpsplugin_factory2 *) &fixcreator;
   qeq.handle = handle;
   (*register_plugin)(&qeq, lmp);
+
+  lammpsplugin_t qtp;
+  qtp.version = LAMMPS_VERSION;
+  qtp.style = "fix";
+  qtp.name = "qtpie/reaxff/metal";
+  qtp.info = "ReaxMetal: QTPIE charge model for pair_style reaxff/metal (own neighbor list with ghost rows)";
+  qtp.author = "ReaxMetal project";
+  qtp.creator.v2 = (lammpsplugin_factory2 *) &qtpiecreator;
+  qtp.handle = handle;
+  (*register_plugin)(&qtp, lmp);
+
+  lammpsplugin_t qr;
+  qr.version = LAMMPS_VERSION;
+  qr.style = "fix";
+  qr.name = "qeq/rel/reaxff/metal";
+  qr.info = "ReaxMetal: QEq-R charge model for pair_style reaxff/metal (own neighbor list with ghost rows)";
+  qr.author = "ReaxMetal project";
+  qr.creator.v2 = (lammpsplugin_factory2 *) &qeqrcreator;
+  qr.handle = handle;
+  (*register_plugin)(&qr, lmp);
 }

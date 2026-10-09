@@ -30,7 +30,7 @@ elseif(UNIX)
 endif()
 
 # ---- Adapter A1 (M2): real parse + extract + host checks, no physics. Uses the C++20 core library (parser).
-add_library(reaxmetal_adapter_plugin MODULE adapter/adapter_plugin.cpp adapter/pair_reaxff_metal.cpp adapter/fix_qeq_reaxff_metal.cpp)
+add_library(reaxmetal_adapter_plugin MODULE adapter/adapter_plugin.cpp adapter/pair_reaxff_metal.cpp adapter/fix_qeq_reaxff_metal.cpp adapter/fix_qtpie_reaxff_metal.cpp)
 set_target_properties(reaxmetal_adapter_plugin PROPERTIES PREFIX "" SUFFIX ".so" OUTPUT_NAME "reaxmetaladapterplugin"
                       CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_include_directories(reaxmetal_adapter_plugin PRIVATE "${REAXMETAL_LAMMPS_SOURCE_DIR}")
@@ -106,6 +106,17 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
   add_test(NAME lammps_eem COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_eem.py
            --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} $<$<BOOL:${REAXMETAL_ENABLE_METAL}>:--metal>)
   set_tests_properties(lammps_eem PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  # CHG-1: every ReaxFF charge model of LAMMPS (qeq, qeq/rel, qtpie, acks2, qeq/shielded, parameter file, group subset), with and without fix efield
+  if(EXISTS "${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/water/in.water.qeq")
+    add_test(NAME lammps_charge_models COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_water_models.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --examples ${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/water --backend cpu64)
+    set_tests_properties(lammps_charge_models PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    if(REAXMETAL_ENABLE_METAL)
+      add_test(NAME lammps_charge_models_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_water_models.py
+               --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --examples ${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/water --backend metal --gpu-qeq)
+      set_tests_properties(lammps_charge_models_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    endif()
+  endif()
   add_test(NAME lammps_min1_cpu64 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_min.py
            --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
   set_tests_properties(lammps_min1_cpu64 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")

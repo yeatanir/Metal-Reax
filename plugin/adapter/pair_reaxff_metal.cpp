@@ -11,6 +11,7 @@
 #include "domain.h"
 #include "error.h"
 #include "force.h"
+#include "REAXFF/fix_acks2_reaxff.h"
 #include "memory.h"
 #include "modify.h"
 #include "neigh_list.h"
@@ -25,6 +26,7 @@
 #include <cstring>
 #include <unordered_map>
 
+#include "reaxmetal/acks2.hpp"
 #include "reaxmetal/bonded.hpp"
 #include "reaxmetal/bonded_device.hpp"
 #include "reaxmetal/metal_backend.hpp"
@@ -82,6 +84,7 @@ void PairReaxFFMetal::allocate()
   chi_.assign(static_cast<std::size_t>(n) + 1, 0.0);
   eta_.assign(static_cast<std::size_t>(n) + 1, 0.0);
   gamma_.assign(static_cast<std::size_t>(n) + 1, 0.0);
+  bcut_acks2_.assign(static_cast<std::size_t>(n) + 1, 0.0);
 }
 
 void PairReaxFFMetal::settings(int narg, char **arg)
@@ -108,6 +111,7 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
     reaxmetal::FfieldOptions opt;
     opt.lgvdw = settings_.lgvdw;
     ff_ = std::make_unique<reaxmetal::ForceField>(reaxmetal::read_force_field_file(utils::get_potential_file_path(args[2]), opt));
+    bond_softness_ = ff_->global().l.size() > 34 ? ff_->global().l[34] : 0.0;
   } catch (const std::exception &e) {
     error->all(FLERR, "{}", e.what());
   }
@@ -163,15 +167,14 @@ void PairReaxFFMetal::init_style()
   if (atom->tag_enable == 0) error->all(FLERR, "Pair style reaxff requires atom IDs");
   if (force->newton_pair == 0) error->all(FLERR, "Pair style reaxff requires newton pair on");
 
-  // charge fix: standard EEM only (fix qeq/reaxff or fix qeq/shielded); the other ReaxFF charge models are Deferred
-  const std::size_t acks2 = modify->get_fix_by_style("^acks2/reax").size();
-  const std::size_t qtpie = modify->get_fix_by_style("^qtpie/reax").size();
-  const std::size_t qeqrel = modify->get_fix_by_style("^qeq/rel/reax").size();
-  if (acks2 + qtpie + qeqrel > 0)
-    error->all(FLERR, "Pair style reaxff/metal does not support fix acks2/reaxff, qtpie/reaxff or qeq/rel/reaxff (deferred; see docs/FEATURE_MATRIX.md)");
-  const std::size_t have_qeq = modify->get_fix_by_style("^qeq/reax").size() + modify->get_fix_by_style("^qeq/shielded").size();
+  // exactly one charge model: fix qeq/reaxff, qeq/shielded, qeq/rel/reaxff, qtpie/reaxff or acks2/reaxff (as pair reaxff)
+  acks2_fix_ = nullptr;
+  const auto acks2 = modify->get_fix_by_style("^acks2/reax");
+  const std::size_t have_qeq = modify->get_fix_by_style("^qeq/reax").size() + modify->get_fix_by_style("^qeq/shielded").size() + acks2.size() +
+                               modify->get_fix_by_style("^qeq/rel/reax").size() + modify->get_fix_by_style("^qtpie/reax").size();
   if (settings_.checkqeq && have_qeq != 1)
-    error->all(FLERR, "Pair style reaxff/metal requires use of exactly one of the fix qeq/reaxff or fix qeq/shielded commands");
+    error->all(FLERR, "Pair style reaxff/metal requires use of exactly one of the fix qeq/reaxff or fix qeq/shielded or fix acks2/reaxff or fix qtpie/reaxff or fix qeq/rel/reaxff commands");
+  if (!acks2.empty()) acks2_fix_ = dynamic_cast<FixACKS2ReaxFF *>(acks2.front());
 
   if (cutmax_ < 2.0 * settings_.control.bond_cut && comm->me == 0)
     error->warning(FLERR, "Total cutoff < 2*bond cutoff. May need to use an increased neighbor list skin.");
@@ -201,6 +204,8 @@ void *PairReaxFFMetal::extract(const char *str, int &dim)
   if (strcmp(str, "chi") == 0) return fill(chi_, &reaxmetal::SingleBody::chi);
   if (strcmp(str, "eta") == 0) return fill(eta_, &reaxmetal::SingleBody::eta);       // 2 x file value, as pair reaxff
   if (strcmp(str, "gamma") == 0) return fill(gamma_, &reaxmetal::SingleBody::gamma);
+  if (strcmp(str, "bcut_acks2") == 0) return fill(bcut_acks2_, &reaxmetal::SingleBody::bcut_acks2);
+  if (strcmp(str, "bond_softness") == 0) return static_cast<void *>(&bond_softness_);
   return nullptr;
 }
 
@@ -402,12 +407,17 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
       const NonbondedDeviceOutput nout = ctx_->nonbonded(nin);
       lap("nonbonded_device");
       nr = finish_nonbonded(*ff_, a, q, nout);
+      if (acks2_fix_) {
+        nr.eatom.assign(per_atom ? a.nall() : 0, 0.0);
+        add_acks2_terms(*ff_, cut, a, far_list_from_rows(a, cut, *view->rows), q, acks2_fix_->get_s() + a.nall(), nr);
+      }
       }
       lap("finish");
     } else {
       const FarList far = build_far_list(a, cut);
       br = compute_bonded_core(*ff_, settings_.control, a, far, bo);
       nr = compute_nonbonded_core(*ff_, cut, a, far, q, no);
+      if (acks2_fix_) add_acks2_terms(*ff_, cut, a, far, q, acks2_fix_->get_s() + a.nall(), nr);
     }
   } catch (const std::exception &e) {
     error->all(FLERR, "Pair style reaxff/metal: {}", e.what());
