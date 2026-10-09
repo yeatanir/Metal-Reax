@@ -122,7 +122,7 @@ Nearly linear atom triples (angle within 0.06° of 180° or 0°) carry an intrin
 
 ## 8. Dynamics
 
-NVE, NVT (Nose–Hoover, Berendsen), NPT, `minimize` (cg, fire, …), `hybrid/overlay`, `fix efield`, `fix wall/reflect` and shrink-wrapped boundaries work. Time steps are the ones you would use with stock ReaxFF (0.25–0.5 fs).
+NVE, NVT (Nose–Hoover, Berendsen), NPT, `minimize` (cg, fire, …), `hybrid/overlay`, `fix efield`, `fix wall/reflect`, shrink-wrapped boundaries and the analysis commands of section 11 work. Time steps are the ones you would use with stock ReaxFF (0.25–0.5 fs).
 Every discrete decision of the force field (bond-order cut-offs, three- and four-body gates, hydrogen-bond gate, SBO branches, the `trunc(Δe/2)` lone-pair crossing, the non-bonded cut-off) is taken identically by the GPU and the reference except within about 1e-7 Å of a threshold (section 12, CENSUS).
 
 ## 9. MPI
@@ -144,7 +144,7 @@ Pure carbon (no charge solve), 30,000 atoms: about 25 ms per step. Memory: about
 4. `tabulate` evaluates analytically (differs from a tabulated stock run by the table error).
 5. `newton pair on`, atom IDs and the `q` attribute are required (as stock). `units real` is assumed. No Kokkos/OpenMP suffix styles; `compute pair reaxff/metal` instead of `compute pair reaxff`.
 6. The pair style does not write restart information (as stock): re-specify `pair_style`/`pair_coeff` after `read_restart`.
-7. Analysis commands that read the stock style's internal bond lists — `fix reaxff/bonds`, `fix reaxff/species`, `compute reaxff/atom`, `compute spec/atom` — do **not** work with `reaxff/metal` unless the plugin-provided equivalents are loaded (section 13). Bond orders can always be obtained by running the same configuration with stock `pair_style reaxff` for analysis.
+7. The stock analysis commands `fix reaxff/bonds`, `fix reaxff/species`, `compute reaxff/atom` and `compute SPEC/ATOM` work unmodified (the pair style is a `PairReaxFF`); while one of them is defined, the bond list is copied out of the engine every step (a small cost). Bond-order ordering inside a bond list can differ from the stock style's; the sets and values are the same. `dump image` bond colouring by `fix reaxff/bonds` is untested.
 8. A system larger than the unified memory (≈ 800,000 atoms on a 64 GB Mac) cannot run; atom IDs must fit 32 bits for the GPU path.
 9. Multi-rank runs share one GPU (section 9).
 
@@ -167,7 +167,6 @@ All results are in `docs/VALIDATION.md` (register) and `docs/DEVELOPMENT_LOG.md`
 | `Pair style reaxff/metal: backend metal requested but this plugin was built without Metal` | rebuild with `-DREAXMETAL_ENABLE_METAL=ON` or use `backend cpu64` |
 | `Fix qeq/reaxff/metal strict: CG did not converge …` | raise `maxiter` or loosen the tolerance, or drop `strict` |
 | `Fix qeq/reaxff/metal verify: equalisation residual …` | the FP32 matrix cannot meet that residual: use `resident`, or a larger bound |
-| `Unrecognized … reaxff/atom` / `Cannot use fix reaxff/bonds without pair_style reaxff` | the stock analysis styles need the stock pair style (limitation 7) |
 | shaders fail to compile | the Metal compiler of the installed macOS rejected a kernel: report the message (it is printed in full) |
 
 ## 14. Environment variables

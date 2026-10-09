@@ -23,7 +23,7 @@ fix 2 all qeq/reax 1 0.0 10.0 1e-6 param.qeq
 fix 3 all temp/berendsen 500.0 500.0 100.0
 fix b all reaxff/bonds 100 bonds.{tag}
 fix s all reaxff/species 10 5 100 species.{tag}
-compute ra all reaxff/atom
+compute ra all reaxff/atom bonds yes
 compute sp all SPEC/ATOM q abo01 abo02 abo03 abo04
 dump d1 all custom 100 atom.{tag}.dump id c_ra[1] c_ra[2] c_ra[3] c_sp[1] c_sp[2] c_sp[3] c_sp[4] c_sp[5]
 dump_modify d1 sort id format float %.8g
@@ -42,6 +42,7 @@ def bonds(path):
     for line in last.splitlines():
         if line.startswith("#") or not line.strip(): continue
         v = line.split()
+        if len(v) < 4: continue   # the step number that follows '# Timestep'
         i, t, nb = int(v[0]), int(v[1]), int(v[2])
         ids = [int(x) for x in v[3:3 + nb]]
         bos = [float(x) for x in v[4 + nb:4 + 2 * nb]]
@@ -89,7 +90,10 @@ def main():
         hs, ds = species(td / "species.stock"); ho, do = species(td / "species.ours")
         print("fix reaxff/species stock:", " ".join(hs[:6]), "|", " ".join(ds[:6])); print("fix reaxff/species ours: ", " ".join(ho[:6]), "|", " ".join(do[:6]))
         if hs != ho or (a.backend == "cpu64" and ds != do): fails.append("species file differs")
-        sa = np.loadtxt(td / "atom.stock.dump", skiprows=9, ndmin=2); oa = np.loadtxt(td / "atom.ours.dump", skiprows=9, ndmin=2)
+        def last_snapshot(path):
+            blk = Path(path).read_text().split("ITEM: TIMESTEP")[-1].splitlines()
+            return np.array([[float(x) for x in l.split()] for l in blk[blk.index(next(l for l in blk if l.startswith("ITEM: ATOMS"))) + 1:] if l.strip()])
+        sa, oa = last_snapshot(td / "atom.stock.dump"), last_snapshot(td / "atom.ours.dump")
         d = abs(sa[:, 1:4] - oa[:, 1:4]).max()
         # spec/atom bond orders: compare as sorted sets per atom
         dsp = max(abs(np.sort(sa[i, 5:9]) - np.sort(oa[i, 5:9])).max() for i in range(len(sa)))

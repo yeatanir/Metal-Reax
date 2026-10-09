@@ -95,7 +95,7 @@ constexpr std::array kFeatures{
     Feature{"out.charges", Status::Implemented, "-", "atom->q", "charges are LAMMPS atom->q set by the stock fix qeq/reaxff or by fix qeq/reaxff/metal; compared with stock in every INT-2 run"},
     Feature{"out.virial", Status::Implemented, "-", "virial_fdotr / v_tally*", "global virial by virial_fdotr (INT-2, NPT); per-atom virial by the CPU-64 tallies of the reference (PERATOM-1)"},
     Feature{"out.per_atom_energy", Status::Implemented, "-", "compute pe/atom, stress/atom with reaxff", "per-atom energy and virial equal stock on 58 fixtures (PERATOM-1, 5e-10 relative); produced by the CPU-64 engine, so a step on which a compute requests them is evaluated by CPU-64 even with backend metal"},
-    Feature{"out.bond_analysis", D, "-", "fix reaxff/bonds, fix reaxff/species", "deferred; LAMMPS analysis tools dynamic_cast to PairReaxFF and refuse other styles"},
+    Feature{"out.bond_analysis", Status::Implemented, "-", "fix reaxff/bonds, fix reaxff/species, compute reaxff/atom, compute spec/atom", "fix reaxff/bonds, fix reaxff/species (incl. its options), compute reaxff/atom and compute SPEC/ATOM work unmodified: the pair style derives from PairReaxFF and fills the bond list, bond orders and lone pairs they read (from the CPU-64 engine or read back from the GPU); ANA-1 on the reactive CHO example equals stock (cpu64 exactly, metal within 1e-3 of the printed bond orders)"},
     // ---- dynamics --------------------------------------------------------------------------------
     Feature{"md.nve", R, "-", "fix nve", "standalone MD is out of scope: LAMMPS provides integrators"},
     Feature{"md.thermostat", R, "-", "fix nvt / langevin", "standalone MD is out of scope: LAMMPS provides thermostats"},

@@ -117,6 +117,17 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
       set_tests_properties(lammps_charge_models_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     endif()
   endif()
+  # ANA-1: fix reaxff/bonds, fix reaxff/species, compute reaxff/atom, compute SPEC/ATOM work unmodified with reaxff/metal
+  if(EXISTS "${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/CHO/data.CHO")
+    add_test(NAME lammps_analysis COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_analysis.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --example ${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/CHO --backend cpu64)
+    set_tests_properties(lammps_analysis PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    if(REAXMETAL_ENABLE_METAL)
+      add_test(NAME lammps_analysis_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_analysis.py
+               --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --example ${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/CHO --backend metal)
+      set_tests_properties(lammps_analysis_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    endif()
+  endif()
   # HYB-1: pair_style hybrid/overlay with reaxff/metal (charge-implicit ReaxFF + tabulated ZBL), stock vs plugin
   if(EXISTS "${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/ci-reaxFF/in.ci-reax.CH")
     add_test(NAME lammps_hybrid COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_hybrid.py
