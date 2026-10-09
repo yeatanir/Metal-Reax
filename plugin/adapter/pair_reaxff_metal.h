@@ -56,6 +56,7 @@ class PairReaxFFMetal : public Pair {
   const NbView &nb_view();
 
  protected:
+  mutable bool shell_warned_ = false;
   FixACKS2ReaxFF *acks2_fix_ = nullptr;   // the ACKS2 charge fix, if any: it supplies the kinetic potentials s (pair energy and force terms)
   std::unique_ptr<NbView> view_;
   std::vector<double> view_key_;

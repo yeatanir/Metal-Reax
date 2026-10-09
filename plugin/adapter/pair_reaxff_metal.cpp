@@ -230,9 +230,13 @@ reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) con
   const int nlocal = atom->nlocal, nall = atom->nlocal + atom->nghost;
   // C3 (strict where the reference only warns): the ghost shell must be wide enough for owned-atom results to be those of the reference
   const double need = cutoffs().required_shell(), have = comm->get_comm_cutoff();
-  if (have < need)
-    throw SystemError("ghost shell too narrow: communication cutoff " + std::to_string(have) + " < required max(nonb_cut, hbond_cut, 2*bond_cut) = " + std::to_string(need) +
-                      " (use comm_modify cutoff)");
+  if (have < need) {
+    const std::string msg = "ghost shell too narrow: communication cutoff " + std::to_string(have) + " < required max(nonb_cut, hbond_cut, 2*bond_cut) = " + std::to_string(need) +
+                            " (use comm_modify cutoff, or pair_style keyword 'shellcheck no' to accept it as the stock style does)";
+    if (settings_.shellcheck) throw SystemError(msg);
+    if (!shell_warned_ && comm->me == 0) { error->warning(FLERR, "Pair style reaxff/metal: {}", msg); }
+    shell_warned_ = true;
+  }
   reaxmetal::AtomSet a;
   a.nlocal = static_cast<std::size_t>(nlocal);
   a.x.resize(3 * static_cast<std::size_t>(nall));

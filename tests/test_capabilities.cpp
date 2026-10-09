@@ -48,12 +48,11 @@ int main() {
     }
   }
 
-  // The headline rejections from the mission statement must be present and must be errors, not warnings.
-  for (const char* id : {"opt.tabulate"}) {
+  // The former headline rejections (acks2, qtpie, qeq/rel, efield with QEq, tabulate) are all implemented now (CHG-1, tabulate accepted with an analytic evaluation).
+  for (const char* id : {"qeq.acks2", "qeq.qtpie", "qeq.relative", "opt.tabulate", "qeq.efield"}) {
     const Feature* f = find_feature(id);
     RM_CHECK_MSG(f != nullptr, std::string("missing ") + id);
-    if (f) RM_CHECK(f->status == Status::Deferred || f->status == Status::Rejected);
-    if (f) RM_EXPECT_THROW(require_supported(id), UnsupportedFeatureError);
+    if (f) RM_CHECK(f->status == Status::Implemented);
   }
   // Owner decision (M0 approval #8): standard EEM/QEq and LAMMPS-compatible shielded QEq must NOT be rejected.
   for (const char* id : {"qeq.reaxff", "qeq.shielded", "eem.external_cpu_fix", "eem.strict_convergence", "eem.compat_warn_continue"}) {

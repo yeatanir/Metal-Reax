@@ -52,6 +52,7 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     if (key == "checkqeq") p.checkqeq = logical(val, "checkqeq");
     else if (key == "enobonds") p.enobonds = logical(val, "enobonds");
     else if (key == "lgvdw") p.lgvdw = logical(val, "lgvdw");
+    else if (key == "shellcheck") p.shellcheck = logical(val, "shellcheck");
     else if (key == "bonded") {
       if (val != "cpu64" && val != "metal") throw FfieldError("Illegal pair_style reaxff/metal command: bonded must be cpu64 or metal, got '" + val + "'");
       p.bonded = val;
@@ -83,7 +84,9 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     }
     i += 2;
   }
-  if (p.tabulate > 0 || p.control.tabulate > 0) require_supported("opt.tabulate");   // Deferred -> UnsupportedFeatureError
+  if (p.tabulate > 0 || p.control.tabulate > 0)
+    p.notices.push_back("pair_style reaxff/metal: 'tabulate' is accepted but no table is built: the non-bonded terms are evaluated analytically (the stock spline table "
+                        "only approximates them; results differ from a tabulated stock run by its interpolation error)");
   return p;
 }
 

@@ -70,7 +70,7 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `opt.lgvdw` | Implemented | - | `pair_style reaxff lgvdw yes` | |
 | `opt.memory_heuristics` | Ignored | - | `safezone / mincap / minhbonds` | allocation heuristics only; notice logged |
 | `opt.list_blocking` | Ignored | - | `list/blocking` | Kokkos performance option only |
-| `opt.tabulate` | Deferred | - | `tabulate N>0 / tabulate_long_range N>0` | deferred; spline tables change the numbers, analytic evaluation only for now |
+| `opt.tabulate` | Implemented | - | `tabulate N>0 / tabulate_long_range N>0` | tabulate N / tabulate_long_range N are accepted; no table is built, the non-bonded terms are evaluated analytically (the stock spline table approximates them: a tabulated stock run differs by its interpolation error). A notice says so |
 
 ## 5. Charge models
 
@@ -151,6 +151,7 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 | `lammps.plugin_loadable` | Implemented | - | `plugin load <reaxmetal plugin>` | DSO built against the pinned LAMMPS; version-matched |
 | `lammps.extract_chi_eta_gamma` | Implemented | - | `Pair::extract(chi\|eta\|gamma)` | arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value |
 | `qeq.gpu_single_rank` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal builds the matrix on the GPU only with one MPI rank; with several ranks it uses the stock CPU matrix (the pair style itself runs on any number of ranks) |
+| `lammps.hybrid` | Implemented | - | `pair_style hybrid/overlay reaxff ... + other styles` | reaxff/metal as a sub-style of hybrid/overlay (type mapping with NULL entries, forces and energies added to the other styles); HYB-1: charge-implicit ReaxFF + tabulated ZBL example equals stock (cpu64 bit-for-bit at printed precision, metal 2e-5 kcal/mol/atom). Keyword shellcheck no accepts a ghost shell narrower than 2*bond_cut as the stock style does |
 | `lammps.multi_rank` | Implemented | - | `mpirun -np N>1 with reaxff/metal` | ghost atoms whose owner lives on another rank are taken as LAMMPS delivers them (owner-computes rules as the reference); INT-2 vs stock on 58 fixtures with 2 and 4 ranks (cpu64 under C1, metal under C3); 5 184-atom NVT water on 4 ranks agrees with stock |
 | `lammps.newton_off` | Rejected | - | `newton off (newton_pair off)` | forces on ghosts must be reverse-communicated |
 | `lammps.ghost_native_contract` | Implemented | - | `ghost atoms from LAMMPS borders` | adapter A2 builds the owned+ghost view from LAMMPS arrays and verifies ghost = owner + shift (INT-7, 58 fixtures); far list equals LAMMPS' own list row by row |

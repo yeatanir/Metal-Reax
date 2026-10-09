@@ -51,6 +51,7 @@ constexpr std::array kFeatures{
     Feature{"lammps.plugin_loadable", Status::Implemented, "-", "plugin load <reaxmetal plugin>", "DSO built against the pinned LAMMPS; version-matched"},
     Feature{"lammps.extract_chi_eta_gamma", Status::Implemented, "-", "Pair::extract(chi|eta|gamma)", "arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value"},
     Feature{"qeq.gpu_single_rank", Status::Implemented, "-", "(no LAMMPS equivalent)", "fix qeq/reaxff/metal builds the matrix on the GPU only with one MPI rank; with several ranks it uses the stock CPU matrix (the pair style itself runs on any number of ranks)"},
+    Feature{"lammps.hybrid", Status::Implemented, "-", "pair_style hybrid/overlay reaxff ... + other styles", "reaxff/metal as a sub-style of hybrid/overlay (type mapping with NULL entries, forces and energies added to the other styles); HYB-1: charge-implicit ReaxFF + tabulated ZBL example equals stock (cpu64 bit-for-bit at printed precision, metal 2e-5 kcal/mol/atom). Keyword shellcheck no accepts a ghost shell narrower than 2*bond_cut as the stock style does"},
     Feature{"lammps.multi_rank", Status::Implemented, "-", "mpirun -np N>1 with reaxff/metal", "ghost atoms whose owner lives on another rank are taken as LAMMPS delivers them (owner-computes rules as the reference); INT-2 vs stock on 58 fixtures with 2 and 4 ranks (cpu64 under C1, metal under C3); 5 184-atom NVT water on 4 ranks agrees with stock"},
     Feature{"lammps.newton_off", R, "-", "newton off (newton_pair off)", "forces on ghosts must be reverse-communicated"},
     Feature{"lammps.ghost_native_contract", Status::Implemented, "-", "ghost atoms from LAMMPS borders", "adapter A2 builds the owned+ghost view from LAMMPS arrays and verifies ghost = owner + shift (INT-7, 58 fixtures); far list equals LAMMPS' own list row by row"},
@@ -72,7 +73,7 @@ constexpr std::array kFeatures{
     Feature{"opt.lgvdw", Status::Implemented, "-", "pair_style reaxff lgvdw yes", ""},
     Feature{"opt.memory_heuristics", I, "-", "safezone / mincap / minhbonds", "LAMMPS allocation heuristics only"},
     Feature{"opt.list_blocking", I, "-", "list/blocking", "Kokkos performance option only"},
-    Feature{"opt.tabulate", D, "-", "tabulate N>0 / tabulate_long_range N>0", "deferred; spline tables change the numbers, analytic evaluation only for now"},
+    Feature{"opt.tabulate", Status::Implemented, "-", "tabulate N>0 / tabulate_long_range N>0", "tabulate N / tabulate_long_range N are accepted; no table is built, the non-bonded terms are evaluated analytically (the stock spline table approximates them: a tabulated stock run differs by its interpolation error). A notice says so"},
     // ---- charge models ---------------------------------------------------------------------------
     Feature{"qeq.reaxff", Status::Implemented, "-", "fix qeq/reaxff ... reaxff", "stock fix, or fix qeq/reaxff/metal (EEM matrix and matvec on the GPU, stock CG); charges within 1.6e-5 e of stock"},
     Feature{"qeq.pertype_file", Status::Implemented, "-", "fix qeq/reaxff ... <param file>", "per-type chi/eta/gamma from a parameter file instead of the pair style: identical to stock (CHG-1: 3000-atom water example, stock vs plugin, cpu64 and metal)"},

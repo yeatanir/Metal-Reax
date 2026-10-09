@@ -132,7 +132,7 @@ def main():
     gauss = os.path.join(tempfile.mkdtemp(prefix="a1gauss"), "gauss.txt")
     with open(gauss, "w") as gf: gf.write("1 0.5\n2 0.5\n3 0.5\n")
     host("qtpie accepted", None, fixes=(f"fix q all qtpie/reaxff/metal 1 0.0 10.0 1e-6 reaxff {gauss}",))
-    host("tabulate deferred", "opt.tabulate", style_args="NULL tabulate 20", fixes=())
+    host("tabulate accepted (analytic)", None, style_args="NULL tabulate 20")
     host("unknown keyword", "unknown keyword", style_args="NULL frobnicate 1", fixes=())
     host("missing control file", "cannot open ReaxFF control file", style_args="/nonexistent/ctl", fixes=())
     # E4: all checks pass -> explicit refusal from compute

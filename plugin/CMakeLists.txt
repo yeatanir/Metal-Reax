@@ -117,6 +117,17 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
       set_tests_properties(lammps_charge_models_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     endif()
   endif()
+  # HYB-1: pair_style hybrid/overlay with reaxff/metal (charge-implicit ReaxFF + tabulated ZBL), stock vs plugin
+  if(EXISTS "${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/ci-reaxFF/in.ci-reax.CH")
+    add_test(NAME lammps_hybrid COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_hybrid.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --example ${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/ci-reaxFF --backend cpu64)
+    set_tests_properties(lammps_hybrid PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    if(REAXMETAL_ENABLE_METAL)
+      add_test(NAME lammps_hybrid_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_hybrid.py
+               --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --example ${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/ci-reaxFF --backend metal)
+      set_tests_properties(lammps_hybrid_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    endif()
+  endif()
   add_test(NAME lammps_min1_cpu64 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_min.py
            --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
   set_tests_properties(lammps_min1_cpu64 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
