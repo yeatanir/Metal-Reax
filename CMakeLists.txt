@@ -41,15 +41,25 @@ add_library(reaxmetal_core STATIC
   src/core/pins.cpp
   src/core/sha256.cpp
   src/core/system.cpp
+  src/cpu/bonded.cpp
+  src/cpu/nonbonded.cpp
+  src/cpu/bonded_fp32.cpp
+  src/cpu/nonbonded_fp32.cpp
   src/neighbor/neighbor.cpp
+  src/neighbor/nonbonded_device.cpp
+  src/neighbor/qeq_device.cpp
+  src/neighbor/bonded_device.cpp
   src/io/ffield_parser.cpp
   src/io/control_parser.cpp
   src/io/pair_settings.cpp
   src/io/table_dump.cpp)
 set_target_properties(reaxmetal_core PROPERTIES POSITION_INDEPENDENT_CODE ON)  # linked into the LAMMPS plugin (a shared module)
 target_include_directories(reaxmetal_core PUBLIC include)
+target_include_directories(reaxmetal_core PRIVATE ${CMAKE_SOURCE_DIR}/src/metal/shaders)
 target_compile_features(reaxmetal_core PUBLIC cxx_std_20)
 reaxmetal_apply_warnings(reaxmetal_core)
+# the single-precision twin rounds double inputs on purpose
+set_source_files_properties(src/cpu/bonded_fp32.cpp src/cpu/nonbonded_fp32.cpp PROPERTIES COMPILE_OPTIONS "-Wno-conversion;-Wno-float-conversion")
 # Reference-quality FP: no contraction, no fast-math (docs/NUMERICAL_POLICY.md section 2).
 reaxmetal_apply_strict_fp(reaxmetal_core)
 
@@ -59,6 +69,11 @@ set(RM_GEN ${CMAKE_BINARY_DIR}/generated)
 file(MAKE_DIRECTORY ${RM_GEN})
 reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m3_types.h ${RM_GEN}/reaxmetal_m3_types.inc)
 reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m3.metal ${RM_GEN}/reaxmetal_m3_kernels.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m4_types.h ${RM_GEN}/reaxmetal_m4_types.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/include/reaxmetal/terms.hpp ${RM_GEN}/reaxmetal_terms.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m4.metal ${RM_GEN}/reaxmetal_m4_kernels.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m6_types.h ${RM_GEN}/reaxmetal_m6_types.inc)
+reaxmetal_embed_text(${CMAKE_SOURCE_DIR}/src/metal/shaders/reaxmetal_m6.metal ${RM_GEN}/reaxmetal_m6_kernels.inc)
 if(REAXMETAL_ENABLE_METAL)
   enable_language(OBJCXX)
   set(CMAKE_OBJCXX_STANDARD 20)
@@ -90,6 +105,10 @@ reaxmetal_apply_strict_fp(reaxmetal_metal_check)
 add_executable(reaxmetal_neighbor_tool tools/neighbor_tool.cpp)
 target_link_libraries(reaxmetal_neighbor_tool PRIVATE reaxmetal_core)
 reaxmetal_apply_warnings(reaxmetal_neighbor_tool)
+
+add_executable(reaxmetal_energy_tool tools/energy_tool.cpp)
+target_link_libraries(reaxmetal_energy_tool PRIVATE reaxmetal_metal)
+reaxmetal_apply_warnings(reaxmetal_energy_tool)
 
 if(REAXMETAL_BUILD_TESTS)
   enable_testing()

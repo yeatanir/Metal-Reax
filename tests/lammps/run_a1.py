@@ -6,8 +6,8 @@
      (full file order, reversed subset, NULL entries, lower-case symbols, repeated elements);
   E2 the same inputs are accepted/rejected by both, except the documented strict rejection of element pairs without a bond block (Q-12);
   E3 host checks: no charge fix, newton off, no charge attribute, deferred charge models, unsupported options, bad control file;
-  E4 with every check passed the adapter reaches compute() and refuses explicitly (it must never return zero energy);
-  E5 (optional, --mpi-lib/--mpi-plugin) a 2-rank run is refused.
+  E4 with every check passed compute() runs (CPU-64 engine since M4);
+  E5 (optional, --mpi-lmp/--mpi-plugin) a 2-rank run computes (multi-rank is supported since the MPI work).
 usage: run_a1.py --lib <liblammps.so> --plugin <reaxmetaladapterplugin.so> --ffield-dir DIR"""
 import argparse, ctypes, itertools, os, subprocess, sys
 from pathlib import Path
@@ -121,7 +121,7 @@ def main():
         if err is None:
             m.cmd("thermo_style custom step pe"); err = m.cmd("run 0")
         m.close()
-        ok = err is not None and expect in err
+        ok = (err is None) if expect is None else (err is not None and expect in err)
         if not ok: fails.append(f"host check '{name}': expected an error containing {expect!r}, got {err!r}")
         return err
     host("no charge fix", "exactly one of the fix qeq/reaxff", fixes=())
@@ -136,9 +136,11 @@ def main():
     host("unknown keyword", "unknown keyword", style_args="NULL frobnicate 1", fixes=())
     host("missing control file", "cannot open ReaxFF control file", style_args="/nonexistent/ctl", fixes=())
     # E4: all checks pass -> explicit refusal from compute
-    host("compute refuses", "force backend is not implemented")
-    host("checkqeq no needs no fix", "force backend is not implemented", style_args="NULL checkqeq no", fixes=())
-    host("qeq/shielded accepted", "force backend is not implemented", fixes=("fix q all qeq/shielded 1 10.0 1e-6 100 reaxff",))
+    # (since M4 compute() runs the CPU-64 engine: with every check passed the run completes without error)
+    host("compute runs (cpu64)", None)
+    host("checkqeq no needs no fix", None, style_args="NULL checkqeq no", fixes=())
+    host("qeq/shielded accepted", None, fixes=("fix q all qeq/shielded 1 10.0 1e-6 100 reaxff",))
+    host("backend invalid", "backend must be cpu64 or metal", style_args="NULL backend gpu")
     print(f"E3/E4 host checks done; failures so far {len(fails)}")
 
     # ---------------------------------------------------------------- E5 multi-rank
@@ -150,9 +152,9 @@ def main():
         for np_ in (1, 2):
             pr = subprocess.run([*a.mpirun.split(), "-np", str(np_), a.mpi_lmp, "-in", str(d / "in.lmp"), "-log", "none", "-nocite"], cwd=d, env=env, capture_output=True, text=True)
             out = pr.stdout + pr.stderr
-            want = "force backend is not implemented" if np_ == 1 else "single MPI rank only"
+            want = "Loop time of"
             if want not in out: fails.append(f"MPI np={np_}: expected {want!r}; got {out[-200:]!r}")
-        print("E5 multi-rank checked (np=1 reaches compute, np=2 refused)")
+        print("E5 multi-rank checked (np=1 and np=2 reach compute)")
 
     print("RESULT:", "PASS" if not fails else f"FAIL ({len(fails)})")
     for f in fails[:20]: print("  ", f)

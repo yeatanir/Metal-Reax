@@ -45,7 +45,8 @@ struct AtomSet {
   std::vector<double> x;              // 3 * nall, Cartesian
   std::vector<int> type;              // force-field type index (>= 0) or -1 (atom not handled by this style)
   std::vector<std::int64_t> tag;      // LAMMPS atom id; ghosts carry their owner's tag
-  std::vector<std::int32_t> owner;    // owner[i] == i for owned atoms; the owned index of a ghost
+  std::vector<std::int32_t> owner;    // owner[i] == i for owned atoms; the owned index of a ghost (-1 when `distributed`: the owner may live on another rank)
+  bool distributed = false;           // multi-rank host: ghosts are not required to be images of locally owned atoms
   std::vector<std::array<std::int32_t, 3>> shift;  // lattice shift of a ghost relative to its owner ({0,0,0} if owned)
 
   std::size_t nall() const noexcept { return type.size(); }

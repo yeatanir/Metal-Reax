@@ -13,11 +13,8 @@ test fails if this file and the code table disagree):
 | Rejected | Deliberately unsupported (no plan). Requesting it throws `UnsupportedFeatureError` (an error, never a warning). |
 | Ignored | Accepted; has no effect on physics in this engine; a notice is logged. |
 
-**Implemented so far** (tested on the CPU, see VALIDATION.md): `compat.flag_derivation` (M0.5); the force-field/control-file parser rows `ffield.*` and the
-adapter rows `lammps.plugin_loadable`, `lammps.extract_chi_eta_gamma`, `lammps.single_rank_only` (M2); the system-geometry rows `sys.pbc_images`, `sys.triclinic`,
-`sys.nonperiodic`, `lammps.ghost_native_contract`, `lammps.ghost_shell_check`, `dev.neighbor_selfcheck` (M3, CPU side). **Implemented never means "runs on Metal"**: the three
-`metal.*` rows and `backend.metal_fp32` stay Planned until the Apple-machine steps (tools/mac) have been run and recorded.
-No energy term exists yet and `pair_style reaxff/metal` refuses to compute (it never returns zero energy).
+**Implemented so far** (tested, see VALIDATION.md): the force-field/control-file parser rows, the adapter rows, the system-geometry rows (M0.5–M3); **since M4–M6 (this document is checked against the code by `docs_sync`)** all energy terms except vdW type 2 (implemented, but no bundled force field uses it, so untested), the LAMMPS-compat flags, `lammps.pair_style_reaxff_metal` (energies, forces, virial by fdotr; `backend cpu64|metal`), `backend.cpu_fp64`, `backend.metal_fp32`, the three `metal.*` rows (executed on the M5 Max), `opt.lgvdw`, `opt.checkqeq_no` and `eem.external_cpu_fix` (charges come from the stock `fix qeq/reaxff`).
+**Implemented never means fast or complete**: charges are not yet solved by this engine; the barostat and `out.virial` stay Planned until INT-4; per-atom energy/virial requests are refused; performance work (M8) has not started.
 Milestone letters follow the mission statement (M2 parser … M8 optimisation) as re-planned in `ARCHITECTURE_DECISIONS.md` ADR-013
 (M0.5 integration architecture; M7 is now LAMMPS-hosted validation, not a standalone MD engine).
 
@@ -25,21 +22,21 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `term.bond` | Planned | M4 | `ReaxFF::Bonds` | includes terminal-triple-bond stabilisation (ENGINE_SPEC 5.1) |
-| `term.lone_pair` | Planned | M4 | `ReaxFF::Atom_Energy` | includes the C2 correction (ENGINE_SPEC 5.2) |
-| `term.over_under` | Planned | M4 | `ReaxFF::Atom_Energy` | LAMMPS reports over+under merged as `ea` |
-| `term.valence` | Planned | M6 | `ReaxFF::Valence_Angles` | |
-| `term.penalty` | Planned | M6 | `ReaxFF::Valence_Angles` | |
-| `term.coalition` | Planned | M6 | `ReaxFF::Valence_Angles` | 3-body conjugation |
-| `term.torsion` | Planned | M6 | `ReaxFF::Torsion_Angles` | |
-| `term.conjugation` | Planned | M6 | `ReaxFF::Torsion_Angles` | 4-body conjugation |
-| `term.hbond` | Planned | M6 | `ReaxFF::Hydrogen_Bonds` | |
-| `term.vdw.shielded` | Planned | M5 | `vdw_type 1` | derived from ffield contents, not a switch |
-| `term.vdw.inner_wall` | Planned | M5 | `vdw_type 2` | |
-| `term.vdw.shielded_inner_wall` | Planned | M5 | `vdw_type 3` | |
-| `term.vdw.lg_dispersion` | Planned | M5 | `pair_style reaxff lgvdw yes` | needs 5-line atom blocks |
-| `term.coulomb` | Planned | M5 | `ReaxFF::vdW_Coulomb_Energy` | taper + gamma shielding |
-| `term.polarization` | Planned | M5 | `ReaxFF::Compute_Polarization_Energy` | reported by LAMMPS as `eqeq` |
+| `term.bond` | Implemented | - | `ReaxFF::Bonds` | includes terminal-triple-bond stabilisation (ENGINE_SPEC 5.1) |
+| `term.lone_pair` | Implemented | - | `ReaxFF::Atom_Energy` | includes the C2 correction (ENGINE_SPEC 5.2) |
+| `term.over_under` | Implemented | - | `ReaxFF::Atom_Energy` | LAMMPS reports over+under merged as `ea` |
+| `term.valence` | Implemented | - | `ReaxFF::Valence_Angles` | |
+| `term.penalty` | Implemented | - | `ReaxFF::Valence_Angles` | |
+| `term.coalition` | Implemented | - | `ReaxFF::Valence_Angles` | 3-body conjugation |
+| `term.torsion` | Implemented | - | `ReaxFF::Torsion_Angles` | |
+| `term.conjugation` | Implemented | - | `ReaxFF::Torsion_Angles` | 4-body conjugation |
+| `term.hbond` | Implemented | - | `ReaxFF::Hydrogen_Bonds` | |
+| `term.vdw.shielded` | Implemented | - | `vdw_type 1` | derived from ffield contents, not a switch |
+| `term.vdw.inner_wall` | Implemented | - | `vdw_type 2` | Morse + inner wall, no shielding; VAR-1: a ffield edited to select it matches stock in-LAMMPS (cpu64 and metal), 6 fixtures |
+| `term.vdw.shielded_inner_wall` | Implemented | - | `vdw_type 3` | |
+| `term.vdw.lg_dispersion` | Implemented | - | `pair_style reaxff lgvdw yes` | needs 5-line atom blocks |
+| `term.coulomb` | Implemented | - | `ReaxFF::vdW_Coulomb_Energy` | taper + gamma shielding |
+| `term.polarization` | Implemented | - | `ReaxFF::Compute_Polarization_Energy` | reported by LAMMPS as `eqeq` |
 
 ## 2. Parameter files
 
@@ -58,19 +55,19 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `compat.c2_correction` | Planned | M4 | `strcmp(name,"C") in Atom_Energy` | per-type flag derived at load time; kernels never see element names |
-| `compat.triple_bond_stabilisation` | Planned | M4 | `gp.l[37]==2 or mass pair 12.0000/15.9990` | per-pair flag |
-| `compat.light_element_split` | Planned | M4 | `mass > 21 / mass < 21 tests` | per-type flag |
-| `compat.hbond_donor_image_exclusion` | Planned | M4 | `orig_id[i] != orig_id[k] in Hydrogen_Bonds` | reproduce by default (Q-32): acceptor that is a periodic image of the donor is dropped; identity-based variant needs owner decision |
-| `compat.ovun_heavy_neighbor_force` | Planned | M6 | `dDelta_lp[j] where the energy uses Delta_lp_temp[j] (Atom_Energy force loop)` | reproduce LAMMPS forces by default (Q-34: analytic force != gradient of the reported energy for heavy atoms with pi bonds); corrected variant is opt-in |
+| `compat.c2_correction` | Implemented | - | `strcmp(name,"C") in Atom_Energy` | per-type flag derived at load time; kernels never see element names |
+| `compat.triple_bond_stabilisation` | Implemented | - | `gp.l[37]==2 or mass pair 12.0000/15.9990` | per-pair flag |
+| `compat.light_element_split` | Implemented | - | `mass > 21 / mass < 21 tests` | per-type flag |
+| `compat.hbond_donor_image_exclusion` | Implemented | - | `orig_id[i] != orig_id[k] in Hydrogen_Bonds` | reproduce by default (Q-32): acceptor that is a periodic image of the donor is dropped; identity-based variant needs owner decision |
+| `compat.ovun_heavy_neighbor_force` | Implemented | - | `dDelta_lp[j] where the energy uses Delta_lp_temp[j] (Atom_Energy force loop)` | reproduce LAMMPS forces by default (Q-34: analytic force != gradient of the reported energy for heavy atoms with pi bonds); corrected variant is opt-in |
 
 ## 4. `pair_style reaxff` options
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `opt.enobonds` | Planned | M4 | `pair_style reaxff enobonds yes\|no` | default yes |
-| `opt.checkqeq_no` | Planned | M5 | `pair_style reaxff checkqeq no` | fixed input charges |
-| `opt.lgvdw` | Planned | M5 | `pair_style reaxff lgvdw yes` | |
+| `opt.enobonds` | Implemented | - | `pair_style reaxff enobonds yes|no` | enobonds no matches stock in-LAMMPS on 7 fixtures incl. isolated atoms (VAR-1, cpu64 and metal) |
+| `opt.checkqeq_no` | Implemented | - | `pair_style reaxff checkqeq no` | fixed input charges |
+| `opt.lgvdw` | Implemented | - | `pair_style reaxff lgvdw yes` | |
 | `opt.memory_heuristics` | Ignored | - | `safezone / mincap / minhbonds` | allocation heuristics only; notice logged |
 | `opt.list_blocking` | Ignored | - | `list/blocking` | Kokkos performance option only |
 | `opt.tabulate` | Deferred | - | `tabulate N>0 / tabulate_long_range N>0` | deferred; spline tables change the numbers, analytic evaluation only for now |
@@ -79,7 +76,7 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `qeq.reaxff` | Planned | M5 | `fix qeq/reaxff ... reaxff` | standard EEM as implemented by fix qeq/reaxff (ENGINE_SPEC 7) |
+| `qeq.reaxff` | Implemented | - | `fix qeq/reaxff ... reaxff` | stock fix, or fix qeq/reaxff/metal (EEM matrix and matvec on the GPU, stock CG); charges within 1.6e-5 e of stock |
 | `qeq.pertype_file` | Planned | M5 | `fix qeq/reaxff ... <param file>` | per-type chi/eta/gamma override |
 | `qeq.shielded` | Planned | M5 | `fix qeq/shielded` | LAMMPS-compatible shielded charge equilibration; same kernel as qeq/reaxff (ENGINE_SPEC 7.2); works through extract() today |
 | `qeq.acks2` | Deferred | - | `fix acks2/reaxff` | deferred; different charge model |
@@ -102,11 +99,11 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `out.energy_breakdown` | Planned | M4 | `compute pair reaxff (pvector[14])` | mapping in `energy_terms.hpp`, tested |
-| `out.forces` | Planned | M6 | `atom->f` | analytical |
-| `out.charges` | Planned | M5 | `atom->q` | |
-| `out.virial` | Planned | M6 | `virial_fdotr / v_tally*` | needed for pressure |
-| `out.per_atom_energy` | Planned | M7 | `compute pe/atom with reaxff` | adapter-level per-atom energy/virial; until then requests are refused |
+| `out.energy_breakdown` | Implemented | - | `compute pair reaxff (pvector[14])` | mapping in `energy_terms.hpp`, tested |
+| `out.forces` | Implemented | - | `atom->f` | analytical |
+| `out.charges` | Implemented | - | `atom->q` | charges are LAMMPS atom->q set by the stock fix qeq/reaxff or by fix qeq/reaxff/metal; compared with stock in every INT-2 run |
+| `out.virial` | Implemented | - | `virial_fdotr / v_tally*` | global virial by virial_fdotr (INT-2, NPT); per-atom virial by the CPU-64 tallies of the reference (PERATOM-1) |
+| `out.per_atom_energy` | Implemented | - | `compute pe/atom, stress/atom with reaxff` | per-atom energy and virial equal stock on 58 fixtures (PERATOM-1, 5e-10 relative); produced by the CPU-64 engine, so a step on which a compute requests them is evaluated by CPU-64 even with backend metal |
 | `out.bond_analysis` | Deferred | - | `fix reaxff/bonds, fix reaxff/species` | deferred; LAMMPS analysis tools dynamic_cast to PairReaxFF and refuse other styles |
 
 ## 8. Dynamics
@@ -115,19 +112,19 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 |---|---|---|---|---|
 | `md.nve` | Rejected | - | `fix nve` | standalone MD is out of scope: LAMMPS provides integrators |
 | `md.thermostat` | Rejected | - | `fix nvt / langevin` | standalone MD is out of scope: LAMMPS provides thermostats |
-| `md.barostat` | Planned | M6 | `fix npt` | enabled once out.virial is validated; until then pressure-controlled runs are refused |
+| `md.barostat` | Implemented | - | `fix npt` | NPT (Nose-Hoover, iso) with Metal + GPU QEq: <T>, <V>, <P> agree with stock on a 648-atom water box over 40 000 steps (INT-4) |
 | `min.minimize` | Rejected | - | `minimize` | standalone minimiser is out of scope: LAMMPS provides minimize |
 
 ## 9. Backends
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `backend.cpu_fp64` | Planned | M4 | `-` | reference backend |
-| `backend.cpu_fp32_twin` | Planned | M4 | `-` | same term functions in float; calibrates GPU tolerance (NUMERICAL_POLICY 5) |
-| `backend.metal_fp32` | Planned | M3 | `-` | Apple GPUs have no FP64 |
-| `metal.runtime_compile` | Planned | M3 | `(no LAMMPS equivalent)` | shaders compiled at run time from source (no Xcode / metal compiler); written, NOT built or run on Apple hardware (MET-1) |
-| `metal.device_neighbor_rows` | Planned | M3 | `(no LAMMPS equivalent)` | device far-neighbor rows over owned+ghost atoms with grow-and-retry; kernel logic verified by CPU emulation only (NBR-1 Metal part) |
-| `metal.deterministic_reduction` | Planned | M3 | `(no LAMMPS equivalent)` | fixed-order float reductions, bitwise equal to the CPU twin; emulated only (FORCE-2 Metal part) |
+| `backend.cpu_fp64` | Implemented | - | `-` | reference backend |
+| `backend.cpu_fp32_twin` | Implemented | - | `-` | the CPU engine compiled with float (Real = float, term values in float, energy sums in double); FP32 error envelope vs CPU-64 on 58 fixtures: E/atom 6e-5, force max 4.7e-3, RMS 2.2e-3 (FP32-1); Metal stays within it |
+| `backend.metal_fp32` | Implemented | - | `-` | Apple GPUs have no FP64 |
+| `metal.runtime_compile` | Implemented | - | `(no LAMMPS equivalent)` | shaders compiled at run time from source (no Xcode / metal compiler); written, NOT built or run on Apple hardware (MET-1) |
+| `metal.device_neighbor_rows` | Implemented | - | `(no LAMMPS equivalent)` | device far-neighbor rows over owned+ghost atoms with grow-and-retry; kernel logic verified by CPU emulation only (NBR-1 Metal part) |
+| `metal.deterministic_reduction` | Implemented | - | `(no LAMMPS equivalent)` | fixed-order float reductions, bitwise equal to the CPU twin; emulated only (FORCE-2 Metal part) |
 | `backend.metal_atomic_accum` | Planned | M8 | `-` | benchmark-only option; default path is deterministic |
 | `backend.metal_batching` | Planned | M8 | `-` | |
 | `backend.fp16` | Rejected | - | `-` | |
@@ -150,14 +147,14 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `lammps.pair_style_reaxff_metal` | Planned | M4 | `pair_style reaxff/metal` | A1 exists (parse, extract, host checks; `compute()` refuses explicitly); planned = computes energies/forces |
+| `lammps.pair_style_reaxff_metal` | Implemented | - | `pair_style reaxff/metal` | computes energies, forces, the virial and per-atom energy/virial (backend cpu64 | metal); INT-2 vs stock pair reaxff on 58 fixtures |
 | `lammps.plugin_loadable` | Implemented | - | `plugin load <reaxmetal plugin>` | DSO built against the pinned LAMMPS; version-matched |
 | `lammps.extract_chi_eta_gamma` | Implemented | - | `Pair::extract(chi\|eta\|gamma)` | arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value |
-| `lammps.single_rank_only` | Implemented | - | `comm->nprocs == 1` | multi-rank runs fail explicitly (checked in init_style) |
-| `lammps.multi_rank` | Deferred | - | `mpirun -np N>1 with reaxff/metal` | deferred; needs distributed ghost/QEq handling |
+| `qeq.gpu_single_rank` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal builds the matrix on the GPU only with one MPI rank; with several ranks it uses the stock CPU matrix (the pair style itself runs on any number of ranks) |
+| `lammps.multi_rank` | Implemented | - | `mpirun -np N>1 with reaxff/metal` | ghost atoms whose owner lives on another rank are taken as LAMMPS delivers them (owner-computes rules as the reference); INT-2 vs stock on 58 fixtures with 2 and 4 ranks (cpu64 under C1, metal under C3); 5 184-atom NVT water on 4 ranks agrees with stock |
 | `lammps.newton_off` | Rejected | - | `newton off (newton_pair off)` | forces on ghosts must be reverse-communicated |
 | `lammps.ghost_native_contract` | Implemented | - | `ghost atoms from LAMMPS borders` | adapter A2 builds the owned+ghost view from LAMMPS arrays and verifies ghost = owner + shift (INT-7, 58 fixtures); far list equals LAMMPS' own list row by row |
-| `lammps.virial_fdotr` | Planned | M6 | `Pair::virial_fdotr_compute` | global virial/pressure from forces on owned+ghost atoms |
+| `lammps.virial_fdotr` | Implemented | - | `Pair::virial_fdotr_compute` | global virial/pressure from forces on owned+ghost atoms; pressure equals stock pair reaxff in INT-2 (cpu64 1e-10, metal 2.9e-4 relative); NPT water 40 000 steps agrees with stock |
 | `lammps.ghost_shell_check` | Implemented | - | `(reference only warns, pair_reaxff.cpp:372-375)` | ghost shell < max(nonb_cut, hbond_cut, 2*bond_cut) is an error (INT-7 negative case) |
 | `dev.neighbor_selfcheck` | Implemented | - | `(development aid)` | pair_style keyword reaxmetal_selfcheck yes: verify the host view and far list inside LAMMPS, then refuse to compute |
 
@@ -168,11 +165,11 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `eem.external_cpu_fix` | Planned | M4 | `fix qeq/reaxff \| fix qeq/shielded (stock CPU)` | extract() half verified in M2 (EEM-3); the stock fix drives q once `compute()` exists |
-| `eem.charge_verification` | Planned | M5 | `(no LAMMPS equivalent)` | adapter checks the EEM residual so strictness holds with the stock fix |
-| `eem.taper_within_ghost_shell` | Planned | M5 | `(no LAMMPS equivalent)` | error if the QEq taper radius exceeds the ghost shell: the stock fix silently truncates (ENGINE_SPEC Q-35) |
-| `eem.strict_convergence` | Planned | M5 | `(no LAMMPS equivalent)` | default: non-convergence is an error/status, never silently accepted |
-| `eem.compat_warn_continue` | Planned | M5 | `fix qeq/reaxff default (warn and continue)` | explicit opt-in only |
-| `eem.gpu_resident` | Planned | M5 | `(no LAMMPS equivalent)` | GPU-resident EEM solve, subject to numerical validation |
+| `eem.external_cpu_fix` | Implemented | - | `fix qeq/reaxff \| fix qeq/shielded (stock CPU)` | extract() half verified in M2 (EEM-3); the stock fix drives q once `compute()` exists |
+| `eem.charge_verification` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal ... verify <eV>: after every solve max_i |(H q)_i + chi_i - mu| is evaluated with the matrix of the solve and an error is raised above <eV> (EEM-1; sees the FP32 matrix error: 1e-7 eV fails on Metal, passes on the double CPU matrix) |
+| `eem.taper_within_ghost_shell` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal ... strict: error if the taper radius exceeds the ghost cutoff (stock silently truncates the matrix, Q-35); without strict the stock behaviour is kept (EEM-1) |
+| `eem.strict_convergence` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal ... strict: CG non-convergence is an error with the residual and the step (EEM-1). Opt-in keyword, not the default, so that the default stays comparable with the stock fix |
+| `eem.compat_warn_continue` | Implemented | - | `fix qeq/reaxff default (warn and continue)` | the default of fix qeq/reaxff/metal without the keyword strict: warn and continue exactly like the stock fix (EEM-1) |
+| `eem.gpu_resident` | Implemented | - | `(no LAMMPS equivalent)` | fix qeq/reaxff/metal ... resident: matrix and residual in double-single arithmetic on the GPU, correction solves by an FP32 preconditioned CG that never leaves the device (mixed-precision refinement); charges equal the stock fix's to 1e-10 e (INT-2). Single rank. Speed: neutral to ~20% faster than the host-CG mode at 5k atoms, neutral at 24k, slower at 66k (measured on a loaded machine) |
 | `eem.net_charge_nonzero` | Deferred | - | `non-neutral fix group in fix qeq/reaxff` | LAMMPS imposes sum(q)=0; non-zero total charge not supported |
 | `compat.flag_derivation` | Implemented | - | `compat predicates (ENGINE_SPEC Q-06)` | exact upstream predicates, boundary-tested (tests/test_compat_flags.cpp) |

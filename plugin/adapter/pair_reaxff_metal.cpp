@@ -18,11 +18,20 @@
 #include "utils.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <unordered_map>
 
+#include "reaxmetal/bonded.hpp"
+#include "reaxmetal/bonded_device.hpp"
+#include "reaxmetal/metal_backend.hpp"
+#include "reaxmetal/nonbonded_device.hpp"
 #include "reaxmetal/capabilities.hpp"
+#include "reaxmetal/energy_terms.hpp"
+#include "reaxmetal/nonbonded.hpp"
 
 using namespace LAMMPS_NS;
 
@@ -40,8 +49,20 @@ PairReaxFFMetal::PairReaxFFMetal(LAMMPS *lmp) : Pair(lmp)
   for (int i = 0; i < nextra; ++i) pvector[i] = 0.0;
 }
 
+void PairReaxFFMetal::prof(const char *name, double seconds)
+{
+  for (auto &e : profile_)
+    if (e.first == name) { e.second += seconds; return; }
+  profile_.emplace_back(name, seconds);
+}
+
 PairReaxFFMetal::~PairReaxFFMetal()
 {
+  if (std::getenv("REAXMETAL_PROFILE") && !profile_.empty()) {
+    std::fprintf(stderr, "ReaxMetal profile (seconds, whole run):");
+    for (const auto &e : profile_) std::fprintf(stderr, " %s=%.4f", e.first.c_str(), e.second);
+    std::fprintf(stderr, "\n");
+  }
   delete[] pvector;
   if (allocated) {
     memory->destroy(setflag);
@@ -141,7 +162,6 @@ void PairReaxFFMetal::init_style()
   if (!atom->q_flag) error->all(FLERR, "Pair style reaxff requires atom attribute q");
   if (atom->tag_enable == 0) error->all(FLERR, "Pair style reaxff requires atom IDs");
   if (force->newton_pair == 0) error->all(FLERR, "Pair style reaxff requires newton pair on");
-  if (comm->nprocs != 1) error->all(FLERR, "Pair style reaxff/metal supports a single MPI rank only");
 
   // charge fix: standard EEM only (fix qeq/reaxff or fix qeq/shielded); the other ReaxFF charge models are Deferred
   const std::size_t acks2 = modify->get_fix_by_style("^acks2/reax").size();
@@ -214,6 +234,7 @@ reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) con
   a.type.resize(static_cast<std::size_t>(nall));
   a.tag.resize(static_cast<std::size_t>(nall));
   a.owner.resize(static_cast<std::size_t>(nall));
+  a.distributed = comm->nprocs > 1;
   a.shift.assign(static_cast<std::size_t>(nall), {0, 0, 0});
   std::unordered_map<tagint, int> owned_by_tag;
   owned_by_tag.reserve(static_cast<std::size_t>(nlocal) * 2);
@@ -228,6 +249,7 @@ reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) con
   }
   for (int g = nlocal; g < nall; ++g) {
     const auto sg = static_cast<std::size_t>(g);
+    if (a.distributed) { a.owner[sg] = -1; continue; }   // multi-rank: the owner may be on another rank
     const auto it = owned_by_tag.find(atom->tag[g]);
     if (it == owned_by_tag.end()) throw SystemError("ghost " + std::to_string(g) + " has no owned atom with id " + std::to_string(atom->tag[g]));
     a.owner[sg] = it->second;
@@ -240,6 +262,39 @@ reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) con
   }
   a.validate(box, 1e-8);   // ghost == owner + lattice shift, same tag/type (the contract LAMMPS_INTEGRATION section 4 measured)
   return a;
+}
+
+const NbView &PairReaxFFMetal::nb_view()
+{
+  using namespace reaxmetal;
+  const std::size_t nall = static_cast<std::size_t>(atom->nlocal + atom->nghost);
+  std::vector<double> key;
+  key.reserve(3 * nall + 8);
+  key.push_back(static_cast<double>(atom->nlocal));
+  key.push_back(static_cast<double>(atom->nghost));
+  for (int d = 0; d < 3; ++d) { key.push_back(domain->boxlo[d]); key.push_back(domain->boxhi[d]); }
+  for (std::size_t i = 0; i < nall; ++i) for (int d = 0; d < 3; ++d) key.push_back(atom->x[i][d]);
+  if (view_ && key == view_key_) return *view_;
+  auto v = std::make_unique<NbView>();
+  auto t0 = std::chrono::steady_clock::now();
+  auto lap = [&](const char *name) { const auto t1 = std::chrono::steady_clock::now(); prof(name, std::chrono::duration<double>(t1 - t0).count()); t0 = t1; };
+  v->box = host_box();
+  v->a = host_atom_set(v->box);
+  lap("view_atomset");
+  v->cut = cutoffs();
+  v->list = make_device_list_input(v->a, v->box, v->cut);
+  lap("view_binning");
+  v->rows = std::make_shared<const FarRowsF32>(metal_context().far_rows(v->list));
+  lap("view_far_rows");
+  view_ = std::move(v);
+  view_key_ = std::move(key);
+  return *view_;
+}
+
+reaxmetal::mtl::Context &PairReaxFFMetal::metal_context()
+{
+  if (!ctx_) ctx_ = std::make_unique<reaxmetal::mtl::Context>();
+  return *ctx_;
 }
 
 std::string PairReaxFFMetal::selfcheck_summary(bool &ok)
@@ -278,10 +333,13 @@ std::string PairReaxFFMetal::selfcheck_summary(bool &ok)
          " vdw_self=" + std::to_string(pc.self) + " comm_cutoff=" + std::to_string(comm->get_comm_cutoff());
 }
 
-void PairReaxFFMetal::compute(int, int)
+void PairReaxFFMetal::compute(int eflag, int vflag)
 {
+  ev_init(eflag, vflag);
   std::string selfcheck;
   if (settings_.selfcheck) {
+    // development aid (A2): verify the host view and far list against LAMMPS' own list, report through the error text and stop (the
+    // C-library harness reads the summary from the message)
     bool ok = false;
     std::string failure;
     try {
@@ -291,10 +349,92 @@ void PairReaxFFMetal::compute(int, int)
     }
     if (!failure.empty()) error->all(FLERR, "ReaxMetal A2 self-check could not run: {}", failure);
     if (!ok) error->all(FLERR, "{}", selfcheck);
-    selfcheck += "; ";
+    error->all(FLERR, "{}; self-check mode stops here (remove reaxmetal_selfcheck to compute)", selfcheck);
   }
-  error->all(FLERR,
-             "{}Pair style reaxff/metal: the force backend is not implemented yet (milestone M4). This adapter (A1/A2, milestones M2/M3) "
-             "provides parsing, pair_coeff mapping, extract(), host checks and the ghost-native host view only; it never returns zero energies or forces.",
-             selfcheck);
+  // Per-atom energy / virial need the reference's term-by-term tallies, which only the CPU-64 engine reproduces: on a step where a compute asks
+  // for them, that step is evaluated by the CPU-64 engine even with 'backend metal' (energies and forces of that step are then CPU-64 ones).
+  const bool per_atom = eflag_atom || vflag_atom;
+  const bool use_metal = settings_.backend == "metal" && !per_atom;
+  if (use_metal && !reaxmetal::mtl::compiled_with_metal())
+    error->all(FLERR, "Pair style reaxff/metal: backend metal requested but this plugin was built without Metal (needs macOS and -DREAXMETAL_ENABLE_METAL=ON); use 'backend cpu64'");
+
+  using namespace reaxmetal;
+  reaxmetal::BondedResult br;
+  reaxmetal::NonbondedResult nr;
+  AtomSet a;
+  using clk = std::chrono::steady_clock;
+  auto t0 = clk::now();
+  auto lap = [&](const char *name) { const auto t1 = clk::now(); prof(name, std::chrono::duration<double>(t1 - t0).count()); t0 = t1; };
+  try {
+    const NbView *view = use_metal ? &nb_view() : nullptr;
+    const Box box = view ? view->box : host_box();
+    a = view ? view->a : host_atom_set(box);
+    lap("host_view");
+    const NeighborCutoffs cut = cutoffs();
+    std::vector<double> q(a.nall());   // per atom: ghost charges are the ones LAMMPS communicated (as the reference reads them)
+    for (std::size_t i = 0; i < a.nall(); ++i) q[i] = atom->q[i];
+    BondedOptions bo;
+    bo.enobonds = settings_.enobonds;
+    bo.per_atom = per_atom;
+    NonbondedOptions no;
+    no.lgvdw = settings_.lgvdw;
+    no.per_atom = per_atom;
+    if (use_metal) {
+      // FP32 on the GPU (deterministic, no atomics); bookkeeping and the final sums in FP64 on the host. Charges come from the stock charge fix.
+      metal_context();
+      if (settings_.bonded == "cpu64" || std::getenv("REAXMETAL_DEBUG_CPU_BONDED")) {   // 'bonded cpu64': the bond-order terms in double on the host
+        const FarList far_exact = far_list_from_rows(a, cut, *view->rows);
+        lap("far_from_rows");
+        br = compute_bonded_core(*ff_, settings_.control, a, far_exact, bo);
+        lap("bonded_cpu64");
+      } else {
+      const BondedDeviceInput bin = make_bonded_device_input(*ff_, settings_.control, a, box, bo, &view->list);
+      lap("bonded_pack");
+      const BondedDeviceOutput bout = ctx_->bonded(bin);
+      lap("bonded_device");
+      br = finish_bonded(bout, a.nall());
+      }
+      if (std::getenv("REAXMETAL_DEBUG_CPU_NB")) {   // diagnostic only: nonbonded in FP64 on the host, to attribute FP32 force noise
+        nr = compute_nonbonded_core(*ff_, cut, a, build_far_list(a, cut), q, no);
+      } else {
+      const NonbondedDeviceInput nin = make_nonbonded_device_input(*ff_, cut, a, box, q, no, [&](const DeviceListInput &) { return FarRowsF32{}; }, &view->list, view->rows);
+      lap("nonbonded_pack_rows");
+      const NonbondedDeviceOutput nout = ctx_->nonbonded(nin);
+      lap("nonbonded_device");
+      nr = finish_nonbonded(*ff_, a, q, nout);
+      }
+      lap("finish");
+    } else {
+      const FarList far = build_far_list(a, cut);
+      br = compute_bonded_core(*ff_, settings_.control, a, far, bo);
+      nr = compute_nonbonded_core(*ff_, cut, a, far, q, no);
+    }
+  } catch (const std::exception &e) {
+    error->all(FLERR, "Pair style reaxff/metal: {}", e.what());
+  }
+
+  // forces: the engine returns gradients (dE/dx) for owned and ghost atoms; LAMMPS folds the ghost forces onto their owners
+  double **f = atom->f;
+  const std::size_t nall = a.nall();
+  for (std::size_t i = 0; i < nall; ++i)
+    for (std::size_t c = 0; c < 3; ++c) f[i][c] -= br.grad[3 * i + c] + nr.grad[3 * i + c];
+
+  if (per_atom) {
+    for (std::size_t i = 0; i < nall; ++i) {
+      if (eflag_atom) eatom[i] += br.eatom[i] + nr.eatom[i];
+      if (vflag_atom)
+        for (std::size_t c = 0; c < 6; ++c) vatom[i][c] += br.vatom[i][c] + nr.vatom[i][c];
+    }
+  }
+
+  EnergyBreakdown e;
+  for (std::size_t t = 0; t < kEnergyTermCount; ++t) e.e[t] = br.e.e[t] + nr.e.e[t];
+  if (eflag_global) {
+    const auto pv = to_lammps_pvector(e);
+    for (std::size_t k = 0; k < kPvectorSize; ++k) pvector[k] = pv[k];
+    eng_vdwl += e[EnergyTerm::Bond] + e[EnergyTerm::Over] + e[EnergyTerm::Under] + e[EnergyTerm::LonePair] + e[EnergyTerm::Valence] +
+                e[EnergyTerm::Penalty] + e[EnergyTerm::Coalition] + e[EnergyTerm::HBond] + e[EnergyTerm::Torsion] + e[EnergyTerm::Conjugation] + e[EnergyTerm::VdW];
+    eng_coul += e[EnergyTerm::Coulomb] + e[EnergyTerm::Polarization];
+  }
+  if (vflag_fdotr) virial_fdotr_compute();
 }

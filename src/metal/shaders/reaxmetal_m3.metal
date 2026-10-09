@@ -90,6 +90,11 @@ kernel void rm_far_rows(device const float* x [[buffer(0)]],
     }
   }
   count[i] = n;
+  // unused tail of the row: fixed bytes (the host and the tests rely on entries >= min(count, cap) reading -1 / 0)
+  for (uint e = (n < p.cap) ? n : p.cap; e < p.cap; ++e) {
+    nbr[i * p.cap + e] = -1;
+    r2[i * p.cap + e] = 0.0f;
+  }
 }
 
 // ---- FORCE-2: deterministic reductions -------------------------------------------------------------------------------

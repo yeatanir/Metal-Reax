@@ -17,10 +17,20 @@
 #include <vector>
 
 #include "reaxmetal/forcefield.hpp"
+#include "reaxmetal/metal_backend.hpp"
 #include "reaxmetal/neighbor.hpp"
 #include "reaxmetal/pair_settings.hpp"
 
 namespace LAMMPS_NS {
+
+// The host view, device list and far rows of the current positions, built once and shared by the pair style and the GPU charge fix
+struct NbView {
+  reaxmetal::Box box;
+  reaxmetal::AtomSet a;
+  reaxmetal::NeighborCutoffs cut;
+  reaxmetal::DeviceListInput list;
+  std::shared_ptr<const reaxmetal::FarRowsF32> rows;
+};
 
 class PairReaxFFMetal : public Pair {
  public:
@@ -34,20 +44,31 @@ class PairReaxFFMetal : public Pair {
   void *extract(const char *, int &) override;
   void init_list(int, class NeighList *) override;
 
+  // used by fix qeq/reaxff/metal (same plugin): the Metal context and the ghost-native host view
+  bool uses_metal() const { return settings_.backend == "metal"; }
+  reaxmetal::mtl::Context &metal_context();
+  reaxmetal::NeighborCutoffs cutoffs() const;
+  reaxmetal::Box host_box() const;
+  reaxmetal::AtomSet host_atom_set(const reaxmetal::Box &box) const;
+  // rebuilt only when the positions, box or atom counts differ from the cached ones (backend metal only)
+  const NbView &nb_view();
+
  protected:
+  std::unique_ptr<NbView> view_;
+  std::vector<double> view_key_;
   reaxmetal::PairSettings settings_;
   std::unique_ptr<reaxmetal::ForceField> ff_;
   std::vector<int> map_;                       // LAMMPS type (1..ntypes) -> force field element index, -1 = NULL
   std::vector<double> chi_, eta_, gamma_;      // extract() arrays, index 0..ntypes (index 0 unused)
   double cutmax_ = 0.0;
+  std::unique_ptr<reaxmetal::mtl::Context> ctx_;
+  std::vector<std::pair<std::string, double>> profile_;   // REAXMETAL_PROFILE=1: accumulated wall seconds per phase of compute(), printed at destruction
+  void prof(const char *name, double seconds);   // Metal device context (backend metal), created on first use
   void allocate();
 
   // ---- A2 (M3): the ghost-native view of the host data (LAMMPS_INTEGRATION section 4, rules C1-C3, C10) ----
-  reaxmetal::NeighborCutoffs cutoffs() const;
-  reaxmetal::Box host_box() const;
-  // owned atoms [0,nlocal) then ghosts, exactly in LAMMPS' order; throws reaxmetal::SystemError when the host data violate the
+  // host_atom_set: owned atoms [0,nlocal) then ghosts, exactly in LAMMPS' order; throws reaxmetal::SystemError when the host data violate the
   // contract (a ghost that is not owner + lattice shift, duplicate tags among owned atoms, a ghost shell narrower than required)
-  reaxmetal::AtomSet host_atom_set(const reaxmetal::Box &box) const;
   // builds the engine's far list for that view and compares it row by row with LAMMPS' own half/newton-off/ghost list
   std::string selfcheck_summary(bool &ok);
 };

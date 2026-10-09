@@ -4,10 +4,12 @@
 #include "lammpsplugin.h"
 #include "version.h"
 #include "pair_reaxff_metal.h"
+#include "fix_qeq_reaxff_metal.h"
 
 using namespace LAMMPS_NS;
 
 static Pair *creator(LAMMPS *lmp) { return new PairReaxFFMetal(lmp); }
+static Fix *fixcreator(LAMMPS *lmp, int narg, char **arg) { return new FixQEqReaxFFMetal(lmp, narg, arg); }
 
 extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc)
 {
@@ -21,4 +23,14 @@ extern "C" void lammpsplugin_init(void *lmp, void *handle, void *regfunc)
   plugin.creator.v1 = (lammpsplugin_factory1 *) &creator;
   plugin.handle = handle;
   (*register_plugin)(&plugin, lmp);
+
+  lammpsplugin_t qeq;
+  qeq.version = LAMMPS_VERSION;
+  qeq.style = "fix";
+  qeq.name = "qeq/reaxff/metal";
+  qeq.info = "ReaxMetal charge equilibration: EEM matrix and matvec on the Metal GPU, stock CG";
+  qeq.author = "ReaxMetal project";
+  qeq.creator.v2 = (lammpsplugin_factory2 *) &fixcreator;
+  qeq.handle = handle;
+  (*register_plugin)(&qeq, lmp);
 }

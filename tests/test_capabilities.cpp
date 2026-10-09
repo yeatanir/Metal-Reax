@@ -61,13 +61,13 @@ int main() {
     RM_CHECK_MSG(f != nullptr, std::string("missing ") + id);
     if (f) RM_CHECK(f->status == Status::Planned || f->status == Status::Implemented);
   }
-  // Barostat is gated on virial support, not forbidden: it must be Planned and tied to the virial feature's milestone.
-  RM_CHECK(find_feature("md.barostat") && find_feature("md.barostat")->status == Status::Planned);
-  RM_CHECK(find_feature("lammps.virial_fdotr") && find_feature("lammps.virial_fdotr")->status == Status::Planned);
+  // Barostat is gated on virial support, not forbidden: it may be Implemented only together with the virial feature (INT-2 pressure + INT-4 NPT).
+  RM_CHECK(find_feature("md.barostat") && find_feature("lammps.virial_fdotr"));
+  RM_CHECK(find_feature("md.barostat")->status == find_feature("lammps.virial_fdotr")->status);
   RM_CHECK(find_feature("md.barostat")->milestone == find_feature("lammps.virial_fdotr")->milestone);
-  // Multi-rank must be an explicit refusal, single-rank the supported path.
-  RM_CHECK(find_feature("lammps.multi_rank") && find_feature("lammps.multi_rank")->status == Status::Deferred);
-  RM_CHECK(find_feature("lammps.single_rank_only") != nullptr);
+  // Multi-rank is supported (INT-2 with 2 and 4 ranks); only the GPU charge matrix is limited to one rank.
+  RM_CHECK(find_feature("lammps.multi_rank") && find_feature("lammps.multi_rank")->status == Status::Implemented);
+  RM_CHECK(find_feature("qeq.gpu_single_rank") != nullptr);
   // Every one of the 13 energy terms must be represented by a term.* feature (rule 5).
   for (const char* id : {"term.bond", "term.lone_pair", "term.over_under", "term.valence", "term.penalty",
                          "term.coalition", "term.torsion", "term.conjugation", "term.hbond", "term.coulomb",

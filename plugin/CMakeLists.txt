@@ -8,6 +8,9 @@ if(NOT REAXMETAL_LAMMPS_SOURCE_DIR OR NOT EXISTS "${REAXMETAL_LAMMPS_SOURCE_DIR}
   message(FATAL_ERROR "Set REAXMETAL_LAMMPS_SOURCE_DIR to the 'src' directory of the pinned LAMMPS tree")
 endif()
 option(REAXMETAL_LAMMPS_MPI "The target LAMMPS was built with MPI" OFF)
+if(REAXMETAL_LAMMPS_MPI)
+  find_package(MPI REQUIRED COMPONENTS CXX)   # only for the mpi.h that the LAMMPS headers include
+endif()
 option(REAXMETAL_LAMMPS_STD_FORMAT "The target LAMMPS was built as C++20 and uses std::format for fmt (see adapter/lammps_fmt_abi.h)" OFF)
 
 add_library(reaxmetal_probe_plugin MODULE probe/probe_plugin.cpp probe/pair_reaxff_metal_probe.cpp)
@@ -17,6 +20,8 @@ target_include_directories(reaxmetal_probe_plugin PRIVATE "${REAXMETAL_LAMMPS_SO
 target_compile_definitions(reaxmetal_probe_plugin PRIVATE LAMMPS_EXCEPTIONS)
 if(NOT REAXMETAL_LAMMPS_MPI)
   target_include_directories(reaxmetal_probe_plugin PRIVATE "${REAXMETAL_LAMMPS_SOURCE_DIR}/STUBS")
+else()
+  target_include_directories(reaxmetal_probe_plugin PRIVATE ${MPI_CXX_INCLUDE_DIRS})
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_target_properties(reaxmetal_probe_plugin PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
@@ -25,7 +30,7 @@ elseif(UNIX)
 endif()
 
 # ---- Adapter A1 (M2): real parse + extract + host checks, no physics. Uses the C++20 core library (parser).
-add_library(reaxmetal_adapter_plugin MODULE adapter/adapter_plugin.cpp adapter/pair_reaxff_metal.cpp)
+add_library(reaxmetal_adapter_plugin MODULE adapter/adapter_plugin.cpp adapter/pair_reaxff_metal.cpp adapter/fix_qeq_reaxff_metal.cpp)
 set_target_properties(reaxmetal_adapter_plugin PROPERTIES PREFIX "" SUFFIX ".so" OUTPUT_NAME "reaxmetaladapterplugin"
                       CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
 target_include_directories(reaxmetal_adapter_plugin PRIVATE "${REAXMETAL_LAMMPS_SOURCE_DIR}")
@@ -33,9 +38,11 @@ target_compile_definitions(reaxmetal_adapter_plugin PRIVATE LAMMPS_EXCEPTIONS)
 if(NOT REAXMETAL_LAMMPS_STD_FORMAT)
   target_compile_options(reaxmetal_adapter_plugin PRIVATE -include "${CMAKE_CURRENT_SOURCE_DIR}/adapter/lammps_fmt_abi.h")
 endif()
-target_link_libraries(reaxmetal_adapter_plugin PRIVATE reaxmetal_core)
+target_link_libraries(reaxmetal_adapter_plugin PRIVATE reaxmetal_metal)   # reaxmetal_metal = the Metal backend (REAXMETAL_ENABLE_METAL=ON) or its 'not available' stub; pulls reaxmetal_core
 if(NOT REAXMETAL_LAMMPS_MPI)
   target_include_directories(reaxmetal_adapter_plugin PRIVATE "${REAXMETAL_LAMMPS_SOURCE_DIR}/STUBS")
+else()
+  target_include_directories(reaxmetal_adapter_plugin PRIVATE ${MPI_CXX_INCLUDE_DIRS})
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   set_target_properties(reaxmetal_adapter_plugin PROPERTIES LINK_FLAGS "-Wl,-undefined,dynamic_lookup")
@@ -66,4 +73,68 @@ if(RM_LIBLAMMPS AND REAXMETAL_FFIELD_DIR AND REAXMETAL_BUILD_TESTS)
       ENVIRONMENT "LAMMPS_POTENTIALS=${REAXMETAL_FFIELD_DIR};LD_LIBRARY_PATH=${REAXMETAL_LAMMPS_PREFIX}/lib;DYLD_LIBRARY_PATH=${REAXMETAL_LAMMPS_PREFIX}/lib"
       FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
   endforeach()
+endif()
+
+# INT-2 (M4/M6): in-LAMMPS A/B of stock `pair_style reaxff` vs `reaxff/metal backend cpu64` on the 58 fixtures: 14 energy slots, PE, charges, forces, pressure.
+if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND REAXMETAL_FFIELD_DIR AND REAXMETAL_BUILD_TESTS)
+  find_package(Python3 REQUIRED COMPONENTS Interpreter)
+  add_test(NAME lammps_int2 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
+  set_tests_properties(lammps_int2 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  # PERATOM-1: per-atom energy and virial (compute pe/atom, stress/atom) equal stock on the 58 fixtures
+  add_test(NAME lammps_peratom COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_peratom.py
+           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
+  set_tests_properties(lammps_peratom PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  if(REAXMETAL_LAMMPS_MPI)
+    # multi-rank A/B against stock run with the same number of ranks (needs mpirun on PATH)
+    foreach(_np 2 4)
+      add_test(NAME lammps_int2_mpi${_np}_cpu64 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+               --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64 --np ${_np})
+      set_tests_properties(lammps_int2_mpi${_np}_cpu64 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+      if(REAXMETAL_ENABLE_METAL)
+        add_test(NAME lammps_int2_mpi${_np}_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+                 --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal --gpu-qeq --np ${_np})
+        set_tests_properties(lammps_int2_mpi${_np}_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+      endif()
+    endforeach()
+  endif()
+  # VAR-1: vdW type 2 and `enobonds no`, which no bundled fixture exercises
+  add_test(NAME lammps_variants COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_variants.py
+           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
+  set_tests_properties(lammps_variants PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  # EEM-1: strict mode and charge verification of fix qeq/reaxff/metal
+  add_test(NAME lammps_eem COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_eem.py
+           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} $<$<BOOL:${REAXMETAL_ENABLE_METAL}>:--metal>)
+  set_tests_properties(lammps_eem PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  add_test(NAME lammps_min1_cpu64 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_min.py
+           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
+  set_tests_properties(lammps_min1_cpu64 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  if(REAXMETAL_ENABLE_METAL)
+    # INT-2 with the Metal backend (FP32 on the GPU): judged by the owner-set C3 criteria
+    add_test(NAME lammps_int2_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal)
+    set_tests_properties(lammps_int2_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # the same with fix qeq/reaxff/metal (EEM matrix and matvec on the GPU): charges are compared with the stock fix's under the C3 charge limit
+    add_test(NAME lammps_int2_metal_qeq COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal --gpu-qeq)
+    set_tests_properties(lammps_int2_metal_qeq PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    add_test(NAME lammps_variants_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_variants.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal)
+    set_tests_properties(lammps_variants_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    add_test(NAME lammps_peratom_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_peratom.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal)
+    set_tests_properties(lammps_peratom_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # the same with the GPU-resident EEM solve (double-single residual + FP32 device CG): charges must equal the stock fix's to ~1e-10
+    add_test(NAME lammps_int2_metal_qeq_resident COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal --gpu-qeq --qeq-extra resident)
+    set_tests_properties(lammps_int2_metal_qeq_resident PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # mixed mode: bond-order terms in double on the host, non-bonded + GPU QEq on the device
+    add_test(NAME lammps_int2_metal_mixed COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} "--backend=metal bonded cpu64" --gpu-qeq --qeq-extra resident)
+    set_tests_properties(lammps_int2_metal_mixed PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # MIN-1: LAMMPS `minimize` reaches the stock minimum (energies, displacement) on the perturbed fixtures, with the GPU charge fix
+    add_test(NAME lammps_min1_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_min.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal --gpu-qeq)
+    set_tests_properties(lammps_min1_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+  endif()
 endif()
