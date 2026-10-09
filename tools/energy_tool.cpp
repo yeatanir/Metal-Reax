@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
   ControlParams ctl;
   BondedOptions bo;
   double shell = -1.0;
-  bool grad = false, lgvdw = false;
+  bool grad = false, lgvdw = false, census = false;
   std::string backend = "cpu64";    // nonbonded backend: cpu64 | metal
   std::string grad_terms = "all";  // gradient output: bonded | nonbonded | all
   std::vector<double> q;
@@ -36,6 +36,7 @@ int main(int argc, char** argv) {
     else if (a == "--hbond") ctl.hbond_cut = std::stod(val());
     else if (a == "--shell") shell = std::stod(val());
     else if (a == "--grad") grad = true;
+    else if (a == "--census") census = true;
     else if (a == "--grad-terms") grad_terms = val();
     else if (a == "--backend") backend = val();
     else if (a == "--lgvdw") lgvdw = true;
@@ -83,6 +84,7 @@ int main(int argc, char** argv) {
         break;
       }
     }
+    bo.census = census;
     ExpandOptions eo;
     eo.shell = shell > 0 ? shell : cut.required_shell();
     const AtomSet a = expand_images(box, x, type, tag, eo);
@@ -107,7 +109,7 @@ int main(int argc, char** argv) {
                 r.e[EnergyTerm::Coalition], r.e[EnergyTerm::Torsion], r.e[EnergyTerm::Conjugation], r.e[EnergyTerm::HBond]);
     NonbondedResult nb;
     if (q.size() == a.nlocal) {
-      NonbondedOptions no; no.lgvdw = lgvdw;
+      NonbondedOptions no; no.lgvdw = lgvdw; no.census = census;
       double gpu_ms = -1;
       if (backend == "metal") {
         mtl::Context ctx;
@@ -120,6 +122,11 @@ int main(int argc, char** argv) {
       }
       if (gpu_ms >= 0) std::printf("gpu_ms %.6g\n", gpu_ms);
       std::printf("e_vdW %.17g\ne_ele %.17g\ne_pol %.17g\npairs %zu\n", nb.e[EnergyTerm::VdW], nb.e[EnergyTerm::Coulomb], nb.e[EnergyTerm::Polarization], nb.pairs);
+    }
+    if (census) {   // per owned atom decision counts (DecisionCensus), one line per category
+      auto dump = [](const char* name, const std::vector<std::int32_t>& v) { std::printf("census %s", name); for (auto x : v) std::printf(" %d", x); std::printf("\n"); };
+      dump("bonds", r.census.bonds); dump("angle_sets", r.census.angle_sets); dump("torsions", r.census.torsions); dump("hbonds", r.census.hbonds);
+      dump("nonbonded", nb.census_nonbonded);
     }
     if (grad) {
       std::vector<double> g(3 * a.nlocal, 0.0);

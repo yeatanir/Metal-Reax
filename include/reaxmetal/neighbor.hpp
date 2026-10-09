@@ -19,6 +19,8 @@
 
 namespace reaxmetal {
 
+struct FarRowsF32;
+
 struct NeighborCutoffs {
   double nonb = 10.0;   // nonb_cut: row cutoff of owned atoms
   double bond = 5.0;    // bond_cut: row cutoff of ghost atoms
@@ -66,6 +68,10 @@ struct FarList {
   std::size_t entries() const noexcept { return nbr.size(); }
 };
 FarList build_far_list(const AtomSet& atoms, const NeighborCutoffs& cut);
+// The same list, taken from the device rows (a superset of the double precision list: the row cutoffs were enlarged by a margin): every entry is
+// re-evaluated with the reference's double arithmetic, kept only if it is within the row cutoff, and the rows are sorted by j, so the result is
+// IDENTICAL to build_far_list for the same atoms. Saves the host binning when the rows exist anyway (FP64 bonded terms next to FP32 kernels).
+FarList far_list_from_rows(const AtomSet& atoms, const NeighborCutoffs& cut, const FarRowsF32& rows);
 // O(N^2) enumeration with the same semantics; the oracle for tests (never for production use).
 FarList build_far_list_bruteforce(const AtomSet& atoms, const NeighborCutoffs& cut);
 

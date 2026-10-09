@@ -102,6 +102,13 @@ if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
     add_test(NAME full_fixtures COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_full_fixtures.py
              --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR})
     set_tests_properties(full_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    # CENSUS-1/2: decision-mismatch census (random displacements) and threshold scans: single-precision flips of the discrete decisions
+    add_test(NAME decision_census COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_decision_census.py
+             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --samples 2 $<$<BOOL:${REAXMETAL_ENABLE_METAL}>:--metal>)
+    set_tests_properties(decision_census PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    add_test(NAME threshold_scan COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_threshold_scan.py
+             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} $<$<BOOL:${REAXMETAL_ENABLE_METAL}>:--metal>)
+    set_tests_properties(threshold_scan PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     # FP32-1: the CPU-32 twin's error envelope vs CPU-64 (must satisfy C3 itself), and Metal against 3x that envelope when Metal is built
     add_test(NAME fp32_envelope COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_fp32_envelope.py
              --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} $<$<BOOL:${REAXMETAL_ENABLE_METAL}>:--metal>)

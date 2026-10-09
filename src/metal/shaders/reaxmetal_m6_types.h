@@ -36,7 +36,7 @@ enum RmAtomF {
 };
 // ---- per-slot / per-atom int fields (wi)
 enum RmSlotI { RM_SI_NBR = 0, RM_SI_SYM, RM_SI_COUNT };
-enum RmAtomI { RM_AI_NB = 0, RM_AI_HNB, RM_AI_COUNT };
+enum RmAtomI { RM_AI_NB = 0, RM_AI_HNB, RM_AI_CTHB, RM_AI_CTOR, RM_AI_CHB, RM_AI_COUNT };   // CTHB/CTOR/CHB: decision census (angle sets, torsions, H-bonds)
 
 #define RM_B_SB_F 13   // floats per type: valency valency_e valency_boc valency_val nlp_opt r_s r_pi r_pi_pi p_lp2 p_ovun2 p_ovun5 p_val3 p_val5
 #define RM_B_SB_I 3    // ints per type: heavy_atom_terms c2_species p_hbond

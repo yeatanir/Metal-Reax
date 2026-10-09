@@ -26,6 +26,7 @@ NonbondedResult RM_NONBONDED_NAME(const ForceField& ff, const NeighborCutoffs& c
 
   NonbondedResult res;
   res.grad.assign(3 * N, Real(0.0));
+  if (opt.census) res.census_nonbonded.assign(n, 0);
   if (opt.per_atom) { res.eatom.assign(N, Real(0.0)); res.vatom.assign(N, std::array<double, 6>{}); }
   double e_vdw = 0, e_ele = 0, e_pol = 0;   // term values are Real; the sums are double (the GPU path sums its row partials in double on the host)
   for (std::size_t i = 0; i < n; ++i) {
@@ -63,6 +64,7 @@ NonbondedResult RM_NONBONDED_NAME(const ForceField& ff, const NeighborCutoffs& c
         res.grad[3 * j + c] += +o.CE * dv[c];
       }
       ++res.pairs;
+      if (opt.census) ++res.census_nonbonded[i];
     }
   }
   for (std::size_t i = 0; i < n; ++i) {

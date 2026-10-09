@@ -12,6 +12,7 @@
 #include <cstddef>
 #include <vector>
 
+#include "reaxmetal/census.hpp"
 #include "reaxmetal/energy_terms.hpp"
 #include "reaxmetal/forcefield.hpp"
 #include "reaxmetal/neighbor.hpp"
@@ -21,6 +22,7 @@ namespace reaxmetal {
 
 struct BondedOptions {
   bool enobonds = true;  // pair_style reaxff enobonds yes (default): lone pair / under-coordination energy for atoms without bonds
+  bool census = false;   // fill BondedResult::census
   bool per_atom = false; // fill eatom / vatom with the reference's per-atom tallies (ev_tally*, v_tally*; owned and ghost atoms, the host folds ghosts)
 };
 
@@ -33,6 +35,7 @@ struct BondedResult {
   EnergyBreakdown e;              // Bond, LonePair, Over, Under filled (others stay 0)
   std::vector<double> grad;       // 3 * nall, dE/dx of those terms, ghosts included (host folds ghost onto owner)
   std::vector<double> total_bo;   // per atom corrected total bond order (nall)
+  DecisionCensus census;          // bonds, angle_sets, torsions, hbonds (nlocal entries), only with census
   std::vector<double> eatom;      // per-atom energy (nall), only with per_atom
   std::vector<std::array<double, 6>> vatom;   // per-atom virial xx yy zz xy xz yz (nall), only with per_atom
   BondedStats stats;

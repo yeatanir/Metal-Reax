@@ -8,6 +8,7 @@
 #include <array>
 #include <vector>
 
+#include "reaxmetal/census.hpp"
 #include "reaxmetal/energy_terms.hpp"
 #include "reaxmetal/forcefield.hpp"
 #include "reaxmetal/neighbor.hpp"
@@ -17,6 +18,7 @@ namespace reaxmetal {
 
 struct NonbondedOptions {
   bool lgvdw = false;  // pair_style reaxff lgvdw yes
+  bool census = false;     // fill NonbondedResult::census_nonbonded
   bool per_atom = false;   // fill eatom / vatom (ev_tally of the reference: half of each pair term to each atom)
 };
 
@@ -24,6 +26,7 @@ struct NonbondedResult {
   EnergyBreakdown e;              // VdW, Coulomb, Polarization filled
   std::vector<double> grad;       // 3 * nall, dE/dx (physical force = -grad)
   std::size_t pairs = 0;          // counted pairs
+  std::vector<std::int32_t> census_nonbonded;   // counted pairs per owned row, only with census
   std::vector<double> eatom;      // nall, only with per_atom
   std::vector<std::array<double, 6>> vatom;   // nall, only with per_atom
 };

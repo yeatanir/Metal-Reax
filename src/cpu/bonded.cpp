@@ -17,6 +17,9 @@
 #ifndef RM_BONDED_NAME
 #define RM_BONDED_NAME compute_bonded_core
 #endif
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 namespace reaxmetal {
 namespace {
 
@@ -83,6 +86,10 @@ struct HBondEntry { int nbr; Real scl; Real d; R3 dvec; };
 BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, const AtomSet& atoms, const FarList& far,
                                  const BondedOptions& opt) {
   const std::size_t N = atoms.nall(), n = atoms.nlocal;
+  const bool stage_prof = std::getenv("REAXMETAL_STAGE_PROFILE") != nullptr;
+  auto stage_t0 = std::chrono::steady_clock::now();
+  const char* stage_prev = "setup";
+#define RM_STAGE(name) do { if (stage_prof) { const auto t1 = std::chrono::steady_clock::now(); std::fprintf(stderr, "[stage] %-12s %.4f s\n", stage_prev, std::chrono::duration<double>(t1 - stage_t0).count()); stage_t0 = t1; stage_prev = name; } } while (0)
   const auto& gp = ff.global().l;
   const Real bo_cut = ff.file_control().bo_cut;
   const Real p_boc1 = gp[0], p_boc2 = gp[1], p_lp1 = gp[15], p_lp3 = gp[5];
@@ -97,6 +104,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
   std::vector<std::vector<HBondEntry>> hbonds(N);
   for (std::size_t i = n; i < N; ++i) bond_mark[i] = 1000;  // ghosts start "infinitely" far from any owned atom
 
+  RM_STAGE("bond_list");
   // ---- bond list (Init_Forces_noQEq + BOp) ----------------------------------------------------------------------------------
   for (std::size_t i = 0; i < N; ++i) {
     const int ti = atoms.type[i];
@@ -153,6 +161,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
     }
   }
 
+  RM_STAGE("bo_correct");
   // ---- BO: corrected bond orders and atom quantities -------------------------------------------------------------------------
   for (std::size_t i = 0; i < N; ++i) {
     const int ti = atoms.type[i];
@@ -197,6 +206,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
   BondedResult res;
   std::vector<double> CdDelta(N, Real(0.0));
   const bool pa = opt.per_atom;
+  if (opt.census) { res.census.bonds.assign(n, 0); res.census.angle_sets.assign(n, 0); res.census.torsions.assign(n, 0); res.census.hbonds.assign(n, 0); for (std::size_t i = 0; i < n; ++i) res.census.bonds[i] = static_cast<std::int32_t>(bonds[i].size()); }
   if (pa) { res.eatom.assign(N, Real(0.0)); res.vatom.assign(N, std::array<double, 6>{}); }
   // the reference's tally helpers (pair.cpp ev_tally / ev_tally3 / v_tally3 / v_tally4 / v_tally2_newton)
   auto etally_half = [&](std::size_t i, std::size_t j, Real e) { if (pa) { res.eatom[i] += Real(0.5) * e; res.eatom[j] += Real(0.5) * e; } };
@@ -206,6 +216,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
   auto diff = [&](std::size_t a, std::size_t b) { const R3 xa = pos3(atoms, a), xb = pos3(atoms, b); return R3{xa[0] - xb[0], xa[1] - xb[1], xa[2] - xb[2]}; };
   double e_bond = 0, e_lp = 0, e_ov = 0, e_un = 0;   // term values are Real; the sums are double (the GPU path sums its row partials in double on the host)
 
+  RM_STAGE("bond_energy");
   // ---- Bonds (owned centres, tag order selects one end of each bond) -------------------------------------------------------
   const bool gp37 = ff.gp37_stabilisation();
   for (std::size_t i = 0; i < n; ++i) {
@@ -241,6 +252,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
   }
   (void)gp37;
 
+  RM_STAGE("atom_energy");
   // ---- Atom_Energy: lone pair + C2 correction, then over/under ------------------------------------------------------------
   for (std::size_t i = 0; i < n; ++i) {
     const int ti = atoms.type[i];
@@ -306,6 +318,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
   }
 
 
+  RM_STAGE("valence");
   // ---- Valence_Angles: valence angle, penalty, 3-body conjugation; builds the three-body lists used by the torsions ------------------
   std::vector<R3> f(N, R3{0, 0, 0});
   double e_ang = 0, e_pen = 0, e_coa = 0, e_tor = 0, e_con = 0, e_hb = 0;
@@ -372,6 +385,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
             list_i.push_back(t);
 
             if ((j < n) && (BOA_jk > Real(0.0)) && (bij.BO > ctl.thb_cut) && (bjk.BO > ctl.thb_cut) && (bij.BO * bjk.BO > ctl.thb_cutsq)) {
+              if (opt.census) ++res.census.angle_sets[j];
               for (const ThreeBodySet& thbp : ff.three_body(type_i, type_j, type_k)) {
                 if (!(std::fabs(thbp.p_val1) > Real(0.001))) continue;
                 const Real p_val1 = thbp.p_val1, p_val2 = thbp.p_val2, p_val4 = thbp.p_val4, p_val7 = thbp.p_val7, theta_00 = thbp.theta_00;
@@ -458,6 +472,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
     }
   }
 
+  RM_STAGE("torsion");
   // ---- Torsion_Angles: torsion and 4-body conjugation (owned j, tag order picks one end of each j-k bond) --------------------------------
   {
     const Real p_tor2 = gp[23], p_tor3 = gp[24], p_tor4 = gp[25], p_cot2 = gp[27];
@@ -512,6 +527,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
             const int type_l = atoms.type[l];
             const FourBody* fbp = ff.four_body(type_i, type_j, type_k, type_l);
             if (!(i != l && fbp != nullptr && bkl.BO > ctl.thb_cut && bij.BO * bjk.BO * bkl.BO > ctl.thb_cut)) continue;
+            if (opt.census) ++res.census.torsions[j];
             const Real r_kl = bkl.d;
             const Real BOA_kl = bkl.BO - ctl.thb_cut;
             const Real theta_jkl = p_jkl.theta;
@@ -634,6 +650,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
     }
   }
 
+  RM_STAGE("hbond");
   // ---- Hydrogen_Bonds ----------------------------------------------------------------------------------------------------------
   if (ctl.hbond_cut > 0) {
     for (std::size_t j = 0; j < n; ++j) {
@@ -660,6 +677,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
           if (type_i < 0) continue;
           const HBondParams* hbp = ff.hbond(type_i, type_j, type_k);
           if (hbp == nullptr || hbp->r0_hb <= Real(0.0)) continue;
+          if (opt.census) ++res.census.hbonds[j];
           Real theta, cos_theta;
           calculate_theta(bij.dvec, bij.d, dvec_jk, r_jk, theta, cos_theta);
           R3 dti{}, dtj{}, dtk{};
@@ -695,6 +713,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
     }
   }
 
+  RM_STAGE("dbond_gather");
   // ---- Compute_Total_Force: bond-derivative gather (Add_dBond_to_Forces) -------------------------------------------------------
   for (std::size_t i = 0; i < N; ++i) {
     for (const Bond& bij : bonds[i]) {
@@ -745,6 +764,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
     }
   }
 
+  RM_STAGE("end");
   res.e[EnergyTerm::Bond] = e_bond;
   res.e[EnergyTerm::LonePair] = e_lp;
   res.e[EnergyTerm::Over] = e_ov;

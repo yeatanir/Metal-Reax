@@ -13,6 +13,7 @@
 
 #include "reaxmetal/bonded.hpp"
 #include "reaxmetal/forcefield.hpp"
+#include "reaxmetal/census.hpp"
 #include "reaxmetal/neighbor.hpp"
 #include "reaxmetal/system.hpp"
 
@@ -24,6 +25,7 @@ struct BondedDeviceInput {
   std::vector<float> sb_f, tb_f, thb_sets, fb_f, hb_f, gp;
   std::vector<std::int32_t> sb_i, tb_i, thb_idx, fb_has;
   std::uint32_t ntypes = 0, enobonds = 1;
+  bool census = false;                     // read the decision census back (run_bonded_pipeline)
   float bond_cut = 0, bo_cut = 0, thb_cut = 0, thb_cutsq = 0, hbond_cut = 0;
 };
 
@@ -56,6 +58,7 @@ struct BondedDeviceOutput {
   std::array<double, kEnergyTermCount> e{};// per-term energies, FP64 sums of the per-atom FP32 partials in atom order
   std::uint32_t bond_cap = 0, hbond_cap = 0;
   unsigned attempts = 0;
+  DecisionCensus census;                   // only with BondedDeviceInput::census
 };
 
 BondedDeviceInput make_bonded_device_input(const ForceField& ff, const ControlParams& ctl, const AtomSet& atoms, const Box& box, const BondedOptions& opt,

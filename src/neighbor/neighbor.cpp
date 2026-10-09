@@ -210,6 +210,34 @@ FarList build_far_list(const AtomSet& atoms, const NeighborCutoffs& cut) {
   return out;
 }
 
+FarList far_list_from_rows(const AtomSet& atoms, const NeighborCutoffs& cut, const FarRowsF32& rows) {
+  check_cutoffs(cut);
+  const std::size_t n = atoms.nall();
+  if (rows.nall != n) throw SystemError("far_list_from_rows: rows and atoms differ in size");
+  FarList out;
+  out.row_start.reserve(n + 1);
+  out.row_start.push_back(0);
+  std::vector<RowEntry> row;
+  for (std::size_t i = 0; i < n; ++i) {
+    const double rc = cut.row_cut(i, atoms.nlocal);
+    const double rc2 = rc * rc;
+    const double* xi = &atoms.x[3 * i];
+    const std::uint32_t cnt = std::min(rows.count[i], rows.cap);
+    if (rows.count[i] > rows.cap) throw SystemError("far_list_from_rows: row overflow");
+    for (std::uint32_t e = 0; e < cnt; ++e) {
+      const std::int32_t j = rows.nbr[i * rows.cap + e];
+      RowEntry r;
+      double d2;
+      if (!within(xi, &atoms.x[3 * static_cast<std::size_t>(j)], rc2, r.dv, d2)) continue;
+      r.j = j;
+      r.d = std::sqrt(d2);
+      row.push_back(r);
+    }
+    append_row(out, row);
+  }
+  return out;
+}
+
 FarList build_far_list_bruteforce(const AtomSet& atoms, const NeighborCutoffs& cut) {
   check_cutoffs(cut);
   const std::size_t n = atoms.nall();

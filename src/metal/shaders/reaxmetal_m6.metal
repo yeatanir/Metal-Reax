@@ -328,6 +328,7 @@ kernel void rm_b_valence(RM_B_ARGS) {
       if (!((BOA_jk > 0.0f) && (SFi(RM_SF_BO, j, pi) > p.thb_cut) && (SFi(RM_SF_BO, j, pk) > p.thb_cut) &&
             (SFi(RM_SF_BO, j, pi) * SFi(RM_SF_BO, j, pk) > p.thb_cutsq)))
         continue;
+      AIi(RM_AI_CTHB, j) += 1;
       const float uxi = SFi(RM_SF_DVX, j, pi), uyi = SFi(RM_SF_DVY, j, pi), uzi = SFi(RM_SF_DVZ, j, pi), dij = SFi(RM_SF_D, j, pi);
       const float uxk = SFi(RM_SF_DVX, j, pk), uyk = SFi(RM_SF_DVY, j, pk), uzk = SFi(RM_SF_DVZ, j, pk), djk = SFi(RM_SF_D, j, pk);
       float theta, cos_theta;
@@ -483,6 +484,7 @@ kernel void rm_b_torsion(RM_B_ARGS) {
         const uint tl = (uint)type[l];
         const uint fidx = ((ti * p.ntypes + tj) * p.ntypes + tk) * p.ntypes + tl;
         if (!(i != l && fb_has[fidx] != 0 && BO_ij * BO_jk * BO_kl > p.thb_cut)) continue;
+        AIi(RM_AI_CTOR, j) += 1;
         device const float* fb = fb_f + fidx * RM_B_FB_F;
         const float V1 = fb[0], V2 = fb[1], V3 = fb[2], p_tor1 = fb[3], p_cot1 = fb[4];
         const float r_kl = SFi(RM_SF_D, k, plk);
@@ -643,6 +645,7 @@ kernel void rm_b_hbond(RM_B_ARGS) {
       device const float* hb = hb_f + ((ti * p.ntypes + tj) * p.ntypes + tk) * RM_B_HB_F;
       const float r0_hb = hb[0], p_hb1 = hb[1], p_hb2 = hb[2], p_hb3 = hb[3];
       if (r0_hb <= 0.0f) continue;
+      AIi(RM_AI_CHB, j) += 1;
       const float ux = SFi(RM_SF_DVX, j, pi), uy = SFi(RM_SF_DVY, j, pi), uz = SFi(RM_SF_DVZ, j, pi), du = SFi(RM_SF_D, j, pi);
       float theta, cos_theta;
       rm_theta(ux, uy, uz, du, jkx, jky, jkz, r_jk, theta, cos_theta);

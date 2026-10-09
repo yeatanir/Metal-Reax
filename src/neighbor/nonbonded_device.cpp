@@ -82,6 +82,7 @@ NonbondedResult finish_nonbonded(const ForceField& ff, const AtomSet& atoms, con
   r.e[EnergyTerm::Coulomb] = ee;
   r.e[EnergyTerm::Polarization] = ep;
   r.grad.assign(out.grad.begin(), out.grad.end());
+  r.census_nonbonded = out.row_count;
   return r;
 }
 

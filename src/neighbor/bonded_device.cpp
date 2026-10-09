@@ -100,6 +100,7 @@ BondedDeviceInput make_bonded_device_input(const ForceField& ff, const ControlPa
   const auto& g = ff.global().l;
   for (std::size_t i = 0; i < g.size() && i < 40; ++i) in.gp[i] = static_cast<float>(g[i]);
   in.enobonds = opt.enobonds ? 1u : 0u;
+  in.census = opt.census;
   in.bond_cut = static_cast<float>(ctl.bond_cut);
   in.bo_cut = static_cast<float>(ff.file_control().bo_cut);
   in.thb_cut = static_cast<float>(ctl.thb_cut);
@@ -140,6 +141,10 @@ BondedDeviceOutput run_bonded_pipeline(BondedBackend& backend, const BondedDevic
     backend.run(phase2);
     out.bond_cap = B;
     out.hbond_cap = H;
+    if (in.census) {
+      auto grab = [&](RmAtomI f, std::vector<std::int32_t>& dst) { dst.resize(nl); backend.read_int(L.o_iatom + static_cast<std::size_t>(f) * N, nl, dst.data()); };
+      grab(RM_AI_NB, out.census.bonds); grab(RM_AI_CTHB, out.census.angle_sets); grab(RM_AI_CTOR, out.census.torsions); grab(RM_AI_CHB, out.census.hbonds);
+    }
     out.grad.resize(3 * static_cast<std::size_t>(N));
     std::vector<float> tmp(N);
     for (std::size_t c = 0; c < 3; ++c) {
@@ -165,6 +170,7 @@ BondedResult finish_bonded(const BondedDeviceOutput& out, std::size_t nall) {
   BondedResult r;
   for (std::size_t t = 0; t < kEnergyTermCount; ++t) r.e.e[t] = out.e[t];
   r.grad.assign(out.grad.begin(), out.grad.end());
+  r.census = out.census;
   (void)nall;
   return r;
 }

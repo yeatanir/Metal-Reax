@@ -38,6 +38,7 @@ struct NonbondedDeviceInput {
 struct NonbondedDeviceOutput {
   std::vector<float> grad;             // 3 * nall
   std::vector<float> row_e;            // 2 * nlocal: per owned row {e_vdW, e_ele} (float partial sums, fixed order)
+  std::vector<std::int32_t> row_count; // nlocal: counted pairs per owned row (decision census)
 };
 
 // `rows` must already be the grown far rows of `list` (Context::far_rows or the emulated launch).

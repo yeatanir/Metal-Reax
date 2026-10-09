@@ -168,6 +168,10 @@ static void test_far_rows_vs_cpu() {
       const RowComparison cmp = compare_rows_to_far_list(rows, cpu, a, cut, in.list_margin);
       RM_CHECK_MSG(cmp.ok(), "emulated kernel rows violate the superset/bounded contract");
       RM_CHECK(cmp.cpu_entries == cpu.entries());
+      {   // the double precision far list rebuilt from the device rows is IDENTICAL to the host-built one
+        const FarList from_rows = far_list_from_rows(a, cut, rows);
+        RM_CHECK(from_rows.row_start == cpu.row_start && from_rows.nbr == cpu.nbr && from_rows.dist == cpu.dist && from_rows.dvec == cpu.dvec);
+      }
       total_entries += cmp.device_entries;
       total_band += cmp.band_extra;
       // determinism: identical inputs -> identical bytes
@@ -278,10 +282,11 @@ static void emulate_nonbonded(const NonbondedDeviceInput& in, NonbondedDeviceOut
   std::vector<float> pf(static_cast<std::size_t>(nlocal) * cap * 3, 0.0f);
   out.grad.assign(3 * static_cast<std::size_t>(nall), 0.0f);
   out.row_e.assign(2 * static_cast<std::size_t>(nlocal), 0.0f);
+  out.row_count.assign(nlocal, 0);
   RmNbParams p{};
   p.nlocal = nlocal; p.cap = cap; p.ntypes = in.ntypes; p.vdw_type = in.vdw_type; p.lg = in.lg; p.p_vdW1 = in.p_vdW1; p.swa = in.swa; p.swb = in.swb;
   for (std::uint32_t i = 0; i < nlocal; ++i)
-    rm_nb_pairs(in.list.x.data(), in.type.data(), in.tag.data(), in.q.data(), in.pair_table.data(), in.rows->nbr.data(), in.rows->count.data(), pf.data(), out.row_e.data(), in.list.x_lo.data(), p, i);
+    rm_nb_pairs(in.list.x.data(), in.type.data(), in.tag.data(), in.q.data(), in.pair_table.data(), in.rows->nbr.data(), in.rows->count.data(), pf.data(), out.row_e.data(), in.list.x_lo.data(), reinterpret_cast<std::uint32_t*>(out.row_count.data()), p, i);
   RmNbGatherParams g{nall, nlocal, cap};
   for (std::uint32_t k = 0; k < nall; ++k)
     rm_nb_gather(pf.data(), in.rows->count.data(), in.column.start.data(), in.column.items.data(), out.grad.data(), g, k);

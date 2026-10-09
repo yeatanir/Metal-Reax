@@ -52,7 +52,10 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     if (key == "checkqeq") p.checkqeq = logical(val, "checkqeq");
     else if (key == "enobonds") p.enobonds = logical(val, "enobonds");
     else if (key == "lgvdw") p.lgvdw = logical(val, "lgvdw");
-    else if (key == "backend") {
+    else if (key == "bonded") {
+      if (val != "cpu64" && val != "metal") throw FfieldError("Illegal pair_style reaxff/metal command: bonded must be cpu64 or metal, got '" + val + "'");
+      p.bonded = val;
+    } else if (key == "backend") {
       if (val != "cpu64" && val != "metal") throw FfieldError("Illegal pair_style reaxff/metal command: backend must be cpu64 or metal, got '" + val + "'");
       p.backend = val;
     }

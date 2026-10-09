@@ -19,11 +19,13 @@ kernel void rm_nb_pairs(device const float* x [[buffer(0)]],
                         device float* pf [[buffer(7)]],
                         device float* row_e [[buffer(8)]],
                         device const float* xlo [[buffer(9)]],
-                        constant RmNbParams& p [[buffer(10)]],
+                        device uint* row_cnt [[buffer(10)]],   // counted pairs of the row (decision census)
+                        constant RmNbParams& p [[buffer(11)]],
                         uint i [[thread_position_in_grid]]) {
   if (i >= p.nlocal) return;
   float ev = 0.0f;
   float ee = 0.0f;
+  uint counted_pairs = 0;
   const int ti = type[i];
   if (ti >= 0) {
     const uint n = (count[i] < p.cap) ? count[i] : p.cap;
@@ -52,6 +54,7 @@ kernel void rm_nb_pairs(device const float* x [[buffer(0)]],
         }
       }
       if (!counted) continue;
+      ++counted_pairs;
       const uint t = ((uint)ti * p.ntypes + (uint)tj) * RM_NB_PAIR_FLOATS;
       reaxmetal::terms::NbPair<float> np;
       np.alpha = pair_table[t]; np.D = pair_table[t + 1]; np.r_vdW = pair_table[t + 2]; np.gamma_w = pair_table[t + 3];
@@ -70,6 +73,7 @@ kernel void rm_nb_pairs(device const float* x [[buffer(0)]],
   }
   row_e[2 * i] = ev;
   row_e[2 * i + 1] = ee;
+  row_cnt[i] = counted_pairs;
 }
 
 kernel void rm_nb_gather(device const float* pf [[buffer(0)]],

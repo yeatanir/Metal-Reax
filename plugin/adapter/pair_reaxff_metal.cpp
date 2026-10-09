@@ -382,11 +382,12 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     if (use_metal) {
       // FP32 on the GPU (deterministic, no atomics); bookkeeping and the final sums in FP64 on the host. Charges come from the stock charge fix.
       metal_context();
+      if (settings_.bonded == "cpu64" || std::getenv("REAXMETAL_DEBUG_CPU_BONDED")) {   // 'bonded cpu64': the bond-order terms in double on the host
+        br = compute_bonded_core(*ff_, settings_.control, a, far_list_from_rows(a, cut, *view->rows), bo);
+        lap("bonded_cpu64");
+      } else {
       const BondedDeviceInput bin = make_bonded_device_input(*ff_, settings_.control, a, box, bo, &view->list);
       lap("bonded_pack");
-      if (std::getenv("REAXMETAL_DEBUG_CPU_BONDED")) {   // diagnostic only
-        br = compute_bonded_core(*ff_, settings_.control, a, build_far_list(a, cut), bo);
-      } else {
       const BondedDeviceOutput bout = ctx_->bonded(bin);
       lap("bonded_device");
       br = finish_bonded(bout, a.nall());
