@@ -5,6 +5,7 @@
 // polarization (self) energy. Owner-computes counting and traversal as pinned LAMMPS vdW_Coulomb_Energy (reaxff_nonbonded.cpp:62-215):
 // every owned row, entries with d <= nonb_cut, counted by classify_nonbonded_entry (neighbor.hpp); the gradient goes onto i and j (ghosts included).
 // Charges are INPUT (stock `fix qeq/reaxff` solves them in LAMMPS, ADR-015); ghosts use their owner's charge.
+#include <array>
 #include <vector>
 
 #include "reaxmetal/energy_terms.hpp"
@@ -16,12 +17,15 @@ namespace reaxmetal {
 
 struct NonbondedOptions {
   bool lgvdw = false;  // pair_style reaxff lgvdw yes
+  bool per_atom = false;   // fill eatom / vatom (ev_tally of the reference: half of each pair term to each atom)
 };
 
 struct NonbondedResult {
   EnergyBreakdown e;              // VdW, Coulomb, Polarization filled
   std::vector<double> grad;       // 3 * nall, dE/dx (physical force = -grad)
   std::size_t pairs = 0;          // counted pairs
+  std::vector<double> eatom;      // nall, only with per_atom
+  std::vector<std::array<double, 6>> vatom;   // nall, only with per_atom
 };
 
 // q: charge per OWNED atom (nlocal entries).

@@ -350,9 +350,10 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     if (!ok) error->all(FLERR, "{}", selfcheck);
     error->all(FLERR, "{}; self-check mode stops here (remove reaxmetal_selfcheck to compute)", selfcheck);
   }
-  if (eflag_atom || vflag_atom)
-    error->all(FLERR, "Pair style reaxff/metal: per-atom energy / virial output is not implemented yet");
-  const bool use_metal = settings_.backend == "metal";
+  // Per-atom energy / virial need the reference's term-by-term tallies, which only the CPU-64 engine reproduces: on a step where a compute asks
+  // for them, that step is evaluated by the CPU-64 engine even with 'backend metal' (energies and forces of that step are then CPU-64 ones).
+  const bool per_atom = eflag_atom || vflag_atom;
+  const bool use_metal = settings_.backend == "metal" && !per_atom;
   if (use_metal && !reaxmetal::mtl::compiled_with_metal())
     error->all(FLERR, "Pair style reaxff/metal: backend metal requested but this plugin was built without Metal (needs macOS and -DREAXMETAL_ENABLE_METAL=ON); use 'backend cpu64'");
 
@@ -373,8 +374,10 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     for (std::size_t i = 0; i < a.nlocal; ++i) q[i] = atom->q[i];
     BondedOptions bo;
     bo.enobonds = settings_.enobonds;
+    bo.per_atom = per_atom;
     NonbondedOptions no;
     no.lgvdw = settings_.lgvdw;
+    no.per_atom = per_atom;
     if (use_metal) {
       // FP32 on the GPU (deterministic, no atomics); bookkeeping and the final sums in FP64 on the host. Charges come from the stock charge fix.
       metal_context();
@@ -411,6 +414,14 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
   const std::size_t nall = a.nall();
   for (std::size_t i = 0; i < nall; ++i)
     for (std::size_t c = 0; c < 3; ++c) f[i][c] -= br.grad[3 * i + c] + nr.grad[3 * i + c];
+
+  if (per_atom) {
+    for (std::size_t i = 0; i < nall; ++i) {
+      if (eflag_atom) eatom[i] += br.eatom[i] + nr.eatom[i];
+      if (vflag_atom)
+        for (std::size_t c = 0; c < 6; ++c) vatom[i][c] += br.vatom[i][c] + nr.vatom[i][c];
+    }
+  }
 
   EnergyBreakdown e;
   for (std::size_t t = 0; t < kEnergyTermCount; ++t) e.e[t] = br.e.e[t] + nr.e.e[t];

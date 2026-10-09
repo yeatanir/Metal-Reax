@@ -8,6 +8,7 @@
 // (ENGINE_SPEC 3.1, 4, 5). Pure formulas are in terms.hpp (shared with the CPU-32 twin and, later, Metal).
 // Not yet included: valence angle, torsion, H-bond, nonbonded (later phases). `BondedResult::grad` is the gradient dE/dx of the
 // computed terms only; the physical force is -grad (ENGINE_SPEC 1).
+#include <array>
 #include <cstddef>
 #include <vector>
 
@@ -20,6 +21,7 @@ namespace reaxmetal {
 
 struct BondedOptions {
   bool enobonds = true;  // pair_style reaxff enobonds yes (default): lone pair / under-coordination energy for atoms without bonds
+  bool per_atom = false; // fill eatom / vatom with the reference's per-atom tallies (ev_tally*, v_tally*; owned and ghost atoms, the host folds ghosts)
 };
 
 struct BondedStats {
@@ -31,6 +33,8 @@ struct BondedResult {
   EnergyBreakdown e;              // Bond, LonePair, Over, Under filled (others stay 0)
   std::vector<double> grad;       // 3 * nall, dE/dx of those terms, ghosts included (host folds ghost onto owner)
   std::vector<double> total_bo;   // per atom corrected total bond order (nall)
+  std::vector<double> eatom;      // per-atom energy (nall), only with per_atom
+  std::vector<std::array<double, 6>> vatom;   // per-atom virial xx yy zz xy xz yz (nall), only with per_atom
   BondedStats stats;
 };
 

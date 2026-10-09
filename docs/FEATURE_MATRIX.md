@@ -76,7 +76,7 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `qeq.reaxff` | Planned | M5 | `fix qeq/reaxff ... reaxff` | standard EEM as implemented by fix qeq/reaxff (ENGINE_SPEC 7) |
+| `qeq.reaxff` | Implemented | - | `fix qeq/reaxff ... reaxff` | stock fix, or fix qeq/reaxff/metal (EEM matrix and matvec on the GPU, stock CG); charges within 1.6e-5 e of stock |
 | `qeq.pertype_file` | Planned | M5 | `fix qeq/reaxff ... <param file>` | per-type chi/eta/gamma override |
 | `qeq.shielded` | Planned | M5 | `fix qeq/shielded` | LAMMPS-compatible shielded charge equilibration; same kernel as qeq/reaxff (ENGINE_SPEC 7.2); works through extract() today |
 | `qeq.acks2` | Deferred | - | `fix acks2/reaxff` | deferred; different charge model |
@@ -102,8 +102,8 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `out.energy_breakdown` | Implemented | - | `compute pair reaxff (pvector[14])` | mapping in `energy_terms.hpp`, tested |
 | `out.forces` | Implemented | - | `atom->f` | analytical |
 | `out.charges` | Planned | M5 | `atom->q` | |
-| `out.virial` | Planned | M6 | `virial_fdotr / v_tally*` | needed for pressure |
-| `out.per_atom_energy` | Planned | M7 | `compute pe/atom with reaxff` | adapter-level per-atom energy/virial; until then requests are refused |
+| `out.virial` | Implemented | - | `virial_fdotr / v_tally*` | global virial by virial_fdotr (INT-2, NPT); per-atom virial by the CPU-64 tallies of the reference (PERATOM-1) |
+| `out.per_atom_energy` | Implemented | - | `compute pe/atom, stress/atom with reaxff` | per-atom energy and virial equal stock on 58 fixtures (PERATOM-1, 5e-10 relative); produced by the CPU-64 engine, so a step on which a compute requests them is evaluated by CPU-64 even with backend metal |
 | `out.bond_analysis` | Deferred | - | `fix reaxff/bonds, fix reaxff/species` | deferred; LAMMPS analysis tools dynamic_cast to PairReaxFF and refuse other styles |
 
 ## 8. Dynamics
@@ -112,7 +112,7 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 |---|---|---|---|---|
 | `md.nve` | Rejected | - | `fix nve` | standalone MD is out of scope: LAMMPS provides integrators |
 | `md.thermostat` | Rejected | - | `fix nvt / langevin` | standalone MD is out of scope: LAMMPS provides thermostats |
-| `md.barostat` | Planned | M6 | `fix npt` | enabled once out.virial is validated; until then pressure-controlled runs are refused |
+| `md.barostat` | Implemented | - | `fix npt` | NPT (Nose-Hoover, iso) with Metal + GPU QEq: <T>, <V>, <P> agree with stock on a 648-atom water box over 40 000 steps (INT-4) |
 | `min.minimize` | Rejected | - | `minimize` | standalone minimiser is out of scope: LAMMPS provides minimize |
 
 ## 9. Backends
@@ -147,14 +147,14 @@ These are the "detect and refuse" cases required by architectural rule 4. Each i
 
 | Feature | Status | Milestone | LAMMPS construct | Notes |
 |---|---|---|---|---|
-| `lammps.pair_style_reaxff_metal` | Implemented | - | `pair_style reaxff/metal` | A1 exists (parse, extract, host checks; `compute()` refuses explicitly); planned = computes energies/forces |
+| `lammps.pair_style_reaxff_metal` | Implemented | - | `pair_style reaxff/metal` | computes energies, forces, the virial and per-atom energy/virial (backend cpu64 | metal); INT-2 vs stock pair reaxff on 58 fixtures |
 | `lammps.plugin_loadable` | Implemented | - | `plugin load <reaxmetal plugin>` | DSO built against the pinned LAMMPS; version-matched |
 | `lammps.extract_chi_eta_gamma` | Implemented | - | `Pair::extract(chi\|eta\|gamma)` | arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value |
 | `lammps.single_rank_only` | Implemented | - | `comm->nprocs == 1` | multi-rank runs fail explicitly (checked in init_style) |
 | `lammps.multi_rank` | Deferred | - | `mpirun -np N>1 with reaxff/metal` | deferred; needs distributed ghost/QEq handling |
 | `lammps.newton_off` | Rejected | - | `newton off (newton_pair off)` | forces on ghosts must be reverse-communicated |
 | `lammps.ghost_native_contract` | Implemented | - | `ghost atoms from LAMMPS borders` | adapter A2 builds the owned+ghost view from LAMMPS arrays and verifies ghost = owner + shift (INT-7, 58 fixtures); far list equals LAMMPS' own list row by row |
-| `lammps.virial_fdotr` | Planned | M6 | `Pair::virial_fdotr_compute` | global virial/pressure from forces on owned+ghost atoms |
+| `lammps.virial_fdotr` | Implemented | - | `Pair::virial_fdotr_compute` | global virial/pressure from forces on owned+ghost atoms; pressure equals stock pair reaxff in INT-2 (cpu64 1e-10, metal 2.9e-4 relative); NPT water 40 000 steps agrees with stock |
 | `lammps.ghost_shell_check` | Implemented | - | `(reference only warns, pair_reaxff.cpp:372-375)` | ghost shell < max(nonb_cut, hbond_cut, 2*bond_cut) is an error (INT-7 negative case) |
 | `dev.neighbor_selfcheck` | Implemented | - | `(development aid)` | pair_style keyword reaxmetal_selfcheck yes: verify the host view and far list inside LAMMPS, then refuse to compute |
 

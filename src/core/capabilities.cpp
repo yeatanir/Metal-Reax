@@ -47,14 +47,14 @@ constexpr std::array kFeatures{
     Feature{"compat.hbond_donor_image_exclusion", Status::Implemented, "-", "orig_id[i] != orig_id[k] in Hydrogen_Bonds", "reproduce by default (Q-32): acceptor that is a periodic image of the donor is dropped; identity-based variant needs owner decision"},
     Feature{"compat.ovun_heavy_neighbor_force", Status::Implemented, "-", "dDelta_lp[j] where the energy uses Delta_lp_temp[j] (Atom_Energy force loop)", "reproduce LAMMPS forces by default (Q-34: analytic force != gradient of the reported energy for heavy atoms with pi bonds); corrected variant is opt-in"},
     // ---- LAMMPS integration (M0.5) ----------------------------------------------------------------
-    Feature{"lammps.pair_style_reaxff_metal", Status::Implemented, "-", "pair_style reaxff/metal", "computes energies, forces and the virial (backend cpu64 | metal); INT-2 vs stock pair reaxff on 58 fixtures; per-atom energy/virial refused"},
+    Feature{"lammps.pair_style_reaxff_metal", Status::Implemented, "-", "pair_style reaxff/metal", "computes energies, forces, the virial and per-atom energy/virial (backend cpu64 | metal); INT-2 vs stock pair reaxff on 58 fixtures"},
     Feature{"lammps.plugin_loadable", Status::Implemented, "-", "plugin load <reaxmetal plugin>", "DSO built against the pinned LAMMPS; version-matched"},
     Feature{"lammps.extract_chi_eta_gamma", Status::Implemented, "-", "Pair::extract(chi|eta|gamma)", "arrays indexed by LAMMPS type 1..ntypes, eta = 2x file value"},
     Feature{"lammps.single_rank_only", Status::Implemented, "-", "comm->nprocs == 1", "multi-rank runs fail explicitly (checked in init_style)"},
     Feature{"lammps.multi_rank", D, "-", "mpirun -np N>1 with reaxff/metal", "deferred; needs distributed ghost/QEq handling"},
     Feature{"lammps.newton_off", R, "-", "newton off (newton_pair off)", "forces on ghosts must be reverse-communicated"},
     Feature{"lammps.ghost_native_contract", Status::Implemented, "-", "ghost atoms from LAMMPS borders", "adapter A2 builds the owned+ghost view from LAMMPS arrays and verifies ghost = owner + shift (INT-7, 58 fixtures); far list equals LAMMPS' own list row by row"},
-    Feature{"lammps.virial_fdotr", P, "M6", "Pair::virial_fdotr_compute", "global virial/pressure from forces on owned+ghost atoms; pressure equals stock pair reaxff in INT-2 (cpu64 1e-10, metal 2.5e-4 relative); INT-4 (NPT) not run"},
+    Feature{"lammps.virial_fdotr", Status::Implemented, "-", "Pair::virial_fdotr_compute", "global virial/pressure from forces on owned+ghost atoms; pressure equals stock pair reaxff in INT-2 (cpu64 1e-10, metal 2.9e-4 relative); NPT water 40 000 steps agrees with stock"},
     Feature{"lammps.ghost_shell_check", Status::Implemented, "-", "(reference only warns, pair_reaxff.cpp:372-375)", "ghost shell < max(nonb_cut, hbond_cut, 2*bond_cut) is an error (INT-7 negative case)"},
     Feature{"dev.neighbor_selfcheck", Status::Implemented, "-", "(development aid)", "pair_style keyword reaxmetal_selfcheck yes: verify the host view and far list inside LAMMPS, then stop with the summary (development aid)"},
     // ---- EEM charge model (naming: EEM == the standard ReaxFF charge model; not a different physics) ---
@@ -74,7 +74,7 @@ constexpr std::array kFeatures{
     Feature{"opt.list_blocking", I, "-", "list/blocking", "Kokkos performance option only"},
     Feature{"opt.tabulate", D, "-", "tabulate N>0 / tabulate_long_range N>0", "deferred; spline tables change the numbers, analytic evaluation only for now"},
     // ---- charge models ---------------------------------------------------------------------------
-    Feature{"qeq.reaxff", P, "M5", "fix qeq/reaxff ... reaxff", "standard EEM as implemented by fix qeq/reaxff (ENGINE_SPEC 7)"},
+    Feature{"qeq.reaxff", Status::Implemented, "-", "fix qeq/reaxff ... reaxff", "stock fix, or fix qeq/reaxff/metal (EEM matrix and matvec on the GPU, stock CG); charges within 1.6e-5 e of stock"},
     Feature{"qeq.pertype_file", P, "M5", "fix qeq/reaxff ... <param file>", "per-type chi/eta/gamma override"},
     Feature{"qeq.shielded", P, "M5", "fix qeq/shielded", "LAMMPS-compatible shielded charge equilibration; same kernel as qeq/reaxff (ENGINE_SPEC 7.2); works through extract() today"},
     Feature{"qeq.acks2", D, "-", "fix acks2/reaxff", "deferred; different charge model"},
@@ -92,13 +92,13 @@ constexpr std::array kFeatures{
     Feature{"out.energy_breakdown", Status::Implemented, "-", "compute pair reaxff (pvector[14])", "see energy_terms.hpp"},
     Feature{"out.forces", Status::Implemented, "-", "atom->f", "analytical"},
     Feature{"out.charges", P, "M5", "atom->q", ""},
-    Feature{"out.virial", P, "M6", "virial_fdotr / v_tally*", "needed for pressure; computed by virial_fdotr in the adapter; matches stock in INT-2; stays Planned until INT-4 (NPT stability)"},
-    Feature{"out.per_atom_energy", P, "M7", "compute pe/atom with reaxff", "adapter-level per-atom energy/virial; until then requests are refused"},
+    Feature{"out.virial", Status::Implemented, "-", "virial_fdotr / v_tally*", "global virial by virial_fdotr (INT-2, NPT); per-atom virial by the CPU-64 tallies of the reference (PERATOM-1)"},
+    Feature{"out.per_atom_energy", Status::Implemented, "-", "compute pe/atom, stress/atom with reaxff", "per-atom energy and virial equal stock on 58 fixtures (PERATOM-1, 5e-10 relative); produced by the CPU-64 engine, so a step on which a compute requests them is evaluated by CPU-64 even with backend metal"},
     Feature{"out.bond_analysis", D, "-", "fix reaxff/bonds, fix reaxff/species", "deferred; LAMMPS analysis tools dynamic_cast to PairReaxFF and refuse other styles"},
     // ---- dynamics --------------------------------------------------------------------------------
     Feature{"md.nve", R, "-", "fix nve", "standalone MD is out of scope: LAMMPS provides integrators"},
     Feature{"md.thermostat", R, "-", "fix nvt / langevin", "standalone MD is out of scope: LAMMPS provides thermostats"},
-    Feature{"md.barostat", P, "M6", "fix npt", "enabled once out.virial is validated; until then pressure-controlled runs are refused"},
+    Feature{"md.barostat", Status::Implemented, "-", "fix npt", "NPT (Nose-Hoover, iso) with Metal + GPU QEq: <T>, <V>, <P> agree with stock on a 648-atom water box over 40 000 steps (INT-4)"},
     Feature{"min.minimize", R, "-", "minimize", "standalone minimiser is out of scope: LAMMPS provides minimize"},
     // ---- backends --------------------------------------------------------------------------------
     Feature{"backend.cpu_fp64", Status::Implemented, "-", "-", "reference backend: all 13 energy terms and forces equal pinned LAMMPS (FULL-1, INT-2)"},

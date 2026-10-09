@@ -17,6 +17,7 @@ NonbondedResult compute_nonbonded_core(const ForceField& ff, const NeighborCutof
 
   NonbondedResult res;
   res.grad.assign(3 * N, 0.0);
+  if (opt.per_atom) { res.eatom.assign(N, 0.0); res.vatom.assign(N, std::array<double, 6>{}); }
   double e_vdw = 0, e_ele = 0, e_pol = 0;
   for (std::size_t i = 0; i < n; ++i) {
     const int ti = atoms.type[i];
@@ -37,6 +38,12 @@ NonbondedResult compute_nonbonded_core(const ForceField& ff, const NeighborCutof
       const auto o = terms::nonbonded_pair<double>(np, vdw_type, opt.lgvdw, p_vdW1, qi, qj, r, Tap, dTap);
       e_vdw += o.e_vdW;
       e_ele += o.e_ele;
+      if (opt.per_atom) {   // ev_tally(i, j, natoms, 1, pe_vdw, e_ele, fpair = -CE, del = xi - xj): half to each atom
+        const double eh = 0.5 * (o.e_vdW + o.e_ele), fp = -o.CE;
+        res.eatom[i] += eh; res.eatom[j] += eh;
+        const double v[6] = {dv[0] * dv[0] * fp, dv[1] * dv[1] * fp, dv[2] * dv[2] * fp, dv[0] * dv[1] * fp, dv[0] * dv[2] * fp, dv[1] * dv[2] * fp};
+        for (std::size_t c = 0; c < 6; ++c) { res.vatom[i][c] += 0.5 * v[c]; res.vatom[j][c] += 0.5 * v[c]; }
+      }
       // reference: f[i] += -(CE) * dvec, f[j] += +(CE) * dvec  (workspace f is the gradient)
       for (std::size_t c = 0; c < 3; ++c) {
         res.grad[3 * i + c] += -o.CE * dv[c];
@@ -49,7 +56,9 @@ NonbondedResult compute_nonbonded_core(const ForceField& ff, const NeighborCutof
     const int ti = atoms.type[i];
     if (ti < 0) continue;
     const SingleBody& s = ff.single(ti);
-    e_pol += terms::polarization<double>(s.chi, s.eta, q[i]);
+    const double ep = terms::polarization<double>(s.chi, s.eta, q[i]);
+    e_pol += ep;
+    if (opt.per_atom) res.eatom[i] += ep;   // ev_tally(i, i, n, 1, 0, en_tmp)
   }
   res.e[EnergyTerm::VdW] = e_vdw;
   res.e[EnergyTerm::Coulomb] = e_ele;

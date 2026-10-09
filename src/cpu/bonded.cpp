@@ -183,6 +183,14 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
 
   BondedResult res;
   std::vector<double> CdDelta(N, 0.0);
+  const bool pa = opt.per_atom;
+  if (pa) { res.eatom.assign(N, 0.0); res.vatom.assign(N, std::array<double, 6>{}); }
+  // the reference's tally helpers (pair.cpp ev_tally / ev_tally3 / v_tally3 / v_tally4 / v_tally2_newton)
+  auto etally_half = [&](std::size_t i, std::size_t j, double e) { if (pa) { res.eatom[i] += 0.5 * e; res.eatom[j] += 0.5 * e; } };
+  auto vadd = [&](std::size_t a, double s, const std::array<double, 6>& v) { for (std::size_t c = 0; c < 6; ++c) res.vatom[a][c] += s * v[c]; };
+  auto outer = [](const R3& d, const R3& f) { return std::array<double, 6>{d[0] * f[0], d[1] * f[1], d[2] * f[2], d[0] * f[1], d[0] * f[2], d[1] * f[2]}; };
+  auto sum6 = [](std::array<double, 6> a, const std::array<double, 6>& b) { for (std::size_t c = 0; c < 6; ++c) a[c] += b[c]; return a; };
+  auto diff = [&](std::size_t a, std::size_t b) { const R3 xa = atoms.position(a), xb = atoms.position(b); return R3{xa[0] - xb[0], xa[1] - xb[1], xa[2] - xb[2]}; };
   double e_bond = 0, e_lp = 0, e_ov = 0, e_un = 0;
 
   // ---- Bonds (owned centres, tag order selects one end of each bond) -------------------------------------------------------
@@ -204,12 +212,14 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
       const auto pp = pair_params(tb);
       const auto be = terms::bond_energy<double>(pp, b.BO_s, b.BO_pi, b.BO_pi2);
       e_bond += be.e;
+      etally_half(i, j, be.e);
       b.Cdbo += be.CEbo;
       b.Cdbopi -= (be.CEbo + tb.De_p);
       b.Cdbopi2 -= (be.CEbo + tb.De_pp);
       if (b.BO >= 1.00 && tb.triple_bond_stabilisation) {
         const auto ts = terms::triple_bond_stabilisation<double>(gp3, gp4, gp7, gp10, b.BO, total_bo[i], total_bo[j], aq[i].Delta, aq[j].Delta);
         e_bond += ts.e;
+        etally_half(i, j, ts.e);
         b.Cdbo += ts.decobdbo;
         CdDelta[i] += ts.decobdboua;
         CdDelta[j] += ts.decobdboub;
@@ -227,6 +237,7 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
     if (active) {
       const auto lp = terms::lone_pair<double>(si.p_lp2, aq[i].Delta_lp, aq[i].dDelta_lp);
       e_lp += lp.e;
+      if (pa) res.eatom[i] += lp.e;
       CdDelta[i] += lp.CElp;
     }
     if (c2_gate && si.flags.c2_species) {
@@ -236,6 +247,7 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
         const auto c2 = terms::c2_correction<double>(p_lp3, b.BO, aq[i].Delta);
         if (c2.vov3 > 3.) {
           e_lp += c2.e;
+          etally_half(i, static_cast<std::size_t>(b.nbr), c2.e);
           b.Cdbo += c2.deahu2dbo;
           CdDelta[i] += c2.deahu2dsbo;
         }
@@ -261,6 +273,7 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
                                               si.p_ovun5, p_ovun3, p_ovun4, p_ovun6, p_ovun7, p_ovun8, under_active);
     e_ov += ou.e_ov;
     if (under_active) e_un += ou.e_un;
+    if (pa) res.eatom[i] += ou.e_ov + (under_active ? ou.e_un : 0.0);
     CdDelta[i] += ou.CEover3;
     if (under_active) CdDelta[i] += ou.CEunder3;
     for (Bond& b : bonds[i]) {
@@ -373,7 +386,8 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
                 const double CEval6 = CEval5 * dSBO1;
                 const double CEval7 = CEval5 * dSBO2;
                 const double CEval8 = -CEval4 / sin_theta;
-                e_ang += f7_ij * f7_jk * f8_Dj * expval12theta;
+                const double e_ang_t = f7_ij * f7_jk * f8_Dj * expval12theta;
+                e_ang += e_ang_t;
                 // penalty
                 const double p_pen1 = thbp.p_pen1, p_pen2 = gp[19], p_pen3 = gp[20], p_pen4 = gp[21];
                 const double exp_pen2ij = std::exp(-p_pen2 * ((BOA_ij - 2.0) * (BOA_ij - 2.0)));
@@ -417,6 +431,12 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
                 scaled_add(f[i], CEval8, t.dcos_di);
                 scaled_add(f[j], CEval8, t.dcos_dj);
                 scaled_add(f[k], CEval8, t.dcos_dk);
+                if (pa) {   // ev_tally(j, j, ..., e_ang + e_pen + e_coa) and v_tally3(i, j, k, fi, fk, xi - xj, xk - xj) with f = -CEval8 * dcos
+                  res.eatom[j] += e_ang_t + e_pen_t + e_coa_t;
+                  const R3 fi_t = scaled(-CEval8, t.dcos_di), fk_t = scaled(-CEval8, t.dcos_dk);
+                  const auto v = sum6(outer(diff(i, j), fi_t), outer(diff(k, j), fk_t));
+                  vadd(i, 1.0 / 3.0, v); vadd(j, 1.0 / 3.0, v); vadd(k, 1.0 / 3.0, v);
+                }
               }
             }
           }
@@ -542,7 +562,8 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
             const double exp_cot2_kl = std::exp(-p_cot2 * ((BOA_kl - 1.5) * (BOA_kl - 1.5)));
             const double fn10 = (1.0 - exp_tor2_ij) * (1.0 - exp_tor2_jk) * (1.0 - exp_tor2_kl);
             const double CV = 0.5 * (fbp->V1 * (1.0 + cos_omega) + fbp->V2 * exp_tor1 * (1.0 - cos2omega) + fbp->V3 * (1.0 + cos3omega));
-            e_tor += fn10 * sin_ijk * sin_jkl * CV;
+            const double e_tor_t = fn10 * sin_ijk * sin_jkl * CV;
+            e_tor += e_tor_t;
             const double dfn11 = (-p_tor3 * exp_tor3_DjDk + (p_tor3 * exp_tor3_DjDk - p_tor4 * exp_tor4_DjDk) * (2.0 + exp_tor3_DjDk) * exp_tor34_inv) * exp_tor34_inv;
             const double CEtors1 = sin_ijk * sin_jkl * CV;
             const double CEtors2 = -fn10 * 2.0 * fbp->p_tor1 * fbp->V2 * exp_tor1 * (2.0 - bjk.BO_pi - f11_DjDk) * (1.0 - (cos_omega * cos_omega)) * sin_ijk * sin_jkl;
@@ -557,7 +578,8 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
 
             // 4-body conjugation
             const double fn12 = exp_cot2_ij * exp_cot2_jk * exp_cot2_kl;
-            e_con += fbp->p_cot1 * fn12 * (1.0 + ((cos_omega * cos_omega) - 1.0) * sin_ijk * sin_jkl);
+            const double e_con_t = fbp->p_cot1 * fn12 * (1.0 + ((cos_omega * cos_omega) - 1.0) * sin_ijk * sin_jkl);
+            e_con += e_con_t;
             const double Cconj = -2.0 * fn12 * fbp->p_cot1 * p_cot2 * (1.0 + ((cos_omega * cos_omega) - 1.0) * sin_ijk * sin_jkl);
             const double CEconj1 = Cconj * (BOA_ij - 1.5e0), CEconj2 = Cconj * (BOA_jk - 1.5e0), CEconj3 = Cconj * (BOA_kl - 1.5e0);
             const double CEconj4 = -fbp->p_cot1 * fn12 * ((cos_omega * cos_omega) - 1.0) * sin_jkl * tan_ijk_i;
@@ -581,6 +603,18 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
             scaled_add(f[j], CEtors9 + CEconj6, dco_j);
             scaled_add(f[k], CEtors9 + CEconj6, dco_k);
             scaled_add(f[l], CEtors9 + CEconj6, dco_l);
+            if (pa) {   // ev_tally(j, k, ..., e_tor + e_con) and v_tally4(i, j, k, l, fi, fj, fk, xl - xi, xl - xj, xl - xk)
+              etally_half(j, k, e_tor_t + e_con_t);
+              R3 fi_t = scaled(CEtors7 + CEconj4, p_ijk.dcos_dk), fj_t = scaled(CEtors7 + CEconj4, p_ijk.dcos_dj), fk_t = scaled(CEtors7 + CEconj4, p_ijk.dcos_di);
+              scaled_add(fj_t, CEtors8 + CEconj5, p_jkl.dcos_di);
+              scaled_add(fk_t, CEtors8 + CEconj5, p_jkl.dcos_dj);
+              scaled_add(fi_t, CEtors9 + CEconj6, dco_i);
+              scaled_add(fj_t, CEtors9 + CEconj6, dco_j);
+              scaled_add(fk_t, CEtors9 + CEconj6, dco_k);
+              R3 dil = diff(l, i), djl = diff(l, j), dkl = diff(l, k);
+              const auto v = sum6(sum6(outer(dil, fi_t), outer(djl, fj_t)), outer(dkl, fk_t));
+              for (const std::size_t a : {i, j, k, l}) vadd(a, 0.25, v);
+            }
           }
         }
       }
@@ -634,6 +668,15 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
           scaled_add(f[k], +CEhb2, dtk);
           scaled_add(f[j], -CEhb3 / r_jk, dvec_jk);
           scaled_add(f[k], +CEhb3 / r_jk, dvec_jk);
+          if (pa) {   // ev_tally3(i, j, k, e_hb, 0, fi, fk, xj - xi, xj - xk)
+            for (const std::size_t a : {i, j, k}) res.eatom[a] += e_hb_t / 3.0;
+            const R3 fi_t = scaled(CEhb2, dti);
+            R3 fk_t = scaled(CEhb2, dtk);
+            scaled_add(fk_t, CEhb3 / r_jk, dvec_jk);
+            const R3 dij = diff(j, i), dkj = diff(j, k);
+            const auto v = sum6(outer(dij, fi_t), outer(dkj, fk_t));
+            for (const std::size_t a : {i, j, k}) vadd(a, 1.0 / 3.0, v);
+          }
         }
       }
     }
@@ -659,20 +702,32 @@ BondedResult compute_bonded_core(const ForceField& ff, const ControlParams& ctl,
       scaled_add(t, C1dbopi, bij.dln_BOp_pi);
       scaled_add(t, C1dbopi2, bij.dln_BOp_pi2);
       add(f[i], t);
+      if (pa) vadd(i, 1.0, outer(diff(i, j), scaled(-0.5, t)));
 
       t = scaled(-(C1dbo + C1dDelta + C2dbopi + C2dbopi2), bij.dBOp);
       scaled_add(t, C3dbo + C3dDelta + C4dbopi + C4dbopi2, dDeltap_self[j]);
       scaled_add(t, -C1dbopi, bij.dln_BOp_pi);
       scaled_add(t, -C1dbopi2, bij.dln_BOp_pi2);
       add(f[j], t);
+      if (pa) vadd(j, 1.0, outer(diff(j, i), scaled(-0.5, t)));
 
       for (const Bond& bk : bonds[i]) {
         const double ck = -(C2dbo + C2dDelta + C3dbopi + C3dbopi2);
         scaled_add(f[static_cast<std::size_t>(bk.nbr)], ck, bk.dBOp);
+        if (pa) {
+          const std::size_t kk = static_cast<std::size_t>(bk.nbr);
+          const R3 fk_t = scaled(-0.5 * ck, bk.dBOp);
+          vadd(kk, 1.0, outer(diff(kk, i), fk_t)); vadd(kk, 1.0, outer(diff(kk, j), fk_t));
+        }
       }
       for (const Bond& bk : bonds[j]) {
         const double ck = -(C3dbo + C3dDelta + C4dbopi + C4dbopi2);
         scaled_add(f[static_cast<std::size_t>(bk.nbr)], ck, bk.dBOp);
+        if (pa) {
+          const std::size_t kk = static_cast<std::size_t>(bk.nbr);
+          const R3 fk_t = scaled(-0.5 * ck, bk.dBOp);
+          vadd(kk, 1.0, outer(diff(kk, i), fk_t)); vadd(kk, 1.0, outer(diff(kk, j), fk_t));
+        }
       }
     }
   }
