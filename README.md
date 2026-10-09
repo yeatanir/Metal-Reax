@@ -23,7 +23,7 @@ The complete ReaxFF force field (all 13 energy terms, forces, global virial) run
 | CPU-32 twin / FP32 envelope | same CPU source compiled with float: E/atom 6e-5, force 4.7e-3 max / 2.2e-3 RMS vs CPU-64; satisfies C3 and Metal sits inside it |
 | Speed vs stock `reaxff` (serial, CHO water, NVT) | 0.9× at 648 atoms, 3.5× at 5k, 7.2× at 24k, 10.5× at 66k atoms |
 
-**Not implemented / not validated**: `fix acks2/qtpie/qeq/rel` and `efield`+QEq (rejected explicitly), vdW type 2 and `enobonds no` tests, a decision-mismatch census
+**Not implemented / not validated**: `fix acks2/qtpie/qeq/rel` and `efield`+QEq (rejected explicitly), a decision-mismatch census
 for FP32 threshold crossings, a GPU charge matrix on several ranks, and speed measurements beyond serial CHO water. Metal NVE energy conservation is noisier than stock
 on the oxide test (see above). The honest record of every run, including failures and the open decisions, is in `docs/VALIDATION.md` (results register)
 and `docs/DEVELOPMENT_LOG.md`.
@@ -53,7 +53,7 @@ Then:
 cmake -S . -B build -DREAXMETAL_ENABLE_METAL=ON -DREAXMETAL_BUILD_LAMMPS_PLUGIN=ON \
       -DREAXMETAL_LAMMPS_SOURCE_DIR=/path/lammps/src -DREAXMETAL_LAMMPS_PREFIX=/path/install \
       -DREAXMETAL_FFIELD_DIR=/path/lammps/potentials
-cmake --build build -j && ctest --test-dir build -j4 --output-on-failure      # 38 tests (41+ with the MPI tree)
+cmake --build build -j && ctest --test-dir build -j4 --output-on-failure      # 40 tests (44 with the MPI tree)
 ```
 Shaders are compiled at run time from source (no Xcode needed; Command Line Tools suffice). Without `-DREAXMETAL_ENABLE_METAL=ON` (Linux, or macOS CPU-only) the CPU-64 engine, parser, neighbor code and reference tooling still build and test.
 

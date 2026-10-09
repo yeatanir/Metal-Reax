@@ -98,6 +98,10 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
       endif()
     endforeach()
   endif()
+  # VAR-1: vdW type 2 and `enobonds no`, which no bundled fixture exercises
+  add_test(NAME lammps_variants COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_variants.py
+           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
+  set_tests_properties(lammps_variants PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
   add_test(NAME lammps_min1_cpu64 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_min.py
            --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
   set_tests_properties(lammps_min1_cpu64 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
@@ -110,6 +114,9 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
     add_test(NAME lammps_int2_metal_qeq COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_int2.py
              --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal --gpu-qeq)
     set_tests_properties(lammps_int2_metal_qeq PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
+    add_test(NAME lammps_variants_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_variants.py
+             --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal)
+    set_tests_properties(lammps_variants_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     add_test(NAME lammps_peratom_metal COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_peratom.py
              --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend metal)
     set_tests_properties(lammps_peratom_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
