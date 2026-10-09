@@ -261,3 +261,10 @@ Run `tools/mac/step1_bringup.sh` first and send `mac-reports/step1-*.txt`. Then 
 
 ### Not run / known gaps
 NPT (INT-4), NVE drift protocol (NVE-1) and minimisation (MIN-1) beyond the 200-step water-box sanity run; the CPU-32 twin and FP32-1 envelope; decision-mismatch census; vdW type 2 and `enobonds no`; the GPU QEq (charges still come from the stock CPU fix); `reaxff/metal` per-atom energy/virial; MPI > 1 rank; systems larger than ~3 000 atoms were only timed, not validated. **Performance is not good yet**: a 3 000-atom water box takes 0.48 s of pair time for 20 steps on Metal vs 0.39 s for stock CPU `reaxff` — the pipeline re-uploads, re-bins and re-runs everything every step and the torsion/valence kernels use one thread per atom. That is the M8 work.
+
+## GPU charge equilibration (fix `qeq/reaxff/metal`) — 2026-10-08
+
+* New plugin fix derived from the stock `FixQEqReaxFF`: `compute_H()` and `sparse_matvec()` are overridden; the preconditioned CG, history extrapolation and charge update stay the stock double-precision code. H assembly (`rm_qeq_h`) and `y = (diag(eta)+H)x` (`rm_qeq_mv`) run on the GPU in FP32 over the engine's owned far rows, with the symmetric product as a gather (row part with ghost images mapped to their owner + column part from the host column index), so no atomics and a fixed summation order. Falls back to the stock CPU matrix for groups other than `all`, a taper radius above `nonb_cut`, or `backend cpu64`.
+* INT-2 with `--gpu-qeq` (CTest `lammps_int2_metal_qeq`): 58 fixtures PASS under the C3 criteria; charges differ from the stock fix by at most 1.6e-5 e (limit 1e-4). CTest 32/32.
+* 24k-atom water box, 10 NVE steps, `qeq/reaxff` tolerance 1e-10: Pair 1.06 s stock / 0.27 s Metal; Modify 1.34 s stock / 0.29 s with the GPU fix; total wall about 2.4 s stock, 1.6 s Metal pair only, 0.5 s with both.
+* Not claimed: the FP32 matvec limits the attainable CG residual, so the requested tolerance is honoured only as far as the recursion allows; kernels have no CPU-emulation test (validated against the stock fix on the device only).

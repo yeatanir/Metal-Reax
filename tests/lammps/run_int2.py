@@ -17,7 +17,7 @@ import runner  # noqa: E402
 SLOTS = ["eb", "ea", "elp", "emol", "ev", "epen", "ecoa", "ehb", "et", "eco", "ew", "ep", "efi", "eqeq"]
 
 
-def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None):
+def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None, gpu_qeq=False):
     workdir = Path(workdir); workdir.mkdir(parents=True, exist_ok=True)
     ffpath = Path(ffield_dir) / case["ffield"]["name"]
     ffp = runner.parse_ffield(ffpath)
@@ -27,6 +27,8 @@ def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None)
     if plugin:
         text = text.replace("pair_style reaxff NULL", f"plugin load {plugin}\npair_style reaxff/metal NULL backend {backend}", 1)
         text = text.replace("compute pp all pair reaxff", "compute pp all pair reaxff/metal")
+        if gpu_qeq:   # fixtures with fixed charges have no fix to replace
+            text = text.replace(" qeq/reaxff ", " qeq/reaxff/metal ")
     text = text.replace("thermo_style custom step pe", "thermo_style custom step pe press", 1)
     inp.write_text(text)
     r = subprocess.run([lmp, "-in", str(inp), "-log", "none", "-nocite"], cwd=workdir, capture_output=True, text=True, env=env)
@@ -43,7 +45,7 @@ def run_lmp(lmp, case, ffield_dir, workdir, plugin=None, backend=None, env=None)
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lmp", required=True); ap.add_argument("--plugin", required=True); ap.add_argument("--ffield-dir", required=True)
-    ap.add_argument("--backend", default="cpu64"); ap.add_argument("--only")
+    ap.add_argument("--backend", default="cpu64"); ap.add_argument("--only"); ap.add_argument("--gpu-qeq", action="store_true", help="plugin runs use fix qeq/reaxff/metal (needs --backend metal to use the GPU)")
     ap.add_argument("--fixtures", default=str(ROOT / "tests" / "fixtures"))
     a = ap.parse_args()
     fx = Path(a.fixtures)
@@ -70,7 +72,7 @@ def main():
             for k, c in enumerate(tried):
                 try:
                     s_th, s_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_stock"), env=env)
-                    o_th, o_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_ours"), plugin=a.plugin, backend=a.backend, env=env)
+                    o_th, o_dump = run_lmp(a.lmp, c, a.ffield_dir, Path(td) / (cf.stem + "_ours"), plugin=a.plugin, backend=a.backend, env=env, gpu_qeq=a.gpu_qeq)
                     res = (s_th, s_dump, o_th, o_dump); break
                 except RuntimeError as e:
                     if k == 0 and "bond-parameter block" in str(e):

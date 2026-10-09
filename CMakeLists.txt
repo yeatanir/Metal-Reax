@@ -45,6 +45,7 @@ add_library(reaxmetal_core STATIC
   src/cpu/nonbonded.cpp
   src/neighbor/neighbor.cpp
   src/neighbor/nonbonded_device.cpp
+  src/neighbor/qeq_device.cpp
   src/neighbor/bonded_device.cpp
   src/io/ffield_parser.cpp
   src/io/control_parser.cpp

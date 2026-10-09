@@ -72,6 +72,8 @@ struct Context::Impl {
   // persistent buffers for the per-step pipelines: a slot keeps its buffer while it is big enough (no reallocation, no page faults per step)
   std::map<std::string, id<MTLBuffer>> slots;
   std::uint32_t last_bond_cap = 0, last_hbond_cap = 0;
+  std::uint32_t qeq_nlocal = 0, qeq_cap = 0;   // state of the last qeq_setup (its buffers live in the slots "qeq_*")
+  RmQeqParams qeq_params{};
   id<MTLBuffer> slot(const std::string& name, NSUInteger bytes) {
     id<MTLBuffer> b = slots[name];
     if (b == nil || [b length] < bytes || [b length] > 4 * (bytes > 16 ? bytes : 16)) {
@@ -351,6 +353,51 @@ BondedDeviceOutput Context::bonded(const BondedDeviceInput& in) {
   impl_->last_hbond_cap = out.hbond_cap;
   impl_->gpu_seconds = be.gpu_seconds();
   return out;
+}
+
+void Context::qeq_setup(const QeqDeviceInput& in) {
+  Impl& m = *impl_;
+  const std::size_t nlocal = in.list.nlocal, cap = in.rows.cap;
+  if (nlocal * cap > 0xFFFFFFFFull) throw MetalError("qeq: row buffer index exceeds 32 bits");
+  m.qeq_nlocal = static_cast<std::uint32_t>(nlocal);
+  m.qeq_cap = static_cast<std::uint32_t>(cap);
+  if (nlocal == 0) return;
+  m.qeq_params = RmQeqParams{};
+  m.qeq_params.nlocal = m.qeq_nlocal; m.qeq_params.cap = m.qeq_cap; m.qeq_params.ntypes = in.ntypes; m.qeq_params.swa = in.swa; m.qeq_params.swb = in.swb;
+  id<MTLBuffer> bx = m.slot_from("qeq_x", in.list.x.data(), in.list.x.size() * sizeof(float));
+  id<MTLBuffer> bxlo = m.slot_from("qeq_xlo", in.list.x_lo.data(), in.list.x_lo.size() * sizeof(float));
+  id<MTLBuffer> btype = m.slot_from("qeq_type", in.type.data(), in.type.size() * sizeof(std::int32_t));
+  id<MTLBuffer> bshld = m.slot_from("qeq_shld", in.shld.data(), in.shld.size() * sizeof(float));
+  id<MTLBuffer> bnbr = m.slot_from("qeq_nbr", in.rows.nbr.data(), in.rows.nbr.size() * sizeof(std::int32_t));
+  id<MTLBuffer> bcount = m.slot_from("qeq_count", in.rows.count.data(), in.rows.count.size() * sizeof(std::uint32_t));
+  id<MTLBuffer> bhv = m.slot("qeq_hv", nlocal * cap * sizeof(float));
+  m.slot_from("qeq_owner", in.owner.data(), in.owner.size() * sizeof(std::int32_t));
+  m.slot_from("qeq_colstart", in.column.start.data(), in.column.start.size() * sizeof(std::uint32_t));
+  m.slot_from("qeq_colitems", in.column.items.data(), in.column.items.size() * sizeof(std::uint32_t));
+  m.slot_from("qeq_eta", in.eta_atom.data(), in.eta_atom.size() * sizeof(float));
+  m.slot("qeq_xv", nlocal * sizeof(float));
+  m.slot("qeq_yv", nlocal * sizeof(float));
+  Dispatch d = m.make("rm_qeq_h", nlocal);
+  d.buffers = {bx, bxlo, btype, bshld, bnbr, bcount, bhv};
+  set_params(d, m.qeq_params, 7);
+  m.run({d});
+}
+
+void Context::qeq_matvec(const double* x, double* y) {
+  Impl& m = *impl_;
+  const std::size_t n = m.qeq_nlocal;
+  if (n == 0) return;
+  id<MTLBuffer> bxv = m.slots["qeq_xv"];
+  id<MTLBuffer> byv = m.slots["qeq_yv"];
+  float* xf = static_cast<float*>([bxv contents]);
+  for (std::size_t i = 0; i < n; ++i) xf[i] = static_cast<float>(x[i]);
+  Dispatch d = m.make("rm_qeq_mv", n);
+  d.buffers = {m.slots["qeq_hv"], m.slots["qeq_nbr"], m.slots["qeq_count"], m.slots["qeq_owner"],
+               m.slots["qeq_colstart"], m.slots["qeq_colitems"], bxv, m.slots["qeq_eta"], byv};
+  set_params(d, m.qeq_params, 9);
+  m.run({d});
+  const float* yf = static_cast<const float*>([byv contents]);
+  for (std::size_t i = 0; i < n; ++i) y[i] = static_cast<double>(yf[i]);
 }
 
 std::vector<float> Context::partial_sums(std::span<const float> v, std::uint32_t chunk) {

@@ -263,6 +263,12 @@ reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) con
   return a;
 }
 
+reaxmetal::mtl::Context &PairReaxFFMetal::metal_context()
+{
+  if (!ctx_) ctx_ = std::make_unique<reaxmetal::mtl::Context>();
+  return *ctx_;
+}
+
 std::string PairReaxFFMetal::selfcheck_summary(bool &ok)
 {
   using namespace reaxmetal;
@@ -343,7 +349,7 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     no.lgvdw = settings_.lgvdw;
     if (use_metal) {
       // FP32 on the GPU (deterministic, no atomics); bookkeeping and the final sums in FP64 on the host. Charges come from the stock charge fix.
-      if (!ctx_) ctx_ = std::make_unique<mtl::Context>();
+      metal_context();
       const BondedDeviceInput bin = make_bonded_device_input(*ff_, settings_.control, a, box, bo);
       lap("bonded_pack");
       const BondedDeviceOutput bout = ctx_->bonded(bin);

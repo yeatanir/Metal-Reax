@@ -16,6 +16,7 @@
 #include "reaxmetal/neighbor.hpp"
 #include "reaxmetal/bonded_device.hpp"
 #include "reaxmetal/nonbonded_device.hpp"
+#include "reaxmetal/qeq_device.hpp"
 
 namespace reaxmetal::mtl {   // not `metal`: that name is Metal Shading Language's own namespace
 
@@ -75,6 +76,10 @@ class Context {
   NonbondedDeviceOutput nonbonded(const NonbondedDeviceInput& in);
   // M6 bonded terms (all 10 bonded energy terms + gradient): rm_b_* kernels, grow-and-retry on bond / H-bond capacity
   BondedDeviceOutput bonded(const BondedDeviceInput& in);
+  // fix qeq/reaxff/metal: qeq_setup uploads the rows and assembles H (rm_qeq_h); qeq_matvec then computes y = (diag(eta) + H) x for the nlocal
+  // owned atoms (doubles in and out, FP32 on the device, fixed summation order)
+  void qeq_setup(const QeqDeviceInput& in);
+  void qeq_matvec(const double* x, double* y);
   // FORCE-2
   std::vector<float> partial_sums(std::span<const float> v, std::uint32_t chunk);
   float sum(std::span<const float> v, std::uint32_t chunk);   // partial_sums + rm_sum_partials in one command buffer

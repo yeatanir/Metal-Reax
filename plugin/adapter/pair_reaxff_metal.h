@@ -35,6 +35,13 @@ class PairReaxFFMetal : public Pair {
   void *extract(const char *, int &) override;
   void init_list(int, class NeighList *) override;
 
+  // used by fix qeq/reaxff/metal (same plugin): the Metal context and the ghost-native host view
+  bool uses_metal() const { return settings_.backend == "metal"; }
+  reaxmetal::mtl::Context &metal_context();
+  reaxmetal::NeighborCutoffs cutoffs() const;
+  reaxmetal::Box host_box() const;
+  reaxmetal::AtomSet host_atom_set(const reaxmetal::Box &box) const;
+
  protected:
   reaxmetal::PairSettings settings_;
   std::unique_ptr<reaxmetal::ForceField> ff_;
@@ -47,11 +54,8 @@ class PairReaxFFMetal : public Pair {
   void allocate();
 
   // ---- A2 (M3): the ghost-native view of the host data (LAMMPS_INTEGRATION section 4, rules C1-C3, C10) ----
-  reaxmetal::NeighborCutoffs cutoffs() const;
-  reaxmetal::Box host_box() const;
-  // owned atoms [0,nlocal) then ghosts, exactly in LAMMPS' order; throws reaxmetal::SystemError when the host data violate the
+  // host_atom_set: owned atoms [0,nlocal) then ghosts, exactly in LAMMPS' order; throws reaxmetal::SystemError when the host data violate the
   // contract (a ghost that is not owner + lattice shift, duplicate tags among owned atoms, a ghost shell narrower than required)
-  reaxmetal::AtomSet host_atom_set(const reaxmetal::Box &box) const;
   // builds the engine's far list for that view and compares it row by row with LAMMPS' own half/newton-off/ghost list
   std::string selfcheck_summary(bool &ok);
 };

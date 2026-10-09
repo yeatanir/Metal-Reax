@@ -101,3 +101,58 @@ kernel void rm_nb_gather(device const float* pf [[buffer(0)]],
   grad[3 * k + 1] = gy;
   grad[3 * k + 2] = gz;
 }
+
+// ---- fix qeq/reaxff/metal ---------------------------------------------------------------------------------------------------------------
+// rm_qeq_h: H_ij for every entry of the OWNED far rows (zero beyond the taper radius): Tap(r) * 14.4 / cbrt(r^3 + shld[ti][tj]).
+kernel void rm_qeq_h(device const float* x [[buffer(0)]],
+                     device const float* xlo [[buffer(1)]],
+                     device const int* type [[buffer(2)]],
+                     device const float* shld [[buffer(3)]],
+                     device const int* nbr [[buffer(4)]],
+                     device const uint* count [[buffer(5)]],
+                     device float* hv [[buffer(6)]],
+                     constant RmQeqParams& p [[buffer(7)]],
+                     uint i [[thread_position_in_grid]]) {
+  if (i >= p.nlocal) return;
+  const uint n = (count[i] < p.cap) ? count[i] : p.cap;
+  for (uint e = 0; e < n; ++e) {
+    const uint j = (uint)nbr[i * p.cap + e];
+    const float dx = (x[3 * j] - x[3 * i]) + (xlo[3 * j] - xlo[3 * i]);
+    const float dy = (x[3 * j + 1] - x[3 * i + 1]) + (xlo[3 * j + 1] - xlo[3 * i + 1]);
+    const float dz = (x[3 * j + 2] - x[3 * i + 2]) + (xlo[3 * j + 2] - xlo[3 * i + 2]);
+    const float r = sqrt(dx * dx + dy * dy + dz * dz);
+    float v = 0.0f;
+    if (r <= p.swb) {
+      float Tap, dTap;
+      reaxmetal::terms::taper_stable<float>(p.swa, p.swb, r, Tap, dTap);
+      v = Tap * 14.4f / pow(r * r * r + shld[(uint)type[i] * p.ntypes + (uint)type[j]], 1.0f / 3.0f);
+    }
+    hv[i * p.cap + e] = v;
+  }
+}
+
+// rm_qeq_mv: y = (diag(eta) + H) x for the owned atoms of a serial run. H is stored as upper rows; the symmetric product gathers
+//   row part  : sum over the own row of hv * x[owner(j)]   (ghost images map to their owner: owned-ghost pairs are seen from both ends)
+//   column part: sum over the owned rows that name i       (owned-owned pairs, from the host column index)
+// both in ascending entry order, so the float result is the same on every run.
+kernel void rm_qeq_mv(device const float* hv [[buffer(0)]],
+                      device const int* nbr [[buffer(1)]],
+                      device const uint* count [[buffer(2)]],
+                      device const int* owner [[buffer(3)]],
+                      device const uint* col_start [[buffer(4)]],
+                      device const uint* col_items [[buffer(5)]],
+                      device const float* xv [[buffer(6)]],
+                      device const float* eta_atom [[buffer(7)]],
+                      device float* yv [[buffer(8)]],
+                      constant RmQeqParams& p [[buffer(9)]],
+                      uint i [[thread_position_in_grid]]) {
+  if (i >= p.nlocal) return;
+  float y = eta_atom[i] * xv[i];
+  const uint n = (count[i] < p.cap) ? count[i] : p.cap;
+  for (uint e = 0; e < n; ++e) y += hv[i * p.cap + e] * xv[owner[nbr[i * p.cap + e]]];
+  for (uint t = col_start[i]; t < col_start[i + 1]; ++t) {
+    const uint id = col_items[t];
+    y += hv[id] * xv[id / p.cap];
+  }
+  yv[i] = y;
+}

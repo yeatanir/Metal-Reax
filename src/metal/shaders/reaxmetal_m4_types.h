@@ -34,4 +34,13 @@ struct RmNbGatherParams {
   rm_u32 cap;
 };
 
+// fix qeq/reaxff/metal: H assembly and the symmetric matvec (the CG itself stays on the host in double)
+struct RmQeqParams {
+  rm_u32 nlocal;
+  rm_u32 cap;        // row capacity of the far rows
+  rm_u32 ntypes;
+  rm_f32 swa;        // fix taper radii (fix arguments), not the force field's
+  rm_f32 swb;
+};
+
 #endif
