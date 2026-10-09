@@ -4,6 +4,7 @@
 #include "reaxmetal/neighbor.hpp"
 
 #include <algorithm>
+#include <thread>
 #include <cfloat>
 #include <cmath>
 #include <numeric>
@@ -214,26 +215,57 @@ FarList far_list_from_rows(const AtomSet& atoms, const NeighborCutoffs& cut, con
   check_cutoffs(cut);
   const std::size_t n = atoms.nall();
   if (rows.nall != n) throw SystemError("far_list_from_rows: rows and atoms differ in size");
+  for (std::size_t i = 0; i < n; ++i)
+    if (rows.count[i] > rows.cap) throw SystemError("far_list_from_rows: row overflow");
+  // Rows are independent: contiguous blocks of rows are filtered and sorted by worker threads into private fragments, which are then concatenated in
+  // block order, so the result does not depend on the number of threads.
+  const std::size_t nthreads = std::max<std::size_t>(1, std::min<std::size_t>(8, std::min<std::size_t>(std::thread::hardware_concurrency(), n / 4096 + 1)));
+  struct Fragment { std::vector<std::size_t> row_len; std::vector<std::int32_t> nbr; std::vector<double> dist, dvec; };
+  std::vector<Fragment> frag(nthreads);
+  auto work = [&](std::size_t t) {
+    const std::size_t lo = n * t / nthreads, hi = n * (t + 1) / nthreads;
+    Fragment& f = frag[t];
+    f.row_len.reserve(hi - lo);
+    std::vector<RowEntry> row;
+    for (std::size_t i = lo; i < hi; ++i) {
+      const double rc = cut.row_cut(i, atoms.nlocal);
+      const double rc2 = rc * rc;
+      const double* xi = &atoms.x[3 * i];
+      const std::uint32_t cnt = rows.count[i];
+      row.clear();
+      for (std::uint32_t e = 0; e < cnt; ++e) {
+        const std::int32_t j = rows.nbr[i * rows.cap + e];
+        RowEntry r;
+        double d2;
+        if (!within(xi, &atoms.x[3 * static_cast<std::size_t>(j)], rc2, r.dv, d2)) continue;
+        r.j = j;
+        r.d = std::sqrt(d2);
+        row.push_back(r);
+      }
+      std::sort(row.begin(), row.end(), [](const RowEntry& a, const RowEntry& b) { return a.j < b.j; });
+      for (const auto& e : row) {
+        f.nbr.push_back(e.j);
+        f.dist.push_back(e.d);
+        f.dvec.insert(f.dvec.end(), e.dv, e.dv + 3);
+      }
+      f.row_len.push_back(row.size());
+    }
+  };
+  std::vector<std::thread> pool;
+  for (std::size_t t = 1; t < nthreads; ++t) pool.emplace_back(work, t);
+  work(0);
+  for (auto& th : pool) th.join();
   FarList out;
+  std::size_t total = 0;
+  for (const auto& f : frag) total += f.nbr.size();
   out.row_start.reserve(n + 1);
   out.row_start.push_back(0);
-  std::vector<RowEntry> row;
-  for (std::size_t i = 0; i < n; ++i) {
-    const double rc = cut.row_cut(i, atoms.nlocal);
-    const double rc2 = rc * rc;
-    const double* xi = &atoms.x[3 * i];
-    const std::uint32_t cnt = std::min(rows.count[i], rows.cap);
-    if (rows.count[i] > rows.cap) throw SystemError("far_list_from_rows: row overflow");
-    for (std::uint32_t e = 0; e < cnt; ++e) {
-      const std::int32_t j = rows.nbr[i * rows.cap + e];
-      RowEntry r;
-      double d2;
-      if (!within(xi, &atoms.x[3 * static_cast<std::size_t>(j)], rc2, r.dv, d2)) continue;
-      r.j = j;
-      r.d = std::sqrt(d2);
-      row.push_back(r);
-    }
-    append_row(out, row);
+  out.nbr.reserve(total); out.dist.reserve(total); out.dvec.reserve(3 * total);
+  for (const auto& f : frag) {
+    for (const std::size_t len : f.row_len) out.row_start.push_back(out.row_start.back() + len);
+    out.nbr.insert(out.nbr.end(), f.nbr.begin(), f.nbr.end());
+    out.dist.insert(out.dist.end(), f.dist.begin(), f.dist.end());
+    out.dvec.insert(out.dvec.end(), f.dvec.begin(), f.dvec.end());
   }
   return out;
 }

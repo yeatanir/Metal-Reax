@@ -178,6 +178,18 @@ static void test_far_rows_vs_cpu() {
       const FarRowsF32 again = emulate_far_rows(in, 4096);
       RM_CHECK(again.nbr == rows.nbr && again.count == rows.count && again.r2 == rows.r2);
     }
+  {   // a system large enough for far_list_from_rows to use several worker threads (> 8192 atoms); the result must still equal the host-built list
+    Rng r2(77);
+    const Box b = Box::orthogonal({0, 0, 0}, {30, 30, 30}, {true, true, true});
+    const NeighborCutoffs cut{6.0, 3.5, 4.0};
+    const AtomSet a = make_system(b, 4200, r2, 0.9, cut.required_shell());
+    RM_CHECK(a.nall() > 9000);
+    const FarList cpu = build_far_list(a, cut);
+    const DeviceListInput in = make_device_list_input(a, b, cut, 1e-3);
+    const FarRowsF32 rows = emulate_far_rows(in, 2048);
+    const FarList from_rows = far_list_from_rows(a, cut, rows);
+    RM_CHECK(from_rows.row_start == cpu.row_start && from_rows.nbr == cpu.nbr && from_rows.dist == cpu.dist && from_rows.dvec == cpu.dvec);
+  }
   RM_CHECK(total_entries > 20000);
   std::printf("  emulated rows: %zu entries compared, %zu legal band pairs\n", total_entries, total_band);
 
