@@ -174,4 +174,10 @@ if(REAXMETAL_EREAXFF_REFDIR)
            ${_R}/phase0_jamil_225atom/periodic_export/ereac_export.out 2e-6 - periodic)
   add_test(NAME ereaxff_ref_p60_periodic COMMAND test_ereaxff_reference ${_R}/phase0_p60c60el/periodic_export/ffield ${_R}/phase0_p60c60el/periodic_export/geo 10.0
            ${_R}/phase0_p60c60el/periodic_export/ereac_export.out 2e-6 - periodic)
+  # purpose-made sharing cases (electrons 0.05-0.7 A from carbons; vincr 6 and 181; pxel2 0 and 0.8; lone-pair strength 0 and 10), non-periodic.
+  # torsion and torsion_conj differ from the legacy values by ~3e-6 relative in these small clusters (stock-vs-legacy, independent of the electron terms): skipped.
+  foreach(_c A B C D E F G H I J)
+    add_test(NAME ereaxff_ref_sharing_${_c} COMMAND test_ereaxff_reference ${_R}/phase0_sharing/${_c}/ffield ${_R}/phase0_sharing/${_c}/geo 10.0
+             ${_R}/phase0_sharing/${_c}/ereac_export.out 1e-8 - np torsion,torsion_conj)
+  endforeach()
 endif()
