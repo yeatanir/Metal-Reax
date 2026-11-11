@@ -40,6 +40,11 @@
 
 using namespace LAMMPS_NS;
 
+// Elements accepted in eReaxFF mode (upper-case; Ho is refused separately). To extend: audit the element in the legacy tables first
+// (elecpos energy sign reac.f:8779-8860, znucel reac.f:4590-4620, derivative sgn tables poten.f:486-520, 1146-1156 and the copies below them)
+// and in compat_flags.cpp (share_sign, core_charge). Av: +eshare, Z = 3. Ag is NOT accepted (no elecpos energy branch although the derivative tables list it).
+static const char *const kEreaxffElements[] = {"C", "EL", "AV"};
+
 PairReaxFFMetal::PairReaxFFMetal(LAMMPS *lmp) : PairReaxFF(lmp)
 {
   single_enable = 0;
@@ -153,8 +158,10 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
       std::string nm = ff_->single(map_[static_cast<std::size_t>(t)]).name;
       std::transform(nm.begin(), nm.end(), nm.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
       if (nm == "HO") error->all(FLERR, "Pair style reaxff/metal ereaxff: hole particles (Ho) are not supported");
-      if (nm != "C" && nm != "EL")
-        error->all(FLERR, "Pair style reaxff/metal ereaxff: element '{}' is not supported in eReaxFF mode (only C and El are validated; the legacy sharing and core-charge tables have unaudited quirks for other elements)", ff_->single(map_[static_cast<std::size_t>(t)]).name);
+      bool allowed = false;
+      for (const char *ok : kEreaxffElements) allowed = allowed || nm == ok;
+      if (!allowed)
+        error->all(FLERR, "Pair style reaxff/metal ereaxff: element '{}' is not in the eReaxFF allow-list (C, El, Av); add it to kEreaxffElements in pair_reaxff_metal.cpp only after auditing its legacy sharing / core-charge / derivative-sign entries", ff_->single(map_[static_cast<std::size_t>(t)]).name);
     }
     if (ff_->electron_taper() > ff_->file_control().nonb_cut)
       error->all(FLERR, "Pair style reaxff/metal ereaxff: electron taper {} A exceeds the non-bonded cutoff {} A of the force field", ff_->electron_taper(), ff_->file_control().nonb_cut);

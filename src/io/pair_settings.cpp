@@ -94,7 +94,7 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     if (p.backend != "cpu64") throw FfieldError("pair_style reaxff/metal: eReaxFF mode (ereaxff yes) supports only backend cpu64");
     if (p.lgvdw) throw FfieldError("pair_style reaxff/metal: eReaxFF mode does not support lgvdw");
     p.checkqeq = false;   // charges are fixed (MOLCHARGE / legacy icharg 8): a charge fix would overwrite them
-    p.notices.push_back("pair_style reaxff/metal: eReaxFF mode: charges are taken from the data file (legacy icharg 8, no charge fix, no polarization energy); only elements C and El are accepted");
+    p.notices.push_back("pair_style reaxff/metal: eReaxFF mode: charges are taken from the data file (legacy icharg 8, no charge fix, no polarization energy); only elements C, El, Av are accepted (allow-list)");
   } else if (!std::isnan(p.electron_taper)) {
     throw FfieldError("pair_style reaxff/metal: electron_taper needs ereaxff yes");
   }

@@ -33,11 +33,11 @@ def read_geo(path):
     return sym, pos, q, cell
 
 
-def write_data(path, sym, pos, q, cell, periodic):
-    lo, hi = ((0.0, cell[0]), (0.0, cell[1]), (0.0, cell[2])) if periodic else ((-60.0, 70.0),) * 3
+def write_data(path, sym, pos, q, cell, periodic, masses=(12.0, 0.5)):   # legacy masses of the ffield: C 12.000, El 0.500
+    ext = [(0.0, cell[0]), (0.0, cell[1]), (0.0, cell[2])] if periodic else [(-60.0, 70.0)] * 3
     lines = ["LAMMPS data file (eReaxFF case)", "", "%d atoms" % len(sym), "2 atom types", "",
-             "%.12f %.12f xlo xhi" % (lo[0], hi[0]), "%.12f %.12f ylo yhi" % (lo[1], hi[1]), "%.12f %.12f zlo zhi" % (lo[2], hi[2]), "",
-             "Masses", "", "1 12.011", "2 1.0", "", "Atoms # charge", ""]
+             "%.12f %.12f xlo xhi" % ext[0], "%.12f %.12f ylo yhi" % ext[1], "%.12f %.12f zlo zhi" % ext[2], "",
+             "Masses", "", "1 %.6f" % masses[0], "2 %.6f" % masses[1], "", "Atoms # charge", ""]
     for i, (s, p, c) in enumerate(zip(sym, pos, q)):
         t = 1 if s == "C" else 2 if s == "El" else None
         if t is None: raise SystemExit("unsupported element in geo: " + s)
@@ -128,13 +128,13 @@ def main():
             pe, pv, f = run_lammps(a.lmp, a.plugin, a.ffield, td, a.periodic, a.taper)
             c = compare(pe, pv, f, t, e, g)
             tors = max(c["terms"]["torsion"], c["terms"]["torsion_conj"])
-            other = max(v for k, v in c["terms"].items() if not k.startswith("torsion"))
+            other_name, other = max(((k, v) for k, v in c["terms"].items() if not k.startswith("torsion")), key=lambda kv: kv[1])
             fr = c["fdiff"] / c["fmax"]
             worst["term"] = max(worst["term"], other); worst["torsion"] = max(worst["torsion"], tors)
             worst["force"] = max(worst["force"], fr); worst["energy"] = max(worst["energy"], abs(c["dE_total"]))
             good = other <= a.tol_term and tors <= a.tol_torsion and fr <= a.tol_force
             ok &= good
-            print("%-10s dE_total %+10.3e  max term rel %.2e  torsion rel %.2e  force max|dF| %.2e (%.1e of %.3f)  %s" % (name, c["dE_total"], other, tors, c["fdiff"], fr, c["fmax"], "ok" if good else "FAIL"))
+            print("%-10s dE_total %+10.3e  max term rel %.2e (%s)  torsion rel %.2e  force max|dF| %.2e (%.1e of %.3f)  %s" % (name, c["dE_total"], other, other_name, tors, c["fdiff"], fr, c["fmax"], "ok" if good else "FAIL"))
     print("WORST over %d case(s): |dE_total| %.3e kcal/mol, terms (no torsion) %.2e, torsion %.2e, force %.2e relative" % (len(cases), worst["energy"], worst["term"], worst["torsion"], worst["force"]))
     print("RESULT: PASS" if ok else "RESULT: FAIL")
     sys.exit(0 if ok else 1)
