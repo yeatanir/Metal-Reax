@@ -454,6 +454,9 @@ ForceField parse_force_field(std::string_view text, std::string_view name, const
       throw FfieldError(rd.name() + ": eReaxFF mode needs an electron taper radius > 0 (general parameter 38 is " + std::to_string(L[37]) +
                         "; set FfieldOptions::electron_taper). With 0 the legacy code skips every electron pair (poten.f:3972).");
     ff.electron_taper_ = taper;
+    // legacy lonpar/ovcor switch on amas > 31.0 (poten.f:887), LAMMPS on mass > 21 (ENGINE_SPEC Q-06): same for C, H, O, N and El,
+    // different for e.g. Mg, Na, Al, Si, P. Use the legacy threshold in eReaxFF mode.
+    for (auto& s : ff.sbp_) s.flags.heavy_atom_terms = (s.mass > 31.0);
   }
   ff.c2_active_ = c2_correction_active(L);
   for (int i = 0; i < ff.num_types(); ++i)

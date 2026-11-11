@@ -6,6 +6,7 @@
 #include <array>
 #include <cmath>
 
+#include "reaxmetal/ereaxff_terms.hpp"
 #include "reaxmetal/terms_host.hpp"
 
 // The same source is compiled twice: here with Real = double (the CPU-64 reference) and in bonded_fp32.cpp with Real = float (the CPU-32 twin, ADR-005 /
@@ -203,6 +204,52 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
                                            sj.flags.heavy_atom_terms, p_lp1);
   }
 
+  // ---- eReaxFF (plan 3.3): electron sharing, corrected valencies A = avalc and B = stlpc ----------------------------------------------
+  // Legacy: elecpos (reac.f:8779-8851). e2(i) = sum over El atoms of exp(-vincr_i r^2); A = aval + share_sign*e2, B = stlp + e2 for the
+  // core atom i (El atoms themselves are not modified). The legacy distance is a minimum image over ALL atoms; here the sum runs over the
+  // far-list pairs (r <= nonb_cut, ghost images included), identical unless vincr is tiny. A ghost core atom takes its owner's e2.
+  const bool ere = ff.ereaxff();
+  struct SharePair { std::size_t c, e; double r; R3 u; double eshare; };   // core, electron, |x_e - x_c|, x_e - x_c
+  std::vector<SharePair> spairs;
+  std::vector<double> e2(N, 0.0), Sbo(N, 0.0), fS(N, 1.0), Xeff(N, 0.0), gA(N, 0.0), gB(N, 0.0), gE2(N, 0.0), gX(N, 0.0), gD(N, 0.0);
+  std::vector<ereaxff_terms::CorrectedAtom> ca(N);
+  if (ere) {
+    if (sizeof(Real) < 8) throw SystemError("compute_bonded_core: eReaxFF mode needs double precision");
+    if (atoms.distributed) throw SystemError("compute_bonded_core: eReaxFF mode does not support distributed ghost sets");
+    if (opt.per_atom) throw SystemError("compute_bonded_core: per-atom tallies are not implemented in eReaxFF mode");
+    for (std::size_t i = 0; i < n; ++i) {
+      const int ti = atoms.type[i];
+      if (ti < 0) continue;
+      for (std::size_t pj = far.row_start[i]; pj < far.row_start[i + 1]; ++pj) {
+        const std::size_t j = static_cast<std::size_t>(far.nbr[pj]);
+        const int tj = atoms.type[j];
+        if (tj < 0) continue;
+        const bool ei = ff.single(ti).flags.is_electron, ej = ff.single(tj).flags.is_electron;
+        if (ei == ej) continue;                         // exactly one electron in the pair
+        const std::size_t c = ei ? j : i, e = ei ? i : j;
+        if (c >= n) continue;                           // (owned El, ghost core) is the image of a pair seen from the core's owner
+        const double r = far.dist[pj];
+        const double sgn = ei ? -1.0 : 1.0;             // far-list vector is x_j - x_i
+        const double* dv = &far.dvec[3 * pj];
+        const double es = std::exp(-ff.single(atoms.type[c]).vincr * r * r);
+        e2[c] += es;
+        spairs.push_back({c, e, r, R3{R(sgn * dv[0]), R(sgn * dv[1]), R(sgn * dv[2])}, es});
+      }
+    }
+    for (std::size_t j = n; j < N; ++j) e2[j] = e2[static_cast<std::size_t>(atoms.owner[j])];
+    for (std::size_t j = 0; j < N; ++j) {
+      const int tj = atoms.type[j];
+      if (tj < 0) continue;
+      const SingleBody& sj = ff.single(tj);
+      const double A = sj.valency + sj.flags.share_sign * e2[j], B = sj.valency_e + e2[j];
+      ca[j] = ereaxff_terms::corrected_atom(total_bo[j], A, B, p_lp1, sj.flags.heavy_atom_terms);
+      double sp = 0;
+      for (const Bond& b : bonds[j]) { const int tk = atoms.type[static_cast<std::size_t>(b.nbr)]; if (tk >= 0) sp += ff.pair(tj, tk).pxel1 * b.BO; }
+      const auto ef = ereaxff_terms::effective_delta(total_bo[j], A, sj.pxel2, e2[j], sp);
+      Sbo[j] = ef.S; fS[j] = ef.f; Xeff[j] = ef.X;
+    }
+  }
+
   BondedResult res;
   std::vector<double> CdDelta(N, Real(0.0));
   const bool pa = opt.per_atom;
@@ -260,10 +307,19 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
     const SingleBody& si = ff.single(ti);
     const bool active = !bonds[i].empty() || opt.enobonds;
     if (active) {
-      const auto lp = terms::lone_pair<Real>(si.p_lp2, aq[i].Delta_lp, aq[i].dDelta_lp);
-      e_lp += lp.e;
-      if (pa) res.eatom[i] += lp.e;
-      CdDelta[i] += lp.CElp;
+      if (ere) {
+        // legacy lonpar (poten.f:442-457): same energy form with Delta_lp built from the corrected valencies A and B
+        const auto lpv = ereaxff_terms::lone_pair(si.p_lp2, ca[i].Delta_lp);
+        e_lp += lpv.e;
+        CdDelta[i] += lpv.dEdDlp * ca[i].Clp;
+        gA[i] += -0.5 * lpv.dEdDlp;
+        gB[i] += lpv.dEdDlp * (0.5 - ca[i].Clp);
+      } else {
+        const auto lp = terms::lone_pair<Real>(si.p_lp2, aq[i].Delta_lp, aq[i].dDelta_lp);
+        e_lp += lp.e;
+        if (pa) res.eatom[i] += lp.e;
+        CdDelta[i] += lp.CElp;
+      }
     }
     if (c2_gate && si.flags.c2_species) {
       for (Bond& b : bonds[i]) {
@@ -284,6 +340,41 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
     if (ti < 0) continue;
     const SingleBody& si = ff.single(ti);
     const Real dfvl = si.flags.heavy_atom_terms ? Real(0.0) : Real(1.0);
+    if (ere) {
+      // legacy ovcor (poten.f:862-1700): stock form with Delta -> X = f (abo - A), valency -> A; derivatives are accumulated per atom
+      // (gX, gD, gA) and applied after this loop because they reach the neighbours' quantities as well.
+      double sum1e = 0, sum2e = 0;
+      for (const Bond& b : bonds[i]) {
+        const std::size_t j = static_cast<std::size_t>(b.nbr);
+        const int tj = atoms.type[j];
+        if (tj < 0) continue;
+        const TwoBody& tb = ff.pair(ti, tj);
+        sum1e += tb.p_ovun1 * tb.De_s * b.BO;
+        sum2e += (Xeff[j] - dfvl * ca[j].Dlt) * (b.BO_pi + b.BO_pi2);
+      }
+      const bool under_active_e = !bonds[i].empty() || opt.enobonds;
+      const ereaxff_terms::OuParams op{si.p_ovun2, p_ovun3, p_ovun4, p_ovun6, p_ovun7, p_ovun8, si.p_ovun5};
+      const auto o = ereaxff_terms::over_under(op, sum1e, sum2e, Xeff[i], dfvl * ca[i].Dlt, ca[i].A, under_active_e);
+      e_ov += o.e_ov;
+      e_un += o.e_un;
+      gX[i] += o.dEdX;
+      gD[i] += dfvl * o.dEdT;
+      gA[i] += o.dEdA;
+      for (Bond& b : bonds[i]) {
+        const std::size_t j = static_cast<std::size_t>(b.nbr);
+        const int tj = atoms.type[j];
+        if (tj < 0) continue;
+        const TwoBody& tb = ff.pair(ti, tj);
+        b.Cdbo += o.dEdu1 * tb.p_ovun1 * tb.De_s;
+        const double dj = Xeff[j] - dfvl * ca[j].Dlt;
+        b.Cdbopi += o.dEdu2 * dj;
+        b.Cdbopi2 += o.dEdu2 * dj;
+        const double pis = b.BO_pi + b.BO_pi2;
+        gX[j] += o.dEdu2 * pis;
+        gD[j] += -dfvl * o.dEdu2 * pis;
+      }
+      continue;
+    }
     Real sum1 = 0, sum2 = 0;
     for (const Bond& b : bonds[i]) {
       const std::size_t j = static_cast<std::size_t>(b.nbr);
@@ -317,6 +408,29 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
     }
   }
 
+  if (ere) {
+    // apply the chains X_j = f_j (abo_j - A_j) and Dlt_j(abo_j, A_j, B_j) accumulated in gX / gD (they reach neighbour atoms as well)
+    for (std::size_t j = 0; j < N; ++j) {
+      const int tj = atoms.type[j];
+      if (tj < 0) continue;
+      const SingleBody& sj = ff.single(tj);
+      if (gX[j] != 0.0) {
+        const double abo = total_bo[j], D = ca[j].Delta, fj = fS[j], inv = abo > 0.0 ? 1.0 / abo : 0.0;
+        CdDelta[j] += gX[j] * fj * (1.0 + D * sj.pxel2 * e2[j] * Sbo[j] * inv);          // d X / d abo
+        for (Bond& b : bonds[j]) {
+          const int tk = atoms.type[static_cast<std::size_t>(b.nbr)];
+          if (tk >= 0) b.Cdbo += gX[j] * (-D * fj * sj.pxel2 * e2[j] * ff.pair(tj, tk).pxel1 * inv);   // d X / d BO_b
+        }
+        gE2[j] += gX[j] * (-D * fj * sj.pxel2 * Sbo[j]);
+        gA[j] += -gX[j] * fj;
+      }
+      if (gD[j] != 0.0 && !ca[j].heavy) {
+        CdDelta[j] += gD[j] * ca[j].Clp;
+        gB[j] += gD[j] * (0.5 - ca[j].Clp);
+        gA[j] += -0.5 * gD[j];
+      }
+    }
+  }
 
   RM_STAGE("valence");
   // ---- Valence_Angles: valence angle, penalty, 3-body conjugation; builds the three-body lists used by the torsions ------------------
@@ -761,6 +875,26 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
           const R3 fk_t = scaled(-Real(0.5) * ck, bk.dBOp);
           vadd(kk, Real(1.0), outer(diff(kk, i), fk_t)); vadd(kk, Real(1.0), outer(diff(kk, j), fk_t));
         }
+      }
+    }
+  }
+
+  if (ere) {
+    // d E / d e2 per owner atom (a ghost's e2 is its owner's), then the chain through exp(-vincr r^2) onto the core and the electron
+    std::vector<double> dEde2(N, 0.0);
+    for (std::size_t j = 0; j < N; ++j) {
+      const int tj = atoms.type[j];
+      if (tj < 0) continue;
+      const std::size_t o = j < n ? j : static_cast<std::size_t>(atoms.owner[j]);
+      dEde2[o] += gA[j] * ff.single(tj).flags.share_sign + gB[j] + gE2[j];
+    }
+    for (const SharePair& sp : spairs) {
+      if (dEde2[sp.c] == 0.0 || sp.r < 1e-12) continue;
+      const double dEdr = dEde2[sp.c] * (-2.0 * ff.single(atoms.type[sp.c]).vincr * sp.r * sp.eshare);
+      for (std::size_t k = 0; k < 3; ++k) {
+        const Real g = R(dEdr * sp.u[k] / sp.r);
+        f[sp.c][k] -= g;
+        f[sp.e][k] += g;
       }
     }
   }
