@@ -24,7 +24,8 @@ def read_geo(path):
     for line in Path(path).read_text().splitlines():
         w = line.split()
         if not w: continue
-        if w[0] == "HETATM": sym.append(w[2]); pos.append([float(w[4]), float(w[5]), float(w[6])])
+        if w[0] == "HETATM":   # fixed format (a6,1x,i5,1x,a5,1x,a3,1x,a1,1x,a5,3f10.5): element = atom-type field, x y z = columns 31-60
+            raw = line.ljust(60); sym.append(raw[25:30].strip()); pos.append([float(raw[30:40]), float(raw[40:50]), float(raw[50:60])])
         elif w[0] == "MOLCHARGE": groups.append((int(w[1]), int(w[2]), float(w[3])))
         elif w[0] == "CRYSTX": cell = [float(x) for x in w[1:7]]
     q = [0.0] * len(sym)
@@ -33,19 +34,29 @@ def read_geo(path):
     return sym, pos, q, cell
 
 
-def write_data(path, sym, pos, q, cell, periodic, masses=(12.0, 0.5)):   # legacy masses of the ffield: C 12.000, El 0.500
+def ffield_masses(ffield):
+    """legacy masses (atom line 1, column 3, f9.4) by element name, via the independent fixed-column slicer"""
+    sl = subprocess.run([sys.executable, "-I", str(Path(__file__).resolve().parents[1] / "python" / "legacy_ffield_slice.py"), ffield], capture_output=True, text=True, check=True)
+    return {w[1].upper(): float(w[4]) for w in (l.split() for l in sl.stdout.splitlines()) if w[0] == "ATOM"}
+
+
+def elements_in_order(sym):
+    return list(dict.fromkeys(sym))   # LAMMPS type k = k-th distinct element in file order
+
+
+def write_data(path, sym, pos, q, cell, periodic, masses):   # masses: dict element(upper) -> amu, read from the ffield (legacy values)
     ext = [(0.0, cell[0]), (0.0, cell[1]), (0.0, cell[2])] if periodic else [(-60.0, 70.0)] * 3
-    lines = ["LAMMPS data file (eReaxFF case)", "", "%d atoms" % len(sym), "2 atom types", "",
+    lines = ["LAMMPS data file (eReaxFF case)", "", "%d atoms" % len(sym), "%d atom types" % len(elements_in_order(sym)), "",
              "%.12f %.12f xlo xhi" % ext[0], "%.12f %.12f ylo yhi" % ext[1], "%.12f %.12f zlo zhi" % ext[2], "",
-             "Masses", "", "1 %.6f" % masses[0], "2 %.6f" % masses[1], "", "Atoms # charge", ""]
+             "Masses", ""] + ["%d %.6f" % (k + 1, masses[e.upper()]) for k, e in enumerate(elements_in_order(sym))] + ["", "Atoms # charge", ""]
     for i, (s, p, c) in enumerate(zip(sym, pos, q)):
-        t = 1 if s == "C" else 2 if s == "El" else None
-        if t is None: raise SystemExit("unsupported element in geo: " + s)
+        t = elements_in_order(sym).index(s) + 1
         lines.append("%d %d %.10f %.15f %.15f %.15f" % (i + 1, t, c, p[0], p[1], p[2]))
     Path(path).write_text("\n".join(lines) + "\n")
 
 
-def run_lammps(lmp, plugin, ffield, workdir, periodic, taper, extra=""):
+def run_lammps(lmp, plugin, ffield, workdir, periodic, taper, elems, extra=""):
+    cutoff = 11.5 if "Av" not in elems else 12.0
     inp = f"""plugin load {plugin}
 units real
 atom_style charge
@@ -53,8 +64,8 @@ boundary {'p p p' if periodic else 'f f f'}
 newton on
 read_data data.lmp
 pair_style reaxff/metal NULL ereaxff yes electron_taper {taper} {extra}
-pair_coeff * * {ffield} C El
-comm_modify cutoff 11.5
+pair_coeff * * {ffield} {' '.join(elems)}
+comm_modify cutoff {cutoff}
 compute pp all pair reaxff/metal
 thermo_style custom step pe c_pp[1] c_pp[2] c_pp[3] c_pp[4] c_pp[5] c_pp[6] c_pp[7] c_pp[8] c_pp[9] c_pp[10] c_pp[11] c_pp[12] c_pp[13] c_pp[14] c_pp[15]
 thermo_modify format float %.16g
@@ -108,12 +119,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--lmp", required=True); ap.add_argument("--plugin", required=True); ap.add_argument("--ffield", required=True)
     ap.add_argument("--geo", required=True); ap.add_argument("--export"); ap.add_argument("--frames")
-    ap.add_argument("--periodic", action="store_true"); ap.add_argument("--taper", type=float, default=10.0)
+    ap.add_argument("--periodic", action="store_true"); ap.add_argument("--zero-charges", action="store_true", help="use q=0 (references whose geo has END before the MOLCHARGE lines: the legacy reader then sees no charges)"); ap.add_argument("--taper", type=float, default=10.0)
     ap.add_argument("--tol-term", type=float, default=1e-8); ap.add_argument("--tol-torsion", type=float, default=2e-6)
     ap.add_argument("--tol-force", type=float, default=1e-6); ap.add_argument("--max-frames", type=int, default=0)
     a = ap.parse_args()
     sym, pos, q, cell = read_geo(a.geo)
     if a.periodic and cell is None: sys.exit("--periodic needs a CRYSTX line in the geo")
+    if a.zero_charges: q = [0.0] * len(q)
+    masses = ffield_masses(a.ffield); elems = elements_in_order(sym)
     cases = []
     if a.frames:
         d = json.loads(Path(a.frames).read_text())
@@ -124,8 +137,8 @@ def main():
     worst = dict(term=0.0, torsion=0.0, force=0.0, energy=0.0); ok = True
     with tempfile.TemporaryDirectory() as td:
         for name, p, t, e, g in cases:
-            write_data(Path(td) / "data.lmp", sym, p, q, cell, a.periodic)
-            pe, pv, f = run_lammps(a.lmp, a.plugin, a.ffield, td, a.periodic, a.taper)
+            write_data(Path(td) / "data.lmp", sym, p, q, cell, a.periodic, masses)
+            pe, pv, f = run_lammps(a.lmp, a.plugin, a.ffield, td, a.periodic, a.taper, elems)
             c = compare(pe, pv, f, t, e, g)
             tors = max(c["terms"]["torsion"], c["terms"]["torsion_conj"])
             other_name, other = max(((k, v) for k, v in c["terms"].items() if not k.startswith("torsion")), key=lambda kv: kv[1])

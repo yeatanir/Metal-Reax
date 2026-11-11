@@ -15,28 +15,32 @@ ap.add_argument("--lmp", required=True); ap.add_argument("--plugin", required=Tr
 ap.add_argument("--geo", required=True); ap.add_argument("--frames", required=True)
 ap.add_argument("--steps", type=int, default=2000); ap.add_argument("--dt", type=float, default=0.1)
 ap.add_argument("--temp", type=float, default=298.0); ap.add_argument("--berendsen", type=float, default=0.0)
+ap.add_argument("--nonperiodic", action="store_true"); ap.add_argument("--zero-charges", action="store_true"); ap.add_argument("--taper", type=float, default=10.0); ap.add_argument("--thermo", type=int, default=100); ap.add_argument("--trace", default="")
 ap.add_argument("--max-drift", type=float, default=0.05, help="allowed |E_total(end) - E_total(0)| in kcal/mol (NVE only)")
 a = ap.parse_args()
 sym, pos, q, cell = R.read_geo(a.geo)
+if a.zero_charges: q = [0.0] * len(q)
+periodic = not a.nonperiodic
 p0 = json.loads(Path(a.frames).read_text())["frames"][0]["pos"]
 with tempfile.TemporaryDirectory() as td:
-    R.write_data(Path(td) / "data.lmp", sym, p0, q, cell, True)
+    masses = R.ffield_masses(a.ffield); elems = R.elements_in_order(sym)
+    R.write_data(Path(td) / "data.lmp", sym, p0, q, cell, periodic, masses)
     integ = ("fix t all temp/berendsen %g %g %g\nfix i all nve" % (a.temp, a.temp, a.berendsen)) if a.berendsen > 0 else "fix i all nve"
     (Path(td) / "in.lmp").write_text(f"""plugin load {a.plugin}
 units real
 atom_style charge
-boundary p p p
+boundary {'p p p' if periodic else 'f f f'}
 newton on
 read_data data.lmp
-pair_style reaxff/metal NULL ereaxff yes electron_taper 10.0
-pair_coeff * * {a.ffield} C El
-comm_modify cutoff 11.5
+pair_style reaxff/metal NULL ereaxff yes electron_taper {a.taper}
+pair_coeff * * {a.ffield} {' '.join(elems)}
+comm_modify cutoff 12.0
 velocity all create {a.temp} 4928459 dist gaussian mom yes rot no
 timestep {a.dt}
 {integ}
 thermo_style custom step temp pe ke etotal press
 thermo_modify format float %.10g
-thermo 100
+thermo {a.thermo}
 run {a.steps}
 """)
     env = dict(os.environ, OMP_NUM_THREADS="1", DYLD_LIBRARY_PATH=str(Path(a.lmp).resolve().parents[1] / "lib"))
@@ -50,6 +54,7 @@ for line in r.stdout.splitlines():
         v = line.split()
         if len(v) == 6: rows.append([float(x) for x in v])
 d = np.array(rows)
+if a.trace: np.savetxt(a.trace, d, header="step temp pe ke etotal press", fmt="%.10g")
 print("step  temp  pe  ke  etotal")
 for row in d[:: max(1, len(d) // 12)]: print("%6d %8.2f %12.4f %10.4f %12.4f" % tuple(row[:5]))
 print("T mean %.1f K (target %.0f)  etotal start %.4f end %.4f  max-min %.4f kcal/mol" % (d[:, 1].mean(), a.temp, d[0, 4], d[-1, 4], d[:, 4].max() - d[:, 4].min()))
