@@ -51,7 +51,10 @@ int main(int argc, char** argv) {
   if (periodic) {
     // legacy cell (reac.f:45-48, 508-531): pi = 3.14159265d0 (truncated), lattice vectors (tm11,tm21,tm31), (0,tm22,tm32), (0,0,tm33). A nominal 90 degree
     // cell therefore has off-axis components of ~2e-8 A, which changes periodic energies at the 1e-10 relative level.
-    const double pil = 3.14159265, dgrrdn = pil / 180.0;
+    // REAXMETAL_LEGACY_PI=exact selects pi = 3.141592653589793 (for references made with a legacy build in which reac.f:45 is patched to the exact value:
+    // the shipped truncated pi tilts the box vectors by ~1.8e-9 rad and makes the legacy torsion angles inexact, see phase3_engine/TORSION.md).
+    const char* pienv = std::getenv("REAXMETAL_LEGACY_PI");
+    const double pil = (pienv && std::string(pienv) == "exact") ? 3.14159265358979323846 : 3.14159265, dgrrdn = pil / 180.0;
     const double sa = std::sin(ang[0] * dgrrdn), ca = std::cos(ang[0] * dgrrdn), sb = std::sin(ang[1] * dgrrdn), cb = std::cos(ang[1] * dgrrdn);
     double cphi = (std::cos(ang[2] * dgrrdn) - ca * cb) / (sa * sb); if (cphi > 1.0) cphi = 1.0;
     const double sphi = std::sqrt(1.0 - cphi * cphi);
