@@ -156,12 +156,22 @@ if(REAXMETAL_EREAXFF_FFIELD AND REAXMETAL_EREAXFF_GEO AND REAXMETAL_EREAXFF_REF_
            ${REAXMETAL_EREAXFF_REF_TAPER} ${REAXMETAL_EREAXFF_REF_ELECTRON})
 endif()
 
-# full eReaxFF reference (all terms + total gradient): needs REAXMETAL_EREAXFF_FFIELD, REAXMETAL_EREAXFF_GEO and the legacy export file
-set(REAXMETAL_EREAXFF_EXPORT "" CACHE FILEPATH "ereac_export.out of the reference run (STEP 0 GRAD lines)")
-if(REAXMETAL_EREAXFF_FFIELD AND REAXMETAL_EREAXFF_GEO AND REAXMETAL_EREAXFF_EXPORT)
+# full eReaxFF reference (all terms + total gradient) against the rebuilt legacy executable. Point REAXMETAL_EREAXFF_REFDIR at the directory holding
+# phase0_jamil_225atom/{np_export,np_stage,periodic_export} and phase0_p60c60el/{np_export,periodic_export} (files not stored in this repository).
+set(REAXMETAL_EREAXFF_REFDIR "" CACHE PATH "directory with the eReaxFF reference cases (see tests/test_ereaxff_reference.cpp)")
+if(REAXMETAL_EREAXFF_REFDIR)
   add_executable(test_ereaxff_reference test_ereaxff_reference.cpp)
   target_link_libraries(test_ereaxff_reference PRIVATE reaxmetal_core)
   reaxmetal_apply_warnings(test_ereaxff_reference)
-  add_test(NAME ereaxff_reference COMMAND test_ereaxff_reference ${REAXMETAL_EREAXFF_FFIELD} ${REAXMETAL_EREAXFF_GEO}
-           ${REAXMETAL_EREAXFF_REF_TAPER} ${REAXMETAL_EREAXFF_EXPORT})
+  set(_R ${REAXMETAL_EREAXFF_REFDIR})
+  # name, case directory, mode, tolerance (relative, per term), stage file
+  add_test(NAME ereaxff_ref_jamil225_np COMMAND test_ereaxff_reference ${_R}/phase0_jamil_225atom/np_export/ffield ${_R}/phase0_jamil_225atom/np_export/geo 10.0
+           ${_R}/phase0_jamil_225atom/np_export/ereac_export.out 1e-8 ${_R}/phase0_jamil_225atom/np_stage/ereac_export.out np)
+  add_test(NAME ereaxff_ref_p60_np COMMAND test_ereaxff_reference ${_R}/phase0_p60c60el/np_export/ffield ${_R}/phase0_p60c60el/np_export/geo 10.0
+           ${_R}/phase0_p60c60el/np_export/ereac_export.out 1e-8 - np)
+  # periodic: vdW, Coulomb and electron match to round-off; the bonded terms carry a stock-vs-legacy residual (torsion up to 6e-7 relative, see phase3 notes)
+  add_test(NAME ereaxff_ref_jamil225_periodic COMMAND test_ereaxff_reference ${_R}/phase0_jamil_225atom/periodic_export/ffield ${_R}/phase0_jamil_225atom/periodic_export/geo 10.0
+           ${_R}/phase0_jamil_225atom/periodic_export/ereac_export.out 2e-6 - periodic)
+  add_test(NAME ereaxff_ref_p60_periodic COMMAND test_ereaxff_reference ${_R}/phase0_p60c60el/periodic_export/ffield ${_R}/phase0_p60c60el/periodic_export/geo 10.0
+           ${_R}/phase0_p60c60el/periodic_export/ereac_export.out 2e-6 - periodic)
 endif()
