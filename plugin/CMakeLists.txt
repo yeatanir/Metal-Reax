@@ -104,7 +104,7 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
   set_tests_properties(lammps_variants PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
   # EEM-1: strict mode and charge verification of fix qeq/reaxff/metal
   add_test(NAME lammps_eem COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_eem.py
-           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} $<$<BOOL:${REAXMETAL_ENABLE_METAL}>:--metal>)
+           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} ${RM_METAL_ARG})
   set_tests_properties(lammps_eem PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
   # CHG-1: every ReaxFF charge model of LAMMPS (qeq, qeq/rel, qtpie, acks2, qeq/shielded, parameter file, group subset), with and without fix efield
   if(EXISTS "${REAXMETAL_LAMMPS_SOURCE_DIR}/../examples/reaxff/water/in.water.qeq")

@@ -2,8 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Anirban Phukan
 #pragma once
 // Registry of every ReaxFF energy contribution this engine must compute, and its mapping onto the
-// 14-slot `pvector` that pinned LAMMPS exposes through `compute pair reaxff`
-// (src/REAXFF/pair_reaxff.cpp:501-514). The mapping is data, not scattered code, so that an omitted
+// `pvector` that pinned LAMMPS exposes through `compute pair reaxff` (14 slots, src/REAXFF/pair_reaxff.cpp:501-514) plus, deliberately,
+// a 15th slot `eelect` for the eReaxFF electron term (always 0 outside eReaxFF mode). The mapping is data, not scattered code, so that an omitted
 // term is a failing test rather than a silent difference (architectural rule 5).
 #include <array>
 #include <cstddef>
@@ -26,6 +26,7 @@ enum class EnergyTerm : std::size_t {
   VdW,           // e_vdW   (incl. inner wall / lg dispersion where active)
   Coulomb,       // e_ele   (taper-shielded Coulomb)
   Polarization,  // e_pol   (QEq self energy, reported by LAMMPS as "eqeq")
+  Electron,      // eelect  (eReaxFF explicit-electron pair term; zero unless eReaxFF mode; no stock LAMMPS field, 15th pvector slot, plan task 3.5)
   Count
 };
 inline constexpr std::size_t kEnergyTermCount = static_cast<std::size_t>(EnergyTerm::Count);
@@ -42,7 +43,7 @@ struct PvectorSlot {
   std::array<bool, kEnergyTermCount> members;  // which EnergyTerm values are summed into the slot
   bool always_zero;               // LAMMPS reports a constant 0.0 here (emol, efi)
 };
-inline constexpr std::size_t kPvectorSize = 14;
+inline constexpr std::size_t kPvectorSize = 15;   // 14 stock slots + eelect
 
 std::span<const EnergyTermInfo> energy_term_table() noexcept;
 std::span<const PvectorSlot> pvector_layout() noexcept;

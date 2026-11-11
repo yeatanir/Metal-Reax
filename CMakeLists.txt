@@ -114,7 +114,12 @@ reaxmetal_apply_warnings(reaxmetal_energy_tool)
 
 if(REAXMETAL_BUILD_TESTS)
   enable_testing()
-  add_subdirectory(tests)
+  # '--metal' for the Python harnesses; a generator expression that evaluates to nothing would still be passed as an empty argument
+set(RM_METAL_ARG "")
+if(REAXMETAL_ENABLE_METAL)
+  set(RM_METAL_ARG --metal)
+endif()
+add_subdirectory(tests)
 endif()
 
 if(REAXMETAL_BUILD_LAMMPS_PLUGIN)

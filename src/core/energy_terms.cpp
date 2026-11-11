@@ -23,6 +23,7 @@ constexpr std::array<EnergyTermInfo, kEnergyTermCount> kTerms{{
     {T::VdW, "vdw", "e_vdW"},
     {T::Coulomb, "coulomb", "e_ele"},
     {T::Polarization, "polarization", "e_pol"},
+    {T::Electron, "electron", "(none: eReaxFF eelect)"},
 }};
 
 constexpr std::array<bool, kEnergyTermCount> members(std::initializer_list<T> ts) {
@@ -31,7 +32,7 @@ constexpr std::array<bool, kEnergyTermCount> members(std::initializer_list<T> ts
   return m;
 }
 
-// Mirrors pair_reaxff.cpp:501-514 (pvector[0..13]) and the name list in doc/src/pair_reaxff.rst.
+// Mirrors pair_reaxff.cpp:501-514 (pvector[0..13]) and the name list in doc/src/pair_reaxff.rst; slot 14 is the eReaxFF extension.
 constexpr std::array<PvectorSlot, kPvectorSize> kPvector{{
     {0, "eb", members({T::Bond}), false},
     {1, "ea", members({T::Over, T::Under}), false},
@@ -47,6 +48,7 @@ constexpr std::array<PvectorSlot, kPvectorSize> kPvector{{
     {11, "ep", members({T::Coulomb}), false},
     {12, "efi", members({}), true},
     {13, "eqeq", members({T::Polarization}), false},
+    {14, "eelect", members({T::Electron}), false},   // eReaxFF 15th slot, not part of stock LAMMPS
 }};
 
 }  // namespace

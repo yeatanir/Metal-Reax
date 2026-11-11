@@ -108,14 +108,14 @@ if(REAXMETAL_FFIELD_DIR AND EXISTS "${REAXMETAL_FFIELD_DIR}/ffield.reax.cho")
     set_tests_properties(full_fixtures PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     # CENSUS-1/2: decision-mismatch census (random displacements) and threshold scans: single-precision flips of the discrete decisions
     add_test(NAME decision_census COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_decision_census.py
-             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --samples 2 $<$<BOOL:${REAXMETAL_ENABLE_METAL}>:--metal>)
+             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} --samples 2 ${RM_METAL_ARG})
     set_tests_properties(decision_census PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     add_test(NAME threshold_scan COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_threshold_scan.py
-             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} $<$<BOOL:${REAXMETAL_ENABLE_METAL}>:--metal>)
+             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} ${RM_METAL_ARG})
     set_tests_properties(threshold_scan PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     # FP32-1: the CPU-32 twin's error envelope vs CPU-64 (must satisfy C3 itself), and Metal against 3x that envelope when Metal is built
     add_test(NAME fp32_envelope COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_fp32_envelope.py
-             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} $<$<BOOL:${REAXMETAL_ENABLE_METAL}>:--metal>)
+             --tool $<TARGET_FILE:reaxmetal_energy_tool> --ffield-dir ${REAXMETAL_FFIELD_DIR} ${RM_METAL_ARG})
     set_tests_properties(fp32_envelope PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     if(REAXMETAL_ENABLE_METAL)
       # GPU-1 (nonbonded subset) on the real Metal device: Metal-32 vs CPU-64 and vs LAMMPS under the owner-set C3 criteria; FORCE-2 repeat launches
@@ -179,5 +179,18 @@ if(REAXMETAL_EREAXFF_REFDIR)
   foreach(_c A B C D E F G H I J)
     add_test(NAME ereaxff_ref_sharing_${_c} COMMAND test_ereaxff_reference ${_R}/phase0_sharing/${_c}/ffield ${_R}/phase0_sharing/${_c}/geo 10.0
              ${_R}/phase0_sharing/${_c}/ereac_export.out 1e-8 - np torsion,torsion_conj)
+  endforeach()
+endif()
+
+# parsed ffield values == values the legacy fixed-column reader takes from the same file (tests/python/legacy_ffield_slice.py is the independent slicer)
+if(REAXMETAL_EREAXFF_REFDIR)
+  add_executable(test_ffield_legacy_columns test_ffield_legacy_columns.cpp)
+  target_link_libraries(test_ffield_legacy_columns PRIVATE reaxmetal_core)
+  reaxmetal_apply_warnings(test_ffield_legacy_columns)
+  foreach(_f phase0_jamil_225atom/np_export phase0_jamil_225atom/jamil_vpar38_0 phase0_p60c60el/np_export phase0_p60c60el/periodic_export phase4_frames
+             phase0_sharing/A phase0_sharing/E phase0_sharing/J)
+    string(REPLACE "/" "_" _n ${_f})
+    add_test(NAME ffield_legacy_columns_${_n} COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_CURRENT_SOURCE_DIR}/python/test_ffield_legacy_columns.py
+             --tool $<TARGET_FILE:test_ffield_legacy_columns> --ffield ${REAXMETAL_EREAXFF_REFDIR}/${_f}/ffield)
   endforeach()
 endif()

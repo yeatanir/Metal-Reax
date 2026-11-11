@@ -37,7 +37,8 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `term.vdw.lg_dispersion` | Implemented | - | `pair_style reaxff lgvdw yes` | needs 5-line atom blocks |
 | `term.coulomb` | Implemented | - | `ReaxFF::vdW_Coulomb_Energy` | taper + gamma shielding |
 | `term.polarization` | Implemented | - | `ReaxFF::Compute_Polarization_Energy` | reported by LAMMPS as `eqeq` |
-| `term.electron` | Implemented | - | `(no LAMMPS equivalent)` | eReaxFF explicit-electron pair term: core-El and El-El with the 7th-order electron taper (legacy poten.f:3924-4160); CPU-64 only, own result struct (not yet an EnergyTerm / pvector slot, task 3.5); finite-difference forces tested; Ho refused; backend metal not supported |
+| `term.electron` | Implemented | - | `(no LAMMPS equivalent)` | eReaxFF explicit-electron pair term: core-El and El-El with the 7th-order electron taper (legacy poten.f:3924-4160); CPU-64 only; EnergyTerm::Electron = 15th pvector slot eelect (task 3.5); finite-difference forces tested; Ho refused; backend metal not supported |
+| `lammps.ereaxff_mode` | Implemented | - | `(no LAMMPS equivalent)` | pair_style reaxff/metal ... ereaxff yes [electron_taper <A>]: eReaxFF with fixed MOLCHARGE charges from the data file (no charge fix, no polarization energy, as legacy icharg 8), only elements C and El, backend cpu64, no per-atom energy/virial; ghost shell widened by the sharing range |
 
 ## 2. Parameter files
 

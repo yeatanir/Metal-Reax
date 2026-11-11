@@ -34,6 +34,7 @@
 #include "reaxmetal/metal_backend.hpp"
 #include "reaxmetal/nonbonded_device.hpp"
 #include "reaxmetal/capabilities.hpp"
+#include "reaxmetal/electron.hpp"
 #include "reaxmetal/energy_terms.hpp"
 #include "reaxmetal/nonbonded.hpp"
 
@@ -48,7 +49,11 @@ PairReaxFFMetal::PairReaxFFMetal(LAMMPS *lmp) : PairReaxFF(lmp)
   ghostneigh = 0;
   centroidstressflag = CENTROID_NOTAVAIL;
   no_virial_fdotr_compute = 0;
-  // nextra = 14 and pvector come from the base class (compute pair reaxff/metal exposes the 14 energy slots like pair reaxff)
+  // compute pair reaxff/metal exposes the 14 stock energy slots plus a 15th, deliberate one: eelect (eReaxFF electron energy, 0 outside eReaxFF mode).
+  // The base class allocated 14; its destructor releases whatever pvector points to.
+  delete[] pvector;
+  nextra = static_cast<int>(reaxmetal::kPvectorSize);
+  pvector = new double[nextra];
   for (int i = 0; i < nextra; ++i) pvector[i] = 0.0;
 }
 
@@ -110,6 +115,8 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
   try {
     reaxmetal::FfieldOptions opt;
     opt.lgvdw = settings_.lgvdw;
+    opt.ereaxff = settings_.ereaxff;
+    opt.electron_taper = settings_.electron_taper;
     ff_ = std::make_unique<reaxmetal::ForceField>(reaxmetal::read_force_field_file(utils::get_potential_file_path(args[2]), opt));
     bond_softness_ = ff_->global().l.size() > 34 ? ff_->global().l[34] : 0.0;
   } catch (const std::exception &e) {
@@ -137,6 +144,21 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
     }
   }
   if (itmp != n) error->all(FLERR, "Non-existent ReaxFF type");
+
+  if (settings_.ereaxff) {
+    // eReaxFF mode is validated for C and El only: the legacy sign tables (elecpos) and core-charge table have quirks for other elements
+    // (the audited copies of the routine disagree on their element lists), so refuse instead of guessing.
+    for (int t = 1; t <= n; ++t) {
+      if (map_[static_cast<std::size_t>(t)] < 0) continue;
+      std::string nm = ff_->single(map_[static_cast<std::size_t>(t)]).name;
+      std::transform(nm.begin(), nm.end(), nm.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
+      if (nm == "HO") error->all(FLERR, "Pair style reaxff/metal ereaxff: hole particles (Ho) are not supported");
+      if (nm != "C" && nm != "EL")
+        error->all(FLERR, "Pair style reaxff/metal ereaxff: element '{}' is not supported in eReaxFF mode (only C and El are validated; the legacy sharing and core-charge tables have unaudited quirks for other elements)", ff_->single(map_[static_cast<std::size_t>(t)]).name);
+    }
+    if (ff_->electron_taper() > ff_->file_control().nonb_cut)
+      error->all(FLERR, "Pair style reaxff/metal ereaxff: electron taper {} A exceeds the non-bonded cutoff {} A of the force field", ff_->electron_taper(), ff_->file_control().nonb_cut);
+  }
 
   // Q-12: pinned LAMMPS zero-fills absent bond-pair blocks and creates phantom bonds; we refuse to use such a pair.
   std::vector<int> used;
@@ -170,6 +192,11 @@ void PairReaxFFMetal::init_style()
   if (atom->tag_enable == 0) error->all(FLERR, "Pair style reaxff requires atom IDs");
   if (force->newton_pair == 0) error->all(FLERR, "Pair style reaxff requires newton pair on");
 
+  if (settings_.ereaxff) {
+    // charges are fixed per particle (MOLCHARGE, legacy icharg 8); a charge fix would silently replace them
+    if (!modify->get_fix_by_style("^acks2/reax").empty() || !modify->get_fix_by_style("^qeq/").empty() || !modify->get_fix_by_style("^qtpie/reax").empty())
+      error->all(FLERR, "Pair style reaxff/metal ereaxff: charges are fixed (data file q, legacy icharg 8); do not combine with a charge fix (qeq/acks2/qtpie)");
+  }
   // exactly one charge model: fix qeq/reaxff, qeq/shielded, qeq/rel/reaxff, qtpie/reaxff or acks2/reaxff (as pair reaxff)
   acks2_fix_ = nullptr;
   const auto acks2 = modify->get_fix_by_style("^acks2/reax");
@@ -246,9 +273,21 @@ reaxmetal::AtomSet PairReaxFFMetal::host_atom_set(const reaxmetal::Box &box) con
   using reaxmetal::SystemError;
   const int nlocal = atom->nlocal, nall = atom->nlocal + atom->nghost;
   // C3 (strict where the reference only warns): the ghost shell must be wide enough for owned-atom results to be those of the reference
-  const double need = cutoffs().required_shell(), have = comm->get_comm_cutoff();
+  double need = cutoffs().required_shell();
+  if (settings_.ereaxff) {
+    // electron sharing: an owned atom (and each bonded neighbour inside the 2*bond_cut chain) needs its sharing electrons present, exp(-vincr r^2) > 1e-12
+    double vmin = 0.0;
+    for (int t = 1; t <= atom->ntypes; ++t) {
+      const int k = map_[static_cast<std::size_t>(t)];
+      if (k < 0) continue;
+      const double v = ff_->single(k).vincr;
+      if (v > 0.0 && (vmin == 0.0 || v < vmin)) vmin = v;
+    }
+    if (vmin > 0.0) need += std::sqrt(27.63 / vmin);
+  }
+  const double have = comm->get_comm_cutoff();
   if (have < need) {
-    const std::string msg = "ghost shell too narrow: communication cutoff " + std::to_string(have) + " < required max(nonb_cut, hbond_cut, 2*bond_cut) = " + std::to_string(need) +
+    const std::string msg = "ghost shell too narrow: communication cutoff " + std::to_string(have) + " < required max(nonb_cut, hbond_cut, 2*bond_cut)" + (settings_.ereaxff ? " + electron sharing range" : "") + " = " + std::to_string(need) +
                             " (use comm_modify cutoff, or pair_style keyword 'shellcheck no' to accept it as the stock style does)";
     if (settings_.shellcheck) throw SystemError(msg);
     if (!shell_warned_ && comm->me == 0) { error->warning(FLERR, "Pair style reaxff/metal: {}", msg); }
@@ -430,6 +469,7 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
   // Per-atom energy / virial need the reference's term-by-term tallies, which only the CPU-64 engine reproduces: on a step where a compute asks
   // for them, that step is evaluated by the CPU-64 engine even with 'backend metal' (energies and forces of that step are then CPU-64 ones).
   const bool per_atom = eflag_atom || vflag_atom;
+  if (settings_.ereaxff && per_atom) error->all(FLERR, "Pair style reaxff/metal ereaxff: per-atom energy / virial (compute pe/atom, stress/atom) are not implemented in eReaxFF mode");
   const bool use_metal = settings_.backend == "metal" && !per_atom;
   if (use_metal && !reaxmetal::mtl::compiled_with_metal())
     error->all(FLERR, "Pair style reaxff/metal: backend metal requested but this plugin was built without Metal (needs macOS and -DREAXMETAL_ENABLE_METAL=ON); use 'backend cpu64'");
@@ -437,6 +477,7 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
   using namespace reaxmetal;
   reaxmetal::BondedResult br;
   reaxmetal::NonbondedResult nr;
+  double e_electron = 0.0;
   AtomSet a;
   using clk = std::chrono::steady_clock;
   auto t0 = clk::now();
@@ -488,7 +529,18 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     } else {
       const FarList far = build_far_list(a, cut);
       br = compute_bonded_core(*ff_, settings_.control, a, far, bo);
+      if (settings_.ereaxff) {
+        // legacy single-precision literals (c1c, 4/3 exponent), see electron.hpp / nonbonded.hpp
+        no.coulomb_constant = electron_terms::kCoulombKcal;
+        no.legacy_coulomb_exponent = true;
+      }
       nr = compute_nonbonded_core(*ff_, cut, a, far, q, no);
+      if (settings_.ereaxff) {
+        const ElectronResult el = compute_electron_core(*ff_, cut, a, far);
+        e_electron = el.e_electron;
+        for (std::size_t k = 0; k < nr.grad.size(); ++k) nr.grad[k] += el.grad[k];
+        nr.e[EnergyTerm::Polarization] = 0.0;   // legacy icharg 8: charges fixed, charge energy `ech` is never computed (total excludes it)
+      }
       if (acks2_fix_) add_acks2_terms(*ff_, cut, a, far, q, acks2_fix_->get_s() + a.nall(), nr);
     }
   } catch (const std::exception &e) {
@@ -513,11 +565,12 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
 
   EnergyBreakdown e;
   for (std::size_t t = 0; t < kEnergyTermCount; ++t) e.e[t] = br.e.e[t] + nr.e.e[t];
+  e[EnergyTerm::Electron] = e_electron;
   if (eflag_global) {
     const auto pv = to_lammps_pvector(e);
     for (std::size_t k = 0; k < kPvectorSize; ++k) pvector[k] = pv[k];
     eng_vdwl += e[EnergyTerm::Bond] + e[EnergyTerm::Over] + e[EnergyTerm::Under] + e[EnergyTerm::LonePair] + e[EnergyTerm::Valence] +
-                e[EnergyTerm::Penalty] + e[EnergyTerm::Coalition] + e[EnergyTerm::HBond] + e[EnergyTerm::Torsion] + e[EnergyTerm::Conjugation] + e[EnergyTerm::VdW];
+                e[EnergyTerm::Penalty] + e[EnergyTerm::Coalition] + e[EnergyTerm::HBond] + e[EnergyTerm::Torsion] + e[EnergyTerm::Conjugation] + e[EnergyTerm::VdW] + e[EnergyTerm::Electron];
     eng_coul += e[EnergyTerm::Coulomb] + e[EnergyTerm::Polarization];
   }
   if (vflag_fdotr) virial_fdotr_compute();

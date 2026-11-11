@@ -40,6 +40,9 @@ int main() {
            slots[1].members[static_cast<std::size_t>(EnergyTerm::Under)]);
   RM_CHECK(slots[3].always_zero && slots[12].always_zero);
   RM_CHECK(slots[13].lammps_name == "eqeq");
+  // eReaxFF extension (task 3.5): the 15th slot is the electron term, deliberately beyond the 14 stock slots
+  RM_CHECK(kPvectorSize == 15 && kEnergyTermCount == 14);
+  RM_CHECK(slots[14].lammps_name == "eelect" && slots[14].members[static_cast<std::size_t>(EnergyTerm::Electron)] && !slots[14].always_zero);
 
   // conservation: with distinct powers of two as inputs, pvector slots sum to total() exactly
   EnergyBreakdown b;

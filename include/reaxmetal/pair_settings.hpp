@@ -5,6 +5,7 @@
 // (pair_reaxff.cpp:176-290), parsed here so that it is testable without LAMMPS and gated by the capability table:
 //   Rejected / Deferred options raise UnsupportedFeatureError, Ignored options are accepted with a notice, Planned options are
 //   accepted (they take effect when their milestone lands; the adapter refuses to compute until M4 anyway).
+#include <limits>
 #include <span>
 #include <string>
 #include <vector>
@@ -25,6 +26,8 @@ struct PairSettings {
   bool shellcheck = true;            // error (yes) or warning (no) when the ghost shell is narrower than max(nonb_cut, hbond_cut, 2*bond_cut); the stock style never checks
   std::string bonded = "metal";   // with backend metal: where the bond-order terms run, metal | cpu64 (double precision on the host: restores stock-like NVE energy conservation, ~1.5x instead of ~7x)
   std::string backend = "cpu64";    // force backend: cpu64 (reference, complete) | metal (not complete yet)
+  bool ereaxff = false;              // eReaxFF mode (plan task 3.5): explicit electrons (type El), fixed MOLCHARGE charges from the data file, no charge fix, no polarization energy
+  double electron_taper = std::numeric_limits<double>::quiet_NaN();   // Angstrom; NaN = general parameter 38 of the ffield (must then be > 0)
   bool selfcheck = false;            // development keyword `reaxmetal_selfcheck yes`: A2 builds the ghost-native view and verifies it against LAMMPS' own neighbor list (then stops with an error: development aid)
   ControlParams control;             // defaults, or the control file contents
   std::vector<std::string> notices;  // warnings from the control file and "ignored option" notices

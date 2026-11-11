@@ -3,6 +3,7 @@
 #include "reaxmetal/pair_settings.hpp"
 
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 
 #include "reaxmetal/capabilities.hpp"
@@ -53,6 +54,11 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     else if (key == "enobonds") p.enobonds = logical(val, "enobonds");
     else if (key == "lgvdw") p.lgvdw = logical(val, "lgvdw");
     else if (key == "shellcheck") p.shellcheck = logical(val, "shellcheck");
+    else if (key == "ereaxff") p.ereaxff = logical(val, "ereaxff");
+    else if (key == "electron_taper") {
+      p.electron_taper = number(val, "electron_taper");
+      if (!(p.electron_taper > 0.0)) throw FfieldError("Illegal pair_style reaxff/metal command: electron_taper must be > 0 (a zero taper silently removes every electron pair in the legacy code)");
+    }
     else if (key == "bonded") {
       if (val != "cpu64" && val != "metal") throw FfieldError("Illegal pair_style reaxff/metal command: bonded must be cpu64 or metal, got '" + val + "'");
       p.bonded = val;
@@ -83,6 +89,14 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
       throw FfieldError("Illegal pair_style reaxff/metal command: unknown keyword '" + key + "'");
     }
     i += 2;
+  }
+  if (p.ereaxff) {
+    if (p.backend != "cpu64") throw FfieldError("pair_style reaxff/metal: eReaxFF mode (ereaxff yes) supports only backend cpu64");
+    if (p.lgvdw) throw FfieldError("pair_style reaxff/metal: eReaxFF mode does not support lgvdw");
+    p.checkqeq = false;   // charges are fixed (MOLCHARGE / legacy icharg 8): a charge fix would overwrite them
+    p.notices.push_back("pair_style reaxff/metal: eReaxFF mode: charges are taken from the data file (legacy icharg 8, no charge fix, no polarization energy); only elements C and El are accepted");
+  } else if (!std::isnan(p.electron_taper)) {
+    throw FfieldError("pair_style reaxff/metal: electron_taper needs ereaxff yes");
   }
   if (p.tabulate > 0 || p.control.tabulate > 0)
     p.notices.push_back("pair_style reaxff/metal: 'tabulate' is accepted but no table is built: the non-bonded terms are evaluated analytically (the stock spline table "
