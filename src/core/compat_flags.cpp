@@ -4,6 +4,7 @@
 
 #include <cctype>
 #include <stdexcept>
+#include <utility>
 
 namespace reaxmetal {
 
@@ -16,6 +17,29 @@ std::string normalize_symbol(std::string_view raw) {
   return s;
 }
 
+namespace {
+// znucel table, reac.f:4590-4615. The legacy compare is case-sensitive on 2-character names ('Mg'); we compare the normalized
+// (upper-case) symbol, a superset that only differs for ffields that spell an element in the wrong case.
+double core_charge_of(const std::string& n) {
+  static const std::pair<const char*, double> kZ[] = {
+      {"H", 1}, {"HE", 2}, {"LI", 1}, {"B", 5}, {"C", 6}, {"N", 7}, {"O", 8}, {"F", 9}, {"NA", 1}, {"MG", 2}, {"AL", 5}, {"SI", 4},
+      {"P", 15}, {"S", 6}, {"CL", 7}, {"K", 1}, {"CA", 2}, {"FE", 8}, {"NI", 10}, {"CU", 11}, {"ZN", 12}, {"AG", 3}, {"LV", 3},
+      {"AV", 3}, {"OS", 5}};
+  for (const auto& e : kZ)
+    if (n == e.first) return e.second;
+  return 0.0;
+}
+// elecpos sign table, reac.f:8815-8851 (first copy). The later copies at ~8900-8940 and ~8950-9000 use slightly different lists;
+// see phase3 notes (task 3.3 must audit which copy is live for each code path).
+int share_sign_of(const std::string& n) {
+  for (const char* m : {"C", "O", "H", "F", "N", "OS"})
+    if (n == m) return -1;
+  for (const char* m : {"LI", "LV", "P", "B", "AV", "AL"})
+    if (n == m) return +1;
+  return 0;
+}
+}  // namespace
+
 SpeciesFlags derive_species_flags(std::string_view symbol, double mass) noexcept {
   SpeciesFlags f;
   f.c2_species = (normalize_symbol(symbol) == "C");
@@ -23,6 +47,10 @@ SpeciesFlags derive_species_flags(std::string_view symbol, double mass) noexcept
   f.light_valency_override = (mass < 21);
   f.mass_exactly_12_0000 = (mass == 12.0000);
   f.mass_exactly_15_9990 = (mass == 15.9990);
+  const std::string n = normalize_symbol(symbol);
+  f.is_electron = (n == "EL");
+  f.core_charge = core_charge_of(n);
+  f.share_sign = share_sign_of(n);
   return f;
 }
 

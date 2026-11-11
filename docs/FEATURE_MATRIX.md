@@ -50,6 +50,7 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `ffield.control_file` | Implemented | - | `pair_style reaxff <control file>` | cutoff keywords only |
 | `ffield.strict_missing_pairs` | Implemented | - | `(no LAMMPS equivalent)` | we **reject** absent 2-body pairs; LAMMPS zero-fills creating a phantom bond with BO'=1 at every r <= bond_cut (ENGINE_SPEC Q-12, executed in M1) |
 | `ffield.reject_three_body_overrun` | Implemented | - | `(no LAMMPS equivalent)` | reject >2 parameter sets for a j==l angle triple (ENGINE_SPEC Q-09: LAMMPS doubles the slot count and reads past prm[4]; executed in M1) |
+| `ffield.ereaxff_columns` | Implemented | - | `(no LAMMPS equivalent)` | eReaxFF: atom columns pxel2, vincr, alphag, betael and bond column pxel1 (legacy reac.f:4516-4524, 4668-4670); FfieldOptions::ereaxff; electron taper explicit option, rejected if <= 0; gp[37] triple-bond predicate disabled in this mode; El pairs exempt from the strict missing-pair rule; tests: ereaxff_ffield (synthetic + real Jamil-target file) |
 
 ## 3. LAMMPS-compat flags (element knowledge expressed as data — ADR-003)
 
@@ -60,6 +61,8 @@ Milestone letters follow the mission statement (M2 parser … M8 optimisation) a
 | `compat.light_element_split` | Implemented | - | `mass > 21 / mass < 21 tests` | per-type flag |
 | `compat.hbond_donor_image_exclusion` | Implemented | - | `orig_id[i] != orig_id[k] in Hydrogen_Bonds` | reproduce by default (Q-32): acceptor that is a periodic image of the donor is dropped; identity-based variant needs owner decision |
 | `compat.ovun_heavy_neighbor_force` | Implemented | - | `dDelta_lp[j] where the energy uses Delta_lp_temp[j] (Atom_Energy force loop)` | reproduce LAMMPS forces by default (Q-34: analytic force != gradient of the reported energy for heavy atoms with pi bonds); corrected variant is opt-in |
+| `compat.ereaxff_share_sign` | Implemented | - | `(no LAMMPS equivalent)` | per-type flag: elecpos valence sign (-1 C,O,H,F,N,Os; +1 Li,Lv,P,B,Av,Al), legacy reac.f first copy; later copies differ and are audited in task 3.3 |
+| `compat.core_charge_table` | Implemented | - | `(no LAMMPS equivalent)` | per-type flag: znucel nuclear charge table (legacy reac.f:4590-4615); not an ffield entry |
 
 ## 4. `pair_style reaxff` options
 

@@ -61,7 +61,8 @@ std::vector<int> ForceField::match_element(std::string_view arg) const {
 void ForceField::require_bond_blocks(std::span<const int> types) const {
   for (std::size_t a = 0; a < types.size(); ++a)
     for (std::size_t b = a; b < types.size(); ++b)
-      if (!pair(types[a], types[b]).listed)
+      if (!pair(types[a], types[b]).listed &&
+          !(ereaxff_ && (single(types[a]).flags.is_electron || single(types[b]).flags.is_electron)))  // El pairs have no bond block
         throw FfieldError("force field has no bond-parameter block for the element pair " + single(types[a]).name + "-" +
                           single(types[b]).name +
                           "; pinned LAMMPS would silently zero-fill it and create a phantom bond of bond order 1 at every distance "
@@ -167,7 +168,7 @@ ForceField parse_force_field(std::string_view text, std::string_view name, const
       s.gamma_w = v.next_double();
       s.valency_boc = v.next_double();
       s.p_ovun5 = v.next_double();
-      v.skip();
+      s.pxel2 = v.next_double();  // eReaxFF (reac.f:4518): column 5; stock ReaxFF ignores it
       s.chi = v.next_double();
       s.eta = 2.0 * v.next_double();
       s.p_hbond = static_cast<int>(v.next_double());  // (int) truncation toward zero, as upstream
@@ -176,17 +177,18 @@ ForceField parse_force_field(std::string_view text, std::string_view name, const
       need_columns(rd, v, 8);
       s.r_pi_pi = v.next_double();
       s.p_lp2 = v.next_double();
-      v.skip();
+      s.vincr = v.next_double();  // eReaxFF (reac.f:4520): column 3
       s.b_o_131 = v.next_double();
       s.b_o_132 = v.next_double();
       s.b_o_133 = v.next_double();
       s.bcut_acks2 = v.next_double();
+      s.alphag = v.next_double();  // eReaxFF (reac.f:4521): column 8
 
       v = rd.next_values();
       need_columns(rd, v, 8);
       s.p_ovun2 = v.next_double();
       s.p_val3 = v.next_double();
-      v.skip();
+      s.betael = v.next_double();  // eReaxFF (reac.f:4523): column 3
       s.valency_val = v.next_double();
       s.p_val5 = v.next_double();
       s.rcore2 = v.next_double();
@@ -276,6 +278,7 @@ ForceField parse_force_field(std::string_view text, std::string_view name, const
           set2(&TwoBody::p_bo2, v.next_double());
           const double ovc = v.has_next() ? v.next_double() : 0.0;  // 8th value optional (reaxff_ffield.cpp:344-348)
           set2(&TwoBody::ovc, ovc);
+          set2(&TwoBody::pxel1, v.has_next() ? v.next_double() : 0.0);  // eReaxFF (reac.f:4670): 8th column
           B.tb(j, k).listed = B.tb(k, j).listed = true;
         }
       }
@@ -441,6 +444,17 @@ ForceField parse_force_field(std::string_view text, std::string_view name, const
   ff.ctl_.nonb_low = L[11];
   ff.ctl_.nonb_cut = L[12];
   ff.gp37_ = gp37_forces_stabilisation(L);
+  ff.ereaxff_ = opt.ereaxff;
+  if (opt.ereaxff) {
+    // gp[37] is the electron taper radius (vpar(38), poten.f:3949), not the LAMMPS triple-bond switch: disable that predicate
+    // (the 12.0000 / 15.9990 mass-pair predicate stays).
+    ff.gp37_ = false;
+    const double taper = std::isnan(opt.electron_taper) ? L[37] : opt.electron_taper;
+    if (!(taper > 0.0))
+      throw FfieldError(rd.name() + ": eReaxFF mode needs an electron taper radius > 0 (general parameter 38 is " + std::to_string(L[37]) +
+                        "; set FfieldOptions::electron_taper). With 0 the legacy code skips every electron pair (poten.f:3972).");
+    ff.electron_taper_ = taper;
+  }
   ff.c2_active_ = c2_correction_active(L);
   for (int i = 0; i < ff.num_types(); ++i)
     for (int j = 0; j < ff.num_types(); ++j) {

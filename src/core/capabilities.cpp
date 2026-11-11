@@ -40,12 +40,15 @@ constexpr std::array kFeatures{
     Feature{"ffield.control_file", Status::Implemented, "-", "pair_style reaxff <control file>", "cutoff keywords only"},
     Feature{"ffield.strict_missing_pairs", Status::Implemented, "-", "(no LAMMPS equivalent)", "reject, do not zero-fill, absent 2-body pairs (Q-12: zero-fill creates a phantom bond of BO'=1 at every r <= bond_cut)"},
     Feature{"ffield.reject_three_body_overrun", Status::Implemented, "-", "(no LAMMPS equivalent)", "reject >2 parameter sets for a j==l angle triple (Q-09: LAMMPS doubles the slot count and reads past prm[4])"},
+    Feature{"ffield.ereaxff_columns", Status::Implemented, "-", "(no LAMMPS equivalent)", "eReaxFF: atom columns pxel2, vincr, alphag, betael and bond column pxel1 (legacy reac.f:4516-4524, 4668-4670); FfieldOptions::ereaxff; electron taper explicit option, rejected if <= 0; gp[37] triple-bond predicate disabled in this mode; El pairs exempt from the strict missing-pair rule; tests: ereaxff_ffield (synthetic + real Jamil-target file)"},
     // ---- LAMMPS-compat flags (element knowledge expressed as data, ADR-003) -----------------------
     Feature{"compat.c2_correction", Status::Implemented, "-", "strcmp(name,\"C\") in Atom_Energy", "per-type flag derived at load time"},
     Feature{"compat.triple_bond_stabilisation", Status::Implemented, "-", "gp.l[37]==2 or mass pair 12.0000/15.9990", "per-pair flag"},
     Feature{"compat.light_element_split", Status::Implemented, "-", "mass > 21 / mass < 21 tests", "per-type flag"},
     Feature{"compat.hbond_donor_image_exclusion", Status::Implemented, "-", "orig_id[i] != orig_id[k] in Hydrogen_Bonds", "reproduce by default (Q-32): acceptor that is a periodic image of the donor is dropped; identity-based variant needs owner decision"},
     Feature{"compat.ovun_heavy_neighbor_force", Status::Implemented, "-", "dDelta_lp[j] where the energy uses Delta_lp_temp[j] (Atom_Energy force loop)", "reproduce LAMMPS forces by default (Q-34: analytic force != gradient of the reported energy for heavy atoms with pi bonds); corrected variant is opt-in"},
+    Feature{"compat.ereaxff_share_sign", Status::Implemented, "-", "(no LAMMPS equivalent)", "per-type flag: elecpos valence sign (-1 C,O,H,F,N,Os; +1 Li,Lv,P,B,Av,Al), legacy reac.f first copy; later copies differ and are audited in task 3.3"},
+    Feature{"compat.core_charge_table", Status::Implemented, "-", "(no LAMMPS equivalent)", "per-type flag: znucel nuclear charge table (legacy reac.f:4590-4615); not an ffield entry"},
     // ---- LAMMPS integration (M0.5) ----------------------------------------------------------------
     Feature{"lammps.pair_style_reaxff_metal", Status::Implemented, "-", "pair_style reaxff/metal", "computes energies, forces, the virial and per-atom energy/virial (backend cpu64 | metal); INT-2 vs stock pair reaxff on 58 fixtures"},
     Feature{"lammps.plugin_loadable", Status::Implemented, "-", "plugin load <reaxmetal plugin>", "DSO built against the pinned LAMMPS; version-matched"},

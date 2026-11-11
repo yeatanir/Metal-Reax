@@ -28,6 +28,10 @@ struct SpeciesFlags {
   bool light_valency_override = false;      // mass < 21 (strictly): valency_val := valency_boc if they differ
   bool mass_exactly_12_0000 = false;        // mass == 12.0000 (exact double equality, as upstream)
   bool mass_exactly_15_9990 = false;        // mass == 15.9990 (exact double equality, as upstream)
+  // ---- eReaxFF only (computed always, used only when FfieldOptions::ereaxff is set). Legacy source: Margaret/eReaxFF_src.
+  bool is_electron = false;                 // normalized symbol == "EL" (reac.f/poten.f compare qa == 'El')
+  double core_charge = 0.0;                 // znucel: nuclear charge Z of the element (reac.f:4590-4615); 0 if not in the table
+  int share_sign = 0;                       // elecpos (reac.f:8815-8851): -1 -> avalc -= eshare (C,O,H,F,N,Os); +1 -> += (Li,Lv,P,B,Av,Al); 0 none
 };
 
 // symbol: as read from the ffield (any case, any length); mass: parsed double. NaN compares false everywhere (as upstream).

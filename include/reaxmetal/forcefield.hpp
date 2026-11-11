@@ -15,6 +15,7 @@
 //     (compat_flags.hpp) computed once here; kernels never see element names or masses (ADR-003).
 #include <array>
 #include <cstddef>
+#include <limits>
 #include <cstdint>
 #include <map>
 #include <span>
@@ -45,6 +46,11 @@ struct SingleBody {
   double r_pi_pi = 0, p_lp2 = 0, b_o_131 = 0, b_o_132 = 0, b_o_133 = 0, bcut_acks2 = 0;
   double p_ovun2 = 0, p_val3 = 0, valency_val = 0, p_val5 = 0, rcore2 = 0, ecore2 = 0, acore2 = 0;
   double lgcij = 0, lgre = 0;
+  // eReaxFF columns that stock ReaxFF skips (legacy reader: Margaret/eReaxFF_src/reac.f:4516-4524; format 3x,10f9.4):
+  double pxel2 = 0;   // atom line 2, column 5
+  double vincr = 0;   // atom line 3, column 3  (electron-sharing width: exp(-vincr r^2))
+  double alphag = 0;  // atom line 3, column 8  (Gaussian exponent of the electron-core / electron-electron terms)
+  double betael = 0;  // atom line 4, column 3  (strength of the electron terms)
   SpeciesFlags flags;  // derived once; kernels use these instead of names / masses
 };
 
@@ -55,6 +61,7 @@ struct TwoBody {
   double D = 0, alpha = 0, r_vdW = 0, gamma_w = 0, rcore = 0, ecore = 0, acore = 0, lgcij = 0, lgre = 0;
   double gamma = 0;  // stored as (gamma_i*gamma_j)^-1.5, as LAMMPS ("note: this parameter is gamma^-3")
   double v13cor = 0, ovc = 0;
+  double pxel1 = 0;  // eReaxFF: bond line 2, column 8 (reac.f:4668-4670); 0 if the column is absent
   bool listed = false;                     // a bond-parameter block for this pair exists in the file (Q-12)
   bool triple_bond_stabilisation = false;  // compat flag (gp[37]==2 or mass pair 12.0000/15.9990), set after parsing
 };
@@ -84,6 +91,12 @@ struct ControlParams {
 struct FfieldOptions {
   bool lgvdw = false;                       // pair_style reaxff lgvdw yes: five-line atom blocks, extra off-diagonal column
   bool reproduce_lammps_leniency = false;   // accept truncated files with a warning, as LAMMPS does (default: reject)
+  // eReaxFF mode (explicit pseudo-electrons, type "El"): the legacy electron columns are read, general parameter 38 (index 37) is the
+  // electron taper radius instead of the LAMMPS triple-bond switch, and El pairs are exempt from the strict missing-bond-block rule.
+  bool ereaxff = false;
+  // Explicit electron taper radius (Angstrom). NaN = use general parameter 38 of the file. A resolved value <= 0 is rejected in
+  // eReaxFF mode: the legacy code then skips every electron pair (poten.f:3972) and the term silently vanishes.
+  double electron_taper = std::numeric_limits<double>::quiet_NaN();
 };
 
 class ForceField;
@@ -102,6 +115,8 @@ class ForceField {
   const HBondParams* hbond(int j, int k, int l) const;           // nullptr if absent
   const ControlParams& file_control() const noexcept { return ctl_; }  // cutoffs that come from the ffield (nonb_low/cut, bo_cut)
   bool gp37_stabilisation() const noexcept { return gp37_; }
+  bool ereaxff() const noexcept { return ereaxff_; }
+  double electron_taper() const noexcept { return electron_taper_; }  // Angstrom; only meaningful in eReaxFF mode
   bool c2_correction_active() const noexcept { return c2_active_; }
   const std::vector<std::string>& warnings() const noexcept { return warnings_; }
 
@@ -126,7 +141,8 @@ class ForceField {
   std::map<std::array<int, 3>, std::vector<ThreeBodySet>> thbp_;     // ordered triples
   std::map<std::array<int, 4>, FourBody> fbp_;
   std::map<std::array<int, 3>, HBondParams> hbp_;
-  bool gp37_ = false, c2_active_ = false;
+  bool gp37_ = false, c2_active_ = false, ereaxff_ = false;
+  double electron_taper_ = 0.0;
   std::vector<std::string> warnings_;
 };
 
