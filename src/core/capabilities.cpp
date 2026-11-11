@@ -31,6 +31,7 @@ constexpr std::array kFeatures{
     Feature{"term.vdw.lg_dispersion", Status::Implemented, "-", "pair_style reaxff lgvdw yes", "low-gradient correction"},
     Feature{"term.coulomb", Status::Implemented, "-", "ReaxFF::vdW_Coulomb_Energy", "taper-shielded"},
     Feature{"term.polarization", Status::Implemented, "-", "ReaxFF::Compute_Polarization_Energy", "QEq self energy"},
+    Feature{"term.electron", Status::Implemented, "-", "(no LAMMPS equivalent)", "eReaxFF explicit-electron pair term: core-El and El-El with the 7th-order electron taper (legacy poten.f:3924-4160); CPU-64 only, own result struct (not yet an EnergyTerm / pvector slot, task 3.5); finite-difference forces tested; Ho refused; backend metal not supported"},
     // ---- parameter file -------------------------------------------------------------------------
     Feature{"ffield.standard", Status::Implemented, "-", "ffield general/atom/bond/angle/torsion/hbond blocks", "39-parameter layout"},
     Feature{"ffield.atom_line5_lgvdw", Status::Implemented, "-", "ffield 5-line atom block", "only with lgvdw"},
