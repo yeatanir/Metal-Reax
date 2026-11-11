@@ -14,8 +14,14 @@ namespace electron_terms {
 // 225-atom Jamil-target case is low by 3.69e-8 relative; with this constant the match is at round-off (phase 3 notes).
 const double kCoulombKcal = static_cast<double>(332.0638f);
 
+namespace {
+// Compat: the legacy constant pi is the truncated double 3.14159265d0 (reac.f:45), not pi. It enters only the derivative (poten.f:3994, 4123): the
+// force would otherwise differ from the legacy force by 9e-10 relative.
+constexpr double kLegacyPi = 3.14159265;
+}  // namespace
+
 PairOut core_electron(double betael, double Z, double alphag, double r, double Tap, double dTap_dr) noexcept {
-  const double pi = 3.14159265358979323846;
+  const double pi = kLegacyPi;
   const double s = std::sqrt(2.0 * alphag * 1.0);
   const double erfv = std::erf(s * r);
   const double e0 = -kCoulombKcal * betael * Z * erfv / r;                                   // poten.f:3987-3988
@@ -25,7 +31,7 @@ PairOut core_electron(double betael, double Z, double alphag, double r, double T
 }
 
 PairOut electron_electron(double betael, double alphag, double r, double Tap, double dTap_dr) noexcept {
-  const double pi = 3.14159265358979323846;
+  const double pi = kLegacyPi;
   const double erfv = std::erf(std::sqrt(alphag) * r);
   const double e0 = kCoulombKcal * betael * erfv / r;                                         // poten.f:4121
   const double t1 = 2.0 * std::sqrt(alphag / pi) * r * std::exp(-r * r * alphag);            // poten.f:4123

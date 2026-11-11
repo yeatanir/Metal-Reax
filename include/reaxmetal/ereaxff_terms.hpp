@@ -88,6 +88,22 @@ inline OuOut over_under(const OuParams& p, double sum1, double sum2, double X, d
   return o;
 }
 
+// ---- C2 correction with the legacy single-precision literals ------------------------------------------------------------------------------
+// poten.f:2135 `vov3 = bo - vov4 - 0.040*(vov4**4)` and :2145 `(-1.0 - 0.16*(vov4**3))`: 0.040 and 0.16 are default-REAL literals (stored as
+// 0.03999999910593033 and 0.1599999964237213), the energy gate is abs(vpar(6)) > 0.001 (poten.f:2118). Stock LAMMPS uses the doubles 0.040 / 0.16.
+struct C2Legacy { double vov3, e, deahu2dbo, deahu2dsbo; };
+inline C2Legacy c2_correction(double p_lp3, double BO, double Di) {
+  const double k04 = static_cast<double>(0.040f), k16 = static_cast<double>(0.16f);
+  C2Legacy o;
+  const double D2 = Di * Di;
+  o.vov3 = BO - Di - k04 * (D2 * D2);
+  const double d = o.vov3 - 3.0;
+  o.e = p_lp3 * d * d;
+  o.deahu2dbo = 2.0 * p_lp3 * d;
+  o.deahu2dsbo = 2.0 * p_lp3 * d * (-1.0 - k16 * (D2 * Di));
+  return o;
+}
+
 // ---- effective Delta of one atom: X = f (abo - A), f = exp(-pxel2 e2 S), S = sum_b pxel1_b BO_b / abo -----------------------------------
 struct Effective { double S, f, X; };
 inline Effective effective_delta(double abo, double A, double pxel2, double e2, double sum_pxel1_bo) {

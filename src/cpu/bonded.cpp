@@ -96,7 +96,7 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
   const Real p_boc1 = gp[0], p_boc2 = gp[1], p_lp1 = gp[15], p_lp3 = gp[5];
   const Real gp3 = gp[3], gp4 = gp[4], gp7 = gp[7], gp10 = gp[10];
   const Real p_ovun3 = gp[32], p_ovun4 = gp[31], p_ovun6 = gp[6], p_ovun7 = gp[8], p_ovun8 = gp[9];
-  const bool c2_gate = p_lp3 > Real(0.001);
+  const bool c2_gate = ff.ereaxff() ? (std::fabs(p_lp3) > Real(0.001)) : (p_lp3 > Real(0.001));   // legacy gate is abs(vpar(6)) > 0.001 (poten.f:2118)
 
   std::vector<std::vector<Bond>> bonds(N);
   std::vector<R3> dDeltap_self(N, R3{0, 0, 0});
@@ -325,7 +325,8 @@ BondedResult RM_BONDED_NAME(const ForceField& ff, const ControlParams& ctl, cons
       for (Bond& b : bonds[i]) {
         const int tj = atoms.type[static_cast<std::size_t>(b.nbr)];
         if (tj < 0 || !ff.single(tj).flags.c2_species) continue;
-        const auto c2 = terms::c2_correction<Real>(p_lp3, b.BO, aq[i].Delta);
+        const auto c2 = ere ? [&] { const auto l = ereaxff_terms::c2_correction(p_lp3, b.BO, aq[i].Delta); return terms::C2Corr<Real>{R(l.vov3), R(l.e), R(l.deahu2dbo), R(l.deahu2dsbo)}; }()
+                            : terms::c2_correction<Real>(p_lp3, b.BO, aq[i].Delta);
         if (c2.vov3 > Real(3.)) {
           e_lp += c2.e;
           etally_half(i, static_cast<std::size_t>(b.nbr), c2.e);

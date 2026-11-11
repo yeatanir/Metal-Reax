@@ -2,6 +2,8 @@
 // SPDX-FileCopyrightText: 2026 Anirban Phukan
 #include "reaxmetal/nonbonded.hpp"
 
+#include <cmath>
+
 #include "reaxmetal/terms_host.hpp"
 
 #ifndef RM_REAL
@@ -22,6 +24,7 @@ NonbondedResult RM_NONBONDED_NAME(const ForceField& ff, const NeighborCutoffs& c
   const auto& gp = ff.global().l;
   const Real p_vdW1 = gp[28];
   const int vdw_type = ff.global().vdw_type;
+  const Real qscale = opt.coulomb_constant > 0.0 ? R(std::sqrt(opt.coulomb_constant / RM_C_ELE)) : Real(1.0);
   [[maybe_unused]] const terms::TaperCoeffs tap = terms::taper_coeffs(ff.file_control().nonb_low, ff.file_control().nonb_cut);
 
   NonbondedResult res;
@@ -48,8 +51,16 @@ NonbondedResult RM_NONBONDED_NAME(const ForceField& ff, const NeighborCutoffs& c
 #else
       terms::taper_horner<Real>(tap.c, r, Tap, dTap);
 #endif
-      const Real qi = q[i], qj = (q.size() == N) ? q[j] : q[static_cast<std::size_t>(atoms.owner[j])];
-      const auto o = terms::nonbonded_pair<Real>(np, vdw_type, opt.lgvdw, p_vdW1, qi, qj, r, Tap, dTap);
+      const Real qi = qscale * q[i], qj = qscale * ((q.size() == N) ? q[j] : q[static_cast<std::size_t>(atoms.owner[j])]);
+      auto o = terms::nonbonded_pair<Real>(np, vdw_type, opt.lgvdw, p_vdW1, qi, qj, r, Tap, dTap);
+      if (opt.legacy_coulomb_exponent) {
+        // CE = (1/r) dE/dr; the term that carries the exponent is -C qi qj Tap r / d^(4/3) with d = r^3 + gamma (stock: 1/3 as 0.33333333333333)
+        const double d1 = static_cast<double>(r) * r * r + t.gamma;
+        const double Cq = RM_C_ELE * static_cast<double>(qi) * static_cast<double>(qj);
+        const double stock = -Cq * Tap * r / d1 / std::pow(d1, 0.33333333333333);
+        const double legacy = -Cq * Tap * r / std::pow(d1, static_cast<double>(4.0f / 3.0f));
+        o.CE += static_cast<Real>(legacy - stock);
+      }
       e_vdw += o.e_vdW;
       e_ele += o.e_ele;
       if (opt.per_atom) {   // ev_tally(i, j, natoms, 1, pe_vdw, e_ele, fpair = -CE, del = xi - xj): half to each atom

@@ -19,6 +19,12 @@ namespace reaxmetal {
 struct NonbondedOptions {
   bool lgvdw = false;  // pair_style reaxff lgvdw yes
   bool census = false;     // fill NonbondedResult::census_nonbonded
+  // eReaxFF compatibility: the legacy executable uses c1c = 332.0638 as a default-REAL literal (332.0638122558594, poten.f:3290 ff.) where LAMMPS uses
+  // C_ele = 332.06371. 0 = stock constant. Applied by scaling the charges in the Coulomb pair term by sqrt(c/C_ele) (the polarization energy keeps the true q).
+  double coulomb_constant = 0.0;
+  // eReaxFF compatibility: the legacy Coulomb derivative uses the exponent fothird = 4.0/3.0 evaluated in single precision (1.3333334, poten.f:3292,3347)
+  // while its energy uses 1/3 in double, so the legacy force is not exactly the gradient of its energy (relative ~1e-7). Reproduced when true.
+  bool legacy_coulomb_exponent = false;
   bool per_atom = false;   // fill eatom / vatom (ev_tally of the reference: half of each pair term to each atom)
 };
 

@@ -155,3 +155,13 @@ if(REAXMETAL_EREAXFF_FFIELD AND REAXMETAL_EREAXFF_GEO AND REAXMETAL_EREAXFF_REF_
   add_test(NAME electron_reference COMMAND test_electron_reference ${REAXMETAL_EREAXFF_FFIELD} ${REAXMETAL_EREAXFF_GEO}
            ${REAXMETAL_EREAXFF_REF_TAPER} ${REAXMETAL_EREAXFF_REF_ELECTRON})
 endif()
+
+# full eReaxFF reference (all terms + total gradient): needs REAXMETAL_EREAXFF_FFIELD, REAXMETAL_EREAXFF_GEO and the legacy export file
+set(REAXMETAL_EREAXFF_EXPORT "" CACHE FILEPATH "ereac_export.out of the reference run (STEP 0 GRAD lines)")
+if(REAXMETAL_EREAXFF_FFIELD AND REAXMETAL_EREAXFF_GEO AND REAXMETAL_EREAXFF_EXPORT)
+  add_executable(test_ereaxff_reference test_ereaxff_reference.cpp)
+  target_link_libraries(test_ereaxff_reference PRIVATE reaxmetal_core)
+  reaxmetal_apply_warnings(test_ereaxff_reference)
+  add_test(NAME ereaxff_reference COMMAND test_ereaxff_reference ${REAXMETAL_EREAXFF_FFIELD} ${REAXMETAL_EREAXFF_GEO}
+           ${REAXMETAL_EREAXFF_REF_TAPER} ${REAXMETAL_EREAXFF_EXPORT})
+endif()
