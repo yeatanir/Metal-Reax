@@ -108,5 +108,24 @@ int main() {
   RM_CHECK(!c2_correction_active(gp_with5(-5.0)));
   RM_CHECK(!c2_correction_active(gp_with5(nan)));
   RM_EXPECT_THROW(c2_correction_active(std::vector<double>(5, 1.0)), std::invalid_argument);
+
+  // ---- eReaxFF species table (eparams): overrides the legacy znucel / elecpos tables per element; malformed input throws
+  {
+    const SpeciesTable t = parse_species_table("# comment\nSi 4 -1 untested\nlv 3 +1 tested   # trailing comment\n\n", "mem");
+    RM_CHECK(t.size() == 2 && !t.at("SI").tested && t.at("LV").tested && t.at("SI").core_charge == 4.0 && t.at("SI").share_sign == -1);
+    const SpeciesFlags nol = derive_species_flags("Si", 28.0855);                    // built-in legacy table: Si has Z = 4, no sharing sign
+    RM_CHECK(nol.core_charge == 4.0 && nol.share_sign == 0);
+    const SpeciesFlags with = derive_species_flags("Si", 28.0855, &t);               // file: sign -1
+    RM_CHECK(with.core_charge == 4.0 && with.share_sign == -1);
+    const SpeciesTable t2 = parse_species_table("Xx 7.5 1 tested\n", "mem");        // an element the code never knew
+    RM_CHECK(derive_species_flags("Xx", 50.0).core_charge == 0.0 && derive_species_flags("Xx", 50.0, &t2).core_charge == 7.5);
+    RM_CHECK(derive_species_flags("C", 12.0, &t2).core_charge == 6.0);               // elements absent from the file keep the built-in values
+    RM_EXPECT_THROW(parse_species_table("Si 4 2 tested\n", "mem"), std::invalid_argument);        // sign out of range
+    RM_EXPECT_THROW(parse_species_table("Si 4 -1\n", "mem"), std::invalid_argument);              // missing tested/untested
+    RM_EXPECT_THROW(parse_species_table("Si 4 -1 maybe\n", "mem"), std::invalid_argument);        // bad tag
+    RM_EXPECT_THROW(parse_species_table("Si 4 -1 tested\nSI 4 -1 tested\n", "mem"), std::invalid_argument);  // duplicate
+    RM_EXPECT_THROW(parse_species_table("Si 4 -1 tested extra\n", "mem"), std::invalid_argument);
+    RM_EXPECT_THROW(read_species_table("/nonexistent/eparams"), std::invalid_argument);
+  }
   return rmtest::finish("compat_flags");
 }

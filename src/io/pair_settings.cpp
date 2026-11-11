@@ -55,6 +55,14 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     else if (key == "lgvdw") p.lgvdw = logical(val, "lgvdw");
     else if (key == "shellcheck") p.shellcheck = logical(val, "shellcheck");
     else if (key == "ereaxff") p.ereaxff = logical(val, "ereaxff");
+    else if (key == "eparams") {
+      p.eparams_file = val;
+      try {
+        p.species = std::make_shared<const SpeciesTable>(read_species_table(val));
+      } catch (const std::exception& e) {
+        throw FfieldError(std::string("pair_style reaxff/metal eparams: ") + e.what());
+      }
+    }
     else if (key == "electron_taper") {
       p.electron_taper = number(val, "electron_taper");
       if (!(p.electron_taper > 0.0)) throw FfieldError("Illegal pair_style reaxff/metal command: electron_taper must be > 0 (a zero taper silently removes every electron pair in the legacy code)");
@@ -97,6 +105,8 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     p.notices.push_back("pair_style reaxff/metal: eReaxFF mode: charges are taken from the data file (legacy icharg 8, no charge fix, no polarization energy); only elements C, El, Av are accepted (allow-list)");
   } else if (!std::isnan(p.electron_taper)) {
     throw FfieldError("pair_style reaxff/metal: electron_taper needs ereaxff yes");
+  } else if (p.species) {
+    throw FfieldError("pair_style reaxff/metal: eparams needs ereaxff yes");
   }
   if (p.tabulate > 0 || p.control.tabulate > 0)
     p.notices.push_back("pair_style reaxff/metal: 'tabulate' is accepted but no table is built: the non-bonded terms are evaluated analytically (the stock spline table "

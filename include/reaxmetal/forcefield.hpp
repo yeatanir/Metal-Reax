@@ -18,6 +18,7 @@
 #include <limits>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -97,6 +98,8 @@ struct FfieldOptions {
   // Explicit electron taper radius (Angstrom). NaN = use general parameter 38 of the file. A resolved value <= 0 is rejected in
   // eReaxFF mode: the legacy code then skips every electron pair (poten.f:3972) and the term silently vanishes.
   double electron_taper = std::numeric_limits<double>::quiet_NaN();
+  // Optional per-element overrides of the legacy znucel / elecpos tables (pair_style keyword `eparams`). Null = built-in legacy tables only.
+  std::shared_ptr<const SpeciesTable> species;
 };
 
 class ForceField;

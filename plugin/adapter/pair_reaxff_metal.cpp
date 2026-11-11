@@ -122,6 +122,7 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
     opt.lgvdw = settings_.lgvdw;
     opt.ereaxff = settings_.ereaxff;
     opt.electron_taper = settings_.electron_taper;
+    opt.species = settings_.species;
     ff_ = std::make_unique<reaxmetal::ForceField>(reaxmetal::read_force_field_file(utils::get_potential_file_path(args[2]), opt));
     bond_softness_ = ff_->global().l.size() > 34 ? ff_->global().l[34] : 0.0;
   } catch (const std::exception &e) {
@@ -160,8 +161,14 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
       if (nm == "HO") error->all(FLERR, "Pair style reaxff/metal ereaxff: hole particles (Ho) are not supported");
       bool allowed = false;
       for (const char *ok : kEreaxffElements) allowed = allowed || nm == ok;
+      if (!allowed && settings_.species) {
+        const auto it = settings_.species->find(reaxmetal::normalize_symbol(nm));
+        if (it != settings_.species->end() && it->second.tested) allowed = true;
+        else if (it != settings_.species->end())
+          error->all(FLERR, "Pair style reaxff/metal ereaxff: element '{}' is marked 'untested' in the eparams file {}; validate it against the legacy code, then mark it 'tested'", nm, settings_.eparams_file);
+      }
       if (!allowed)
-        error->all(FLERR, "Pair style reaxff/metal ereaxff: element '{}' is not in the eReaxFF allow-list (C, El, Av); add it to kEreaxffElements in pair_reaxff_metal.cpp only after auditing its legacy sharing / core-charge / derivative-sign entries", ff_->single(map_[static_cast<std::size_t>(t)]).name);
+        error->all(FLERR, "Pair style reaxff/metal ereaxff: element '{}' is not in the eReaxFF allow-list (C, El, Av); declare it as 'tested' in a pair_style `eparams <file>` (SYMBOL Z SHARE_SIGN tested) only after auditing its legacy sharing / core-charge / derivative-sign entries", ff_->single(map_[static_cast<std::size_t>(t)]).name);
     }
     if (ff_->electron_taper() > ff_->file_control().nonb_cut)
       error->all(FLERR, "Pair style reaxff/metal ereaxff: electron taper {} A exceeds the non-bonded cutoff {} A of the force field", ff_->electron_taper(), ff_->file_control().nonb_cut);
@@ -203,6 +210,16 @@ void PairReaxFFMetal::init_style()
     // charges are fixed per particle (MOLCHARGE, legacy icharg 8); a charge fix would silently replace them
     if (!modify->get_fix_by_style("^acks2/reax").empty() || !modify->get_fix_by_style("^qeq/").empty() || !modify->get_fix_by_style("^qtpie/reax").empty())
       error->all(FLERR, "Pair style reaxff/metal ereaxff: charges are fixed (data file q, legacy icharg 8); do not combine with a charge fix (qeq/acks2/qtpie)");
+    // The legacy bonded terms take ONE minimum image per atom pair (dista2); a ghost-atom treatment also sees further images. Measured against the exact
+    // ereac (Ag7_1 straddling the boundary, project/tools/discontinuity/periodic_ag_check.py): agreement to 1e-6 kcal/mol for box edges 11, 12, 16, 22 A, but
+    // 4e-2 kcal/mol at 10 A (= 2 x bond_cut) and 5 kcal/mol at 8 A. So refuse periodic edges below 2 x bond_cut + 1 A (the smallest tested passing edge).
+    const double minlen = 2.0 * settings_.control.bond_cut + 1.0;
+    const double len[3] = {domain->xprd, domain->yprd, domain->zprd};
+    const int per[3] = {domain->xperiodic, domain->yperiodic, domain->zperiodic};
+    if (domain->triclinic && (per[0] || per[1] || per[2])) error->all(FLERR, "Pair style reaxff/metal ereaxff: periodic triclinic cells are not supported");
+    for (int d = 0; d < 3; ++d)
+      if (per[d] && len[d] < minlen)
+        error->all(FLERR, "Pair style reaxff/metal ereaxff: periodic box edge {} A (dimension {}) is below 2*bond_cut + 1 = {} A: the legacy single-minimum-image convention is not reproduced in such a cell; use a larger cell", len[d], "xyz"[d], minlen);
   }
   // exactly one charge model: fix qeq/reaxff, qeq/shielded, qeq/rel/reaxff, qtpie/reaxff or acks2/reaxff (as pair reaxff)
   acks2_fix_ = nullptr;

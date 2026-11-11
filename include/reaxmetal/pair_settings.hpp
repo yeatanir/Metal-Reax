@@ -6,6 +6,7 @@
 //   Rejected / Deferred options raise UnsupportedFeatureError, Ignored options are accepted with a notice, Planned options are
 //   accepted (they take effect when their milestone lands; the adapter refuses to compute until M4 anyway).
 #include <limits>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -28,6 +29,8 @@ struct PairSettings {
   std::string backend = "cpu64";    // force backend: cpu64 (reference, complete) | metal (not complete yet)
   bool ereaxff = false;              // eReaxFF mode (plan task 3.5): explicit electrons (type El), fixed MOLCHARGE charges from the data file, no charge fix, no polarization energy
   double electron_taper = std::numeric_limits<double>::quiet_NaN();   // Angstrom; NaN = general parameter 38 of the ffield (must then be > 0)
+  std::shared_ptr<const SpeciesTable> species;   // `eparams <file>`: per-element Z / sharing sign / tested flag (eReaxFF mode)
+  std::string eparams_file;
   bool selfcheck = false;            // development keyword `reaxmetal_selfcheck yes`: A2 builds the ghost-native view and verifies it against LAMMPS' own neighbor list (then stops with an error: development aid)
   ControlParams control;             // defaults, or the control file contents
   std::vector<std::string> notices;  // warnings from the control file and "ignored option" notices

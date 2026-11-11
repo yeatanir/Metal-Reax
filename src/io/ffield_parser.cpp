@@ -234,7 +234,7 @@ ForceField parse_force_field(std::string_view text, std::string_view name, const
 
     // first-row valency fix (reaxff_ffield.cpp:299-305); flags derived from the parsed mass
     for (auto& s : ff.sbp_) {
-      s.flags = derive_species_flags(s.name, s.mass);
+      s.flags = derive_species_flags(s.name, s.mass, opt.species.get());
       if (light_valency_override_applies(s.flags, s.valency_val, s.valency_boc)) {
         ff.warnings_.push_back("Changed valency_val to valency_boc for " + s.name);
         s.valency_val = s.valency_boc;
