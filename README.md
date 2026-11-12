@@ -1,107 +1,81 @@
-# ReaxMetal
+# Metal-Reax, eReaxFF branch
 
-**ReaxFF molecular dynamics on the Apple Metal GPU, as a LAMMPS plugin.**
-`pair_style reaxff/metal` evaluates the complete ReaxFF force field (all 13 energy terms, forces, virial, per-atom energy and virial) and `fix qeq/reaxff/metal` solves the charge equilibration on the GPU.
-Everything else (integrators, thermostats, barostats, minimisers, neighbor lists, MPI) is LAMMPS. Every number is validated against stock `pair_style reaxff` of LAMMPS `stable_30Sep2026`.
-Element-agnostic: ordinary ReaxFF `ffield` files are read at run time.
+This branch (`ereaxff-lammps-merged`) adds **eReaxFF** to the `reaxff/metal` LAMMPS pair style: ReaxFF with explicit, pseudo-electron particles (atom type `El`) that carry a Gaussian charge and interact with the atom cores and with each other.
+It exists so that eReaxFF can run inside LAMMPS, and therefore under [i-PI](https://github.com/i-pi/i-pi) for path-integral MD. The project that uses it is [PI-eReaxFF](https://github.com/yeatanir/PI-eReaxFF).
 
-<p align="center"><img src="docs/img/graphitization_renders.png" width="100%" alt="random carbon turning into a graphitic network"></p>
+Everything else in the repository (the ReaxFF engine, the Metal GPU backend, the stock charge models) is unchanged from Metal-Reax. Its README is kept as [`README_REAXMETAL.md`](README_REAXMETAL.md).
 
-*30,000 random carbon atoms, 1 g/cm³, NVT at 4000 K with the "2013 C" ReaxFF (Srinivasan, van Duin, Ganesh, J. Phys. Chem. A 119, 571), run with `reaxff/metal` on an M5 Max.
-A 14 Å slab coloured by coordination: the random packing (left, 16 % 3-coordinated) condenses into a connected sp²-like network of 6-membered rings (right, 85 % after 90 ps).
-The run was stopped at 90 ps of the planned 100 ps.*
-
-<p align="center"><img src="docs/img/graphitization_timeseries.png" width="80%"></p>
-
-## Results
-
-<p align="center"><img src="docs/img/speedup.png" width="85%"></p>
-
-*Time per MD step, CHO water, NVT, serial stock LAMMPS (1 core) vs `reaxff/metal` + `qeq/reaxff/metal` on the GPU, measured on an idle M5 Max. Below about 1,000 atoms the GPU does not help.*
+## What was added
 
 | | |
 |---|---|
-| <img src="docs/img/accuracy.png" width="100%"> | <img src="docs/img/nve_noise.png" width="100%"> |
-| Force error against stock on 58 reference configurations: `cpu64` is the double-precision reference, `metal` the all-FP32 GPU engine, `mixed` runs the bond-order terms in double on the host and everything else on the GPU. | Energy conservation in NVE (VO oxide, 20 ps): the all-FP32 GPU mode is noisier than stock, the mixed mode is not. FP32 is fine for NVT/NPT; use `bonded cpu64` for NVE. |
-| <img src="docs/img/charge_models.png" width="100%"> | <img src="docs/img/decision_windows.png" width="100%"> |
-| All ReaxFF charge models of LAMMPS (QEq, QEq-R, QTPIE, ACKS2, each with and without an electric field) on a 3000-atom water system: the energy matches stock to 1e-5 kcal/mol/atom on Metal and 1e-9 on `cpu64`. | Every discrete decision of the force field (bond-order cut-offs, 3-/4-body gates, H-bond gate, SBO branches, the lone-pair truncation, the non-bonded cut-off) is taken as in the reference except within about 1e-7 Å of a threshold. |
-
-## What is validated against stock LAMMPS
-
-| Area | Result |
-|---|---|
-| CPU-64 engine | energy 3e-15 relative, forces 3e-12 kcal/mol/Å on 58 reference configurations (frozen limits 2e-9 / 1e-9) |
-| Metal-32 engine (FP32, no atomics, bitwise repeatable) | energy ≤ 1e-4 kcal/mol/atom, force max 4e-3 / RMS 9e-4 kcal/mol/Å (limits 1e-3 / 0.05 / 5e-3) |
-| Charge models | `qeq/reaxff`, `qeq/rel/reaxff`, `qtpie/reaxff`, `acks2/reaxff`, `qeq/shielded`, parameter-file QEq, QEq on a subgroup, each with `fix efield` where applicable |
-| `fix qeq/reaxff/metal` | GPU charge matrix on any number of ranks; `resident` (whole solve on the GPU, charges equal stock's to 1e-10 e), `strict`, `verify <eV>` |
-| Dynamics | NVE, NVT, NPT, `minimize`, `hybrid/overlay` (charge-implicit ReaxFF + tabulated ZBL), shrink-wrapped boundaries, `fix wall/reflect`; NVT/NPT averages equal stock within block σ |
-| Analysis | `compute pe/atom`, `stress/atom`, and the stock `fix reaxff/bonds`, `fix reaxff/species`, `compute reaxff/atom`, `compute SPEC/ATOM` work unmodified |
-| MPI | 2 and 4 ranks equal stock on the same rank count (all ranks share one GPU: more ranks do not add speed) |
-| FP32 decisions | 48 thresholds scanned, 290 configurations censused, no flip outside the FP32 window |
-| Precision modes | `backend cpu64` · `backend metal` (GPU, FP32) · `backend metal bonded cpu64` (mixed, stock-like NVE conservation, ≈ 2× stock speed at 24k atoms) |
-
-Test suite: 52 tests (56 with the MPI build tree). Every run, including the failures and the bugs found along the way, is recorded in [`docs/VALIDATION.md`](docs/VALIDATION.md) and [`docs/DEVELOPMENT_LOG.md`](docs/DEVELOPMENT_LOG.md).
-
-## Limitations
-
-* `backend metal` is single precision: in NVE the oxide test shows more total-energy noise than stock (use `bonded cpu64`); nearly linear atom triples (sin θ < 1e-3) carry an intrinsic FP32 force error.
-* A step on which `pe/atom` / `stress/atom` is evaluated runs on the CPU engine.
-* `tabulate` is accepted but non-bonded terms are evaluated analytically; the plugin checks the ghost shell width (`shellcheck no` disables the error, as stock never checks).
-* `units real`, `newton on`, atom IDs and the `q` attribute are required (as stock). No Kokkos/OpenMP suffix styles. About 75 KB of memory per atom.
-* Full list and the troubleshooting table: [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md) §11.
+| Electron pair term | core–El and El–El terms with the 7th-order electron taper, re-implemented from the formulas of the legacy `electron` routine (no legacy code copied). `include/reaxmetal/electron.hpp`, `src/cpu/electron.cpp` |
+| Force-field columns | the eReaxFF atom columns (`pxel2`, `vincr`, `alphag`, `betael`) and the bond column `pxel1` of the legacy `ffield` |
+| Fixed charges | charges come from the data file (legacy `icharg 8`, the `MOLCHARGE` lines of a geo file). No charge fix, no polarization energy |
+| 15th pvector slot | `eelect`, the electron energy, next to the 14 stock ReaxFF terms |
+| Species table | `eparams` file: per-element core charge Z, sharing sign, and a `tested` flag |
+| Safety checks | element allow-list, periodic-cell rule, ghost-shell check (below) |
 
 ## Use
 
 ```
 plugin load /path/to/reaxmetaladapterplugin.so
-pair_style reaxff/metal NULL backend metal          # backend cpu64 (default) | metal ; add "bonded cpu64" for stock-like NVE conservation
-pair_coeff * * ffield.reax.cho C H O
-fix q all qeq/reaxff/metal 1 0.0 10.0 1e-6 reaxff   # or any other ReaxFF charge fix; "checkqeq no" for fixed charges
-fix integ all nvt temp 300 300 25.0                 # any LAMMPS integrator
+pair_style reaxff/metal NULL ereaxff yes eparams species.eparams electron_taper 5.7
+pair_coeff * * ffield Av El          # type 1 = Av (the Ag-like core), type 2 = El (the electron)
 ```
-Full manual (syntax of every keyword, charge models, precision modes, MPI, performance, limitations, troubleshooting): [`docs/USER_MANUAL.md`](docs/USER_MANUAL.md).
-`REAXMETAL_PROFILE=1` prints per-phase wall times at exit.
+(No charge fix: the charges you read in with the data file are used as they are.)
 
-### Example: random carbon at 1 g/cm³ (the renders above)
-```
-examples/graphitization/make_ffield.sh jp510274e_si_001.pdf ffield.reax.C2013    # force field from the paper's Supporting Information (not redistributed)
-python3 examples/graphitization/make_box.py c30000.data --n 30000 --density 1.0  # random packing, 84.265 Å box
-lmp -in examples/graphitization/in.graphitization -var data c30000.data -var ffield ffield.reax.C2013 -var plugin $PWD/build/plugin/reaxmetaladapterplugin.so
-python3 examples/graphitization/analyze.py --box 84.26481 g4000.*.dump           # coordination and ring statistics
-python3 docs/make_figures.py <dir with the dumps>                                # regenerates the figures of this README
-```
-
-## Build and test (macOS, Apple Silicon)
-
-Stock pinned LAMMPS is built once, outside the repository (shared library, `LAMMPS_EXCEPTIONS`; add `-DBUILD_MPI=on` for an MPI LAMMPS):
-```
-tools/fetch_lammps.sh --full /path/lammps && tools/build_lammps_reference.sh /path/lammps /path/build /path/install
-```
-Then:
-```
-cmake -S . -B build -DREAXMETAL_ENABLE_METAL=ON -DREAXMETAL_BUILD_LAMMPS_PLUGIN=ON \
-      -DREAXMETAL_LAMMPS_SOURCE_DIR=/path/lammps/src -DREAXMETAL_LAMMPS_PREFIX=/path/install \
-      -DREAXMETAL_FFIELD_DIR=/path/lammps/potentials            # + -DREAXMETAL_LAMMPS_MPI=ON for an MPI LAMMPS
-cmake --build build -j && ctest --test-dir build -j4 --output-on-failure
-```
-Shaders are compiled at run time (Command Line Tools suffice, no Xcode). Without `-DREAXMETAL_ENABLE_METAL=ON` the plugin still runs the double-precision CPU engine.
-Long protocol runs (not in CTest): `tests/lammps/run_nve.py` (NVE 20 ps; `--nvt`, `--npt`), `tests/lammps/run_min.py`.
-
-## Layout
-
-| Where to look | What it is |
+| Keyword | Meaning |
 |---|---|
-| `include/reaxmetal/terms.hpp` | pure ReaxFF term functions shared by the CPU engines and the Metal shaders |
-| `src/cpu`, `src/neighbor` | CPU-64 engine (and its float twin), neighbor/ghost machinery, packing of device inputs |
-| `src/metal` | Objective-C++ host and the MSL kernels |
-| `plugin/adapter` | the LAMMPS plugin: `pair_style reaxff/metal` and the `/metal` charge fixes |
-| `tests/` | unit tests, 58 reference fixtures (frozen hashes), in-LAMMPS A/B and dynamics harnesses |
-| `examples/graphitization` | the 30,000-atom carbon example |
-| `docs/USER_MANUAL.md` | user manual |
-| `docs/ENGINE_SPEC.md`, `docs/NUMERICAL_POLICY.md` | the functional form as implemented by the reference and its quirks; precision tiers and tolerance protocol |
-| `docs/VALIDATION.md`, `docs/DEVELOPMENT_LOG.md`, `docs/FEATURE_MATRIX.md` | results register, what was actually done (incl. mistakes), feature matrix |
+| `ereaxff yes` | switch on eReaxFF mode. Needs `backend cpu64` (the default); `lgvdw` is not supported |
+| `electron_taper <Å>` | electron-pair taper radius, must be > 0. Needs `ereaxff yes` |
+| `eparams <file>` | per-element table, needs `ereaxff yes`. Without it the built-in legacy tables are used |
 
-Reference: LAMMPS `stable_30Sep2026`, commit `8de817dd79bfe4525d5d39246a212d833e6dee07`, GPL-2.0.
+### The `eparams` file
+One line per element: `SYMBOL Z SHARE_SIGN tested|untested`. Lines starting with `#` are comments. The built-in legacy tables are written out as an example in `tests/data/legacy_table.eparams`:
+```
+C   6 -1 tested
+AV  3  1 tested
+EL  0  0 tested
+O   8 -1 untested     # refused
+```
+**An element is marked `tested` only after it passes the exact-reference frames and the finite-difference force checks.** An `untested` element is refused. Today the allow-list is **C, El and Av**. The silver-like core of the tunneling work is the species `Av` of the `Ag/Av` force field (`inputs/ag_el/ffield_Ag_El` in PI-eReaxFF).
+
+## Rules the code enforces
+
+* **Periodic cells** must have every edge at least `2*bond_cut + 1` Å. Below that the legacy single-minimum-image convention is not reproduced (we measured 4e-2 kcal/mol error at an edge of 10 Å and 5 kcal/mol at 8 Å against the exact reference), so the pair style stops with an error. Periodic triclinic cells are not supported.
+* **Ghost shell** must be wide enough for the electron sharing range, checked at run time.
+* **Hole particles** (`Ho`) are rejected, because the legacy code has extra branches for them that are not reproduced.
+* **Two electron types** must carry identical `alphag` and `betael`, so the result does not depend on the order of a pair.
+
+## What is validated
+
+Reference values come from the rebuilt legacy `ereac` executable, evaluated on the same geometry.
+
+| Check | Result |
+|---|---|
+| 60 C / 60 El periodic, one frame | total energy 9.6e-6 kcal/mol, terms 1.1e-9 relative, torsion 6.5e-7, forces 9.1e-8 relative |
+| 51 `ereac` MD frames of the same system | all pass the gates (terms 1e-7, torsion 1e-6, force 2e-6); worst energy 1.3e-5 kcal/mol, worst term 7e-8 |
+| Ag / El reference frames | run through LAMMPS with `tests/lammps/run_ereaxff.py --taper 5.7` |
+| Unit tests | electron term, ffield columns, bonded terms, eparams, pair settings, `test_ereaxff_*` and `test_electron*` in `tests/` |
+
+Run a case yourself:
+```
+python3 tests/lammps/run_ereaxff.py --lmp LMP --plugin reaxmetaladapterplugin.so --ffield F --geo GEO --frames frames.json --periodic
+```
+Short MD checks: `tests/lammps/run_ereaxff_md.py`; eparams: `tests/lammps/run_eparams.py`.
+
+## Known limits
+
+* **Torsion** carries a small stock-vs-legacy residual (largest in the early frames of the test set; about 1e-6 relative).
+* **Energy jumps with moving heavy atoms.** A bond leaving the bond list at `bond_cut`, or the 3-/4-body threshold, makes the energy jump by 0.01 to 0.02 kcal/mol per crossing in the legacy code too. With the cores held fixed (as in the tunneling work) it does not occur. See `DISCONTINUITY.md` and `SMOOTH_ADOPTION.md` in PI-eReaxFF (`validation/phase3_engine/`).
+* **CPU only.** The electron term and eReaxFF mode run on the double-precision CPU engine, not on the Metal GPU.
+* **Coverage gaps.** Two electrons near one carbon, and an electron midway between two carbons, are tested only in the small standalone cases, not yet through LAMMPS.
+* Each frame is a real eReaxFF reference, but that does not make the force field itself right for real silver or carbon. That is a separate question.
+
+## Build
+
+Same as Metal-Reax; see [`README_REAXMETAL.md`](README_REAXMETAL.md#build-and-test-macos-apple-silicon). A build without Metal (`-DREAXMETAL_ENABLE_METAL=OFF`) is enough for eReaxFF, since it runs on the CPU engine.
 
 ## License
-GPL-2.0-only. See `LICENSE`, `REUSE.toml`, `THIRD_PARTY_NOTICES.md` and the per-file upstream audit `third_party/lammps/LICENSE_AUDIT.tsv`.
+GPL-2.0-only, as the rest of Metal-Reax. See `LICENSE`.
