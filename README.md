@@ -37,7 +37,7 @@ One line per element: `SYMBOL Z SHARE_SIGN tested|untested`. Lines starting with
 C   6 -1 tested
 AV  3  1 tested
 EL  0  0 tested
-O   8 -1 untested     # refused
+O   8 -1 untested
 ```
 **An element is marked `tested` only after it passes the exact-reference frames and the finite-difference force checks.** An `untested` element is refused. Today the allow-list is **C, El and Av**. The silver-like core of the tunneling work is the species `Av` of the `Ag/Av` force field (`inputs/ag_el/ffield_Ag_El` in PI-eReaxFF).
 
