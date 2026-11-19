@@ -32,6 +32,10 @@ struct PairSettings {
   std::shared_ptr<const SpeciesTable> species;   // `eparams <file>`: per-element Z / sharing sign / tested flag (eReaxFF mode)
   std::string eparams_file;
   bool acks2_legacy_constants = false;  // `acks2_constants consistent|legacy`: consistent (default) = constants and terms that make the forces the exact gradient of the energy; legacy = the numeric constants and pairing of the legacy executable (reproduces its charges and energies, not conservative)
+  std::string acks2_solver = "auto";  // `acks2_solver dense|iterative|auto`: auto = dense up to acks2_dense_max solved atoms, preconditioned MINRES above
+  double acks2_tol = 1.0e-7;         // `acks2_tol`: iterative stop, preconditioned residual norm <= tol * norm of the right-hand side
+  int acks2_dense_max = 64;         // `acks2_dense_max`: largest number of solved atoms solved densely by auto
+  bool acks2_cache = true;           // `acks2_cache yes|no`: reuse the assembled matrix / factorisation while the solved atoms, box and groups are unchanged; warm start from the previous call
   bool acks2 = false;                // eReaxFF mode: solve the charges of the species with `charge solve` (default: every non-electron species) with ACKS2 inside the pair style (legacy icharg 7); off = all charges from the data file (legacy icharg 8)
   bool selfcheck = false;            // development keyword `reaxmetal_selfcheck yes`: A2 builds the ghost-native view and verifies it against LAMMPS' own neighbor list (then stops with an error: development aid)
   ControlParams control;             // defaults, or the control file contents

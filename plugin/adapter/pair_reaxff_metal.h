@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "reaxmetal/acks2_ereaxff.hpp"
 #include "reaxmetal/forcefield.hpp"
 #include "reaxmetal/metal_backend.hpp"
 #include "reaxmetal/neighbor.hpp"
@@ -77,6 +78,8 @@ class PairReaxFFMetal : public PairReaxFF {
   // eReaxFF `acks2 yes`: total charge of the solved atoms of each charge group (molecule id; one group without atom_style molecule), taken from the data-file charges at the first force call
   std::map<long long, double> acks2_group_q_;
   bool acks2_groups_set_ = false;
+  reaxmetal::Acks2Solution acks2_last_;     // diagnostics of the last solve (iterations, cache hit)
+  reaxmetal::Acks2Engine acks2_engine_;     // matrix cache and warm start of the eReaxFF ACKS2 solve
   std::unique_ptr<reaxmetal::mtl::Context> ctx_;
   std::vector<std::pair<std::string, double>> profile_;   // REAXMETAL_PROFILE=1: accumulated wall seconds per phase of compute(), printed at destruction
   void prof(const char *name, double seconds);   // Metal device context (backend metal), created on first use

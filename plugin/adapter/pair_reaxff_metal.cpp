@@ -117,6 +117,7 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
   const int n = atom->ntypes;
   if (nargs != 3 + n) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
 
+  acks2_engine_.reset();
   acks2_groups_set_ = false;   // a new pair_coeff starts a new set of ACKS2 charge groups (first force call)
   acks2_group_q_.clear();
 
@@ -560,7 +561,12 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
       for (std::size_t g = 0; g < gq.size(); ++g) if (cnt[g] > 0) { remap[g] = static_cast<int>(gq2.size()); gq2.push_back(gq[g]); }
       for (std::size_t i = 0; i < nl; ++i) if (grp[i] >= 0) grp[i] = remap[static_cast<std::size_t>(grp[i])];
       Acks2Options ao; ao.legacy_constants = settings_.acks2_legacy_constants;
-      const Acks2Solution sol = solve_acks2_ereaxff(*ff_, cut, a, far_e, qin, grp, gq2, ao);
+      ao.solver = settings_.acks2_solver == "dense" ? Acks2SolverKind::Dense : settings_.acks2_solver == "iterative" ? Acks2SolverKind::Iterative : Acks2SolverKind::Auto;
+      ao.tol = settings_.acks2_tol; ao.dense_max_atoms = settings_.acks2_dense_max; ao.cache = settings_.acks2_cache; ao.warm_start = settings_.acks2_cache;
+      std::vector<double> box_key = {domain->boxlo[0], domain->boxlo[1], domain->boxlo[2], domain->boxhi[0], domain->boxhi[1], domain->boxhi[2], domain->xy, domain->xz, domain->yz,
+                                     static_cast<double>(domain->xperiodic), static_cast<double>(domain->yperiodic), static_cast<double>(domain->zperiodic)};
+      const Acks2Solution sol = acks2_engine_.solve(*ff_, cut, a, far_e, qin, grp, gq2, box_key, ao);
+      acks2_last_ = sol;
       lap("acks2_solve");
       if (sol.residual > 1.0e-8 && comm->me == 0) error->warning(FLERR, "ACKS2 solve residual {} eV is larger than 1e-8", sol.residual);
       s_all.assign(a.nall(), 0.0);
@@ -574,6 +580,12 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
         if (t >= 0 && settings_.acks2_legacy_constants && !ff_->single(t).flags.pol_energy) no_coupling[i] = 1;   // legacy compatibility only: the variational energy keeps q*s of every solved atom
       }
       for (std::size_t i = 0; i < nl; ++i) atom->q[i] = sol.q[i];
+      if (const char *lg = std::getenv("REAXMETAL_ACKS2_LOG")) {   // validation aid: one line per solve (append): neq iterative iterations cache_hit warm residual
+        if (FILE *fp = std::fopen(lg, "a")) {
+          std::fprintf(fp, "%zu %d %d %d %d %.3e\n", sol.neq, sol.iterative ? 1 : 0, sol.iterations, sol.cache_hit ? 1 : 0, sol.warm ? 1 : 0, sol.residual);
+          std::fclose(fp);
+        }
+      }
       if (const char *dump = std::getenv("REAXMETAL_ACKS2_DUMP")) {   // validation aid: tag, charge, kinetic potential (eV) of the owned atoms, %.17g
         if (FILE *fp = std::fopen(dump, "w")) {
           for (std::size_t i = 0; i < nl; ++i) std::fprintf(fp, "%lld %.17g %.17g\n", static_cast<long long>(atom->tag[i]), sol.q[i], sol.s[i]);

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-only
 // SPDX-FileCopyrightText: 2026 Anirban Phukan
 #pragma once
-// ACKS2 charges inside the pair style for eReaxFF mode (pair_style keyword `acks2 yes`), CPU-64, direct solve.
+// ACKS2 charges inside the pair style for eReaxFF mode (pair_style keyword `acks2 yes`), CPU-64.
 // Re-implemented from the equations of the legacy routine `chargesa` (Margaret/eReaxFF_src/reac.f:4041-4300, "compact" version, and the
 // full-system version of the Si source); no legacy code is copied.
 //
@@ -16,6 +16,12 @@
 //   row  g  :  sum_{i in g} q_i                                        = Q_g
 // H_ij = sum over images of Tap(r) * dielec / (r^3 + gamma_ij)^(1/3); X has the bond-softness bs(r) on the off-diagonal and -sum bs on the diagonal.
 // A group is a set of solved atoms with a fixed total charge Q_g (the legacy MOLCHARGE line); the pair style forms the groups from the molecule id.
+//
+// Solvers: dense LU (exact, O(n^3), factorisation reusable), or preconditioned MINRES on the sparse matrix (warm start from the previous call).
+// The matrix of the solved-solved pairs is cached in the engine and reused as long as the solved atoms, the box and the groups are unchanged
+// (PIMD: the beads of one step differ only in the fixed-charge particles, which enter the right-hand side and, in consistent mode, the diagonal of X).
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "reaxmetal/forcefield.hpp"
@@ -24,12 +30,20 @@
 
 namespace reaxmetal {
 
+enum class Acks2SolverKind { Dense, Iterative, Auto };
+
 struct Acks2Options {
   // true: the numeric constants of the legacy executable (single-precision literals dielec = 14.40, evkcmol = 23.02, exponent 1/3 as REAL, and the
   // self-image diagonal of the matrix with half the weight that the Coulomb energy implies). false: constants consistent with the energy terms
   // (dielec = c1c / evkcmol, exponent 1/3 in double, self-image weight consistent), so that the forces are the exact gradient of the energy.
   bool legacy_constants = true;
   int soft_fixed = -1;     // -1: follows legacy_constants (legacy: no kinetic block for pairs with a fixed particle; consistent: yes). 0/1 forces it (analysis).
+  Acks2SolverKind solver = Acks2SolverKind::Auto;
+  int dense_max_atoms = 64;      // auto: dense when the number of solved atoms is at most this
+  double tol = 1.0e-7;            // iterative: stop when the (preconditioned) residual norm <= tol * norm of the right-hand side
+  int max_iter = 2000;
+  bool cache = true;              // reuse the matrix / factorisation while the solved atoms, box and groups are unchanged
+  bool warm_start = true;         // iterative: start from the previous call's solution
 };
 
 struct Acks2Solution {
@@ -39,12 +53,30 @@ struct Acks2Solution {
   std::size_t nsolved = 0;
   std::size_t neq = 0;
   double residual = 0.0;   // max |A x - b| of the solved system (eV)
+  bool iterative = false;  // which solver ran
+  int iterations = 0;      // MINRES iterations (0 for dense)
+  bool cache_hit = false;  // the assembled matrix (and factorisation) of the previous call was reused
+  bool warm = false;       // the iteration started from the previous solution
 };
 
 constexpr double kLegacyEvKcal = static_cast<double>(23.02f);   // evkcmol = 23.02 as a default-REAL literal (reac.f chargesa, poten.f nonbonacks2)
 
-// q_in: nlocal data-file charges (used for fixed particles and, through group_q, nothing else). group: nlocal entries, the group index (0..G-1) of every
-// SOLVED atom (ignored for fixed ones). group_q: G total charges. Throws SystemError for a singular system.
+class Acks2Engine {
+ public:
+  Acks2Engine();
+  ~Acks2Engine();
+  // q_in: nlocal data-file charges (used for fixed particles). group: nlocal entries, the group index (0..G-1) of every SOLVED atom (ignored for fixed
+  // ones). group_q: G total charges. box_key: anything else the matrix depends on (box vectors, periodicity); a change rebuilds. Throws SystemError for
+  // a singular system or a non-converging iteration.
+  Acks2Solution solve(const ForceField& ff, const NeighborCutoffs& cut, const AtomSet& atoms, const FarList& far, const std::vector<double>& q_in,
+                      const std::vector<int>& group, const std::vector<double>& group_q, const std::vector<double>& box_key, const Acks2Options& opt = {});
+  void reset();   // forget the cache and the warm start
+ private:
+  struct Impl;
+  std::unique_ptr<Impl> p_;
+};
+
+// One-shot dense solve without cache (tests, tools).
 Acks2Solution solve_acks2_ereaxff(const ForceField& ff, const NeighborCutoffs& cut, const AtomSet& atoms, const FarList& far, const std::vector<double>& q_in,
                                   const std::vector<int>& group, const std::vector<double>& group_q, const Acks2Options& opt = {});
 

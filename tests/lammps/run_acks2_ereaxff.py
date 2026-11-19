@@ -17,7 +17,7 @@ NAMES = ["bond", "over+under", "lone_pair", "molecule", "valence+penalty", "angl
 SLOTS = [[0], [1], [2], [3], [4, 5], [6], [7], [8], [9], [10], [11], [13], [12], [14]]
 masses = {"AV": 107.8682, "EL": 1.0, "C": 12.0, "AL": 26.98154}   # only used for the data file; masses do not enter the energy
 
-def lmp_run(td, ffield, atoms, groups, cell, eparams, args, taper, post="", periodic_cut=14.0, ddir=None):
+def lmp_run(td, ffield, atoms, groups, cell, eparams, args, taper, post="", periodic_cut=14.0, ddir=None, logfile=None):
     td = Path(td); td.mkdir(parents=True, exist_ok=True)
     elems = list(dict.fromkeys(x[0] for x in atoms))
     mol = [0] * len(atoms); qd = [0.0] * len(atoms)
@@ -54,6 +54,7 @@ undump d
 {post}
 """)
     env = dict(os.environ, OMP_NUM_THREADS="1", DYLD_LIBRARY_PATH=str(Path(a.lmp).resolve().parents[1] / "lib"))
+    if logfile: env["REAXMETAL_ACKS2_LOG"] = str(logfile); Path(logfile).unlink(missing_ok=True)
     r = subprocess.run([a.lmp, "-in", "in.lmp", "-log", "none", "-nocite"], cwd=td, env=env, capture_output=True, text=True)
     txt = r.stdout + r.stderr
     if r.returncode: raise RuntimeError(txt[-1200:])
@@ -76,7 +77,7 @@ if a.si_data:
     for r_ in json.loads((Path(a.si_data) / "refs_si.json").read_text()): r_["ddir"] = Path(a.si_data); refs.append(r_)
 with tempfile.TemporaryDirectory() as td:
     for ref in refs:
-        lm = lmp_run(Path(td) / ref["name"], ref["ffield"], ref["atoms"], ref["groups"], ref["cell"], eparams_for(ref), "acks2 yes acks2_constants legacy", ref["taper"], ddir=ref["ddir"])
+        lm = lmp_run(Path(td) / ref["name"], ref["ffield"], ref["atoms"], ref["groups"], ref["cell"], eparams_for(ref), "acks2 yes acks2_constants legacy acks2_solver dense", ref["taper"], ddir=ref["ddir"])
         lg = ref["legacy"]; terms = [sum(lm["pv"][s] for s in sl) for sl in SLOTS]
         rel = {n: abs(t - x) / max(1.0, abs(x)) for n, t, x in zip(NAMES, terms, lg["terms"]) if n not in ("molecule", "field")}
         wt = max(v for n, v in rel.items() if not n.startswith("torsion")); tor = max(rel["torsion"], rel["torsion_conj"])
@@ -99,7 +100,7 @@ with tempfile.TemporaryDirectory() as td:
     df = max(abs(x - y) for f1, f2 in zip(off["f"], fb) for x, y in zip(f1, f2))
     check(f"... and its forces (max abs diff {df:.1e})", df <= 1e-9)
     # every species fixed with acks2 yes == acks2 off
-    allfix = lmp_run(Path(td) / "allfix", ag["ffield"], ag["atoms"], [(i + 1, i + 1, 1.0 if x[0] == "Av" else -1.0) for i, x in enumerate(ag["atoms"])], None, "AV 3 1 tested charge=fixed\n", "acks2 yes acks2_constants legacy", 5.7)
+    allfix = lmp_run(Path(td) / "allfix", ag["ffield"], ag["atoms"], [(i + 1, i + 1, 1.0 if x[0] == "Av" else -1.0) for i, x in enumerate(ag["atoms"])], None, "AV 3 1 tested charge=fixed\n", "acks2 yes acks2_constants legacy acks2_solver dense", 5.7)
     check("charge=fixed for Av (El fixed by default) gives the acks2-off energy and forces",
           abs(allfix["pe"] - off["pe"]) < 1e-9 and max(abs(x - y) for f1, f2 in zip(allfix["f"], off["f"]) for x, y in zip(f1, f2)) < 1e-9)
 
@@ -125,4 +126,27 @@ with tempfile.TemporaryDirectory() as td:
         fmax = max(abs(v) for f in lm["f"] for v in f)
         err = max(abs(-(fp[k] - fm[k]) / (2 * hs) - lm["f"][k[0] - 1][k[1]]) for k in fp)
         check(f"forces vs finite differences of the energy, default constants (consistent), {mode}: max {err:.1e} ({err / fmax:.1e} of max |F| {fmax:.1f})", err / fmax < 1e-6 and len(fp) == 33)
+
+    # ---- iterative solver, matrix cache and warm start (Ag cluster; El are fixed, Av solved)
+    grp = [(1, 6, 6.0)] + [(i, i, -1.0) for i in range(7, 12)]
+    d0 = lmp_run(Path(td) / "dense", ag["ffield"], at, grp, None, "", "acks2 yes acks2_solver dense", 5.7)
+    it = lmp_run(Path(td) / "iter", ag["ffield"], at, grp, None, "", "acks2 yes acks2_solver iterative acks2_tol 1e-11", 5.7)
+    dq = max(abs(x - y) for x, y in zip(it["q"], d0["q"])); df = max(abs(x - y) for f1, f2 in zip(it["f"], d0["f"]) for x, y in zip(f1, f2)) / max(abs(v) for f in d0["f"] for v in f)
+    check(f"iterative MINRES (tol 1e-11) equals the dense solve: charges {dq:.1e} e, forces {df:.1e} rel, energy {abs(it['pe'] - d0['pe']):.1e}", dq < 1e-9 and df < 1e-9 and abs(it["pe"] - d0["pe"]) < 1e-8)
+    seq = ["variable E equal pe", "thermo_style custom step pe", "thermo_modify format float %.16g", "thermo 1000000", "group el7 id 7", "group av2 id 2",
+           "run 0", 'print "E0 ${E}"', "displace_atoms el7 move 0.1 0.02 0 units box", "run 0", 'print "E1 ${E}"', "displace_atoms el7 move -0.05 0.1 0.03 units box", "run 0", 'print "E2 ${E}"',
+           "displace_atoms av2 move 0.04 0 0 units box", "run 0", 'print "E3 ${E}"', "displace_atoms el7 move 0.02 0.02 0.02 units box", "run 0", 'print "E4 ${E}"']
+    for solver, tolarg, tolcmp in (("dense", "", 1e-9), ("iterative", " acks2_tol 1e-11", 1e-8)):
+        lc = Path(td) / f"cached_{solver}.log"; lu = Path(td) / f"uncached_{solver}.log"
+        c1 = lmp_run(Path(td) / f"c_{solver}", ag["ffield"], at, grp, None, "", f"acks2 yes acks2_solver {solver}{tolarg}", 5.7, post="\n".join(seq), logfile=lc)
+        c2 = lmp_run(Path(td) / f"u_{solver}", ag["ffield"], at, grp, None, "", f"acks2 yes acks2_solver {solver}{tolarg} acks2_cache no", 5.7, post="\n".join(seq), logfile=lu)
+        e1 = [float(l.split()[1]) for l in c1["log"].splitlines() if l.startswith("E") and l[1].isdigit() and len(l.split()) == 2]
+        e2 = [float(l.split()[1]) for l in c2["log"].splitlines() if l.startswith("E") and l[1].isdigit() and len(l.split()) == 2]
+        hits = [int(l.split()[3]) for l in lc.read_text().splitlines()]
+        warm = [int(l.split()[4]) for l in lc.read_text().splitlines()]
+        check(f"cache ({solver}): cached and uncached energies agree over a 5-call sequence (max {max(abs(x - y) for x, y in zip(e1, e2)):.1e}); {len(e1)} energies",
+              len(e1) >= 5 and max(abs(x - y) for x, y in zip(e1, e2)) < tolcmp)
+        # call order: setup call(s) of run 0, then one call per displacement: the fixed El moves keep the matrix, a moved SOLVED atom must rebuild it
+        check(f"cache ({solver}): hit when only a fixed electron moved, rebuilt when a solved atom moved (hit flags {hits}); uncached never hits", hits[-1] == 1 and hits[-2] == 0 and hits[-3] == 1 and sum(int(l.split()[3]) for l in lu.read_text().splitlines()) == 0)
+        if solver == "iterative": check(f"warm start used after the first call (flags {warm}) ", warm[0] == 0 and all(warm[1:]))
 print("RESULT: PASS" if ok else "RESULT: FAIL"); sys.exit(0 if ok else 1)

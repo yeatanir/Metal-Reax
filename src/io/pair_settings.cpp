@@ -56,6 +56,19 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     else if (key == "shellcheck") p.shellcheck = logical(val, "shellcheck");
     else if (key == "ereaxff") p.ereaxff = logical(val, "ereaxff");
     else if (key == "acks2") p.acks2 = logical(val, "acks2");
+    else if (key == "acks2_solver") {
+      if (val != "dense" && val != "iterative" && val != "auto") throw FfieldError("Illegal pair_style reaxff/metal command: acks2_solver must be dense, iterative or auto, got '" + val + "'");
+      p.acks2_solver = val;
+    }
+    else if (key == "acks2_tol") {
+      p.acks2_tol = number(val, "acks2_tol");
+      if (!(p.acks2_tol > 0.0 && p.acks2_tol < 1.0)) throw FfieldError("Illegal pair_style reaxff/metal command: acks2_tol must be in (0, 1)");
+    }
+    else if (key == "acks2_dense_max") {
+      p.acks2_dense_max = integer(val, "acks2_dense_max");
+      if (p.acks2_dense_max < 0) throw FfieldError("Illegal pair_style reaxff/metal command: acks2_dense_max must be >= 0");
+    }
+    else if (key == "acks2_cache") p.acks2_cache = logical(val, "acks2_cache");
     else if (key == "acks2_constants") {
       if (val != "legacy" && val != "consistent") throw FfieldError("Illegal pair_style reaxff/metal command: acks2_constants must be legacy or consistent, got '" + val + "'");
       p.acks2_legacy_constants = val == "legacy";
