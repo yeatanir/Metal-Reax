@@ -4,7 +4,8 @@
 """pair_style reaxff/metal ... ereaxff yes eparams <file>: per-element nuclear charge / sharing sign / tested flag from an input file.
 usage: run_eparams.py --lmp BIN --plugin SO --ag-ffield F --ag-geo GEO --ag-frames frames.json --cho-ffield F2 --table tests/data/legacy_table.eparams
 Checks: (1) legacy_table.eparams reproduces the no-eparams energy exactly (Ag7_1 frame 0); (2) overriding Av's Z changes the electron energy (the table is live);
-(3) an element absent from the file / untested / tested: refused, refused with a specific message, accepted (H in a C/El/H test system)."""
+(3) there is no element allow-list: H (legacy znucel Z = 1) in a C/El/H test system runs without an entry or as untested, with a "not validated" warning, and without the warning
+when marked tested; an element whose core charge is zero (H 0 ...) is refused with a clear message."""
 import argparse, json, os, subprocess, sys, tempfile
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -56,14 +57,17 @@ with tempfile.TemporaryDirectory() as td:
     # C / El / H system with the C-H-O-... legacy ffield
     sy = ["C", "El", "H"]; pp = [[40, 40, 40], [40.11, 40, 40], [41.1, 40, 40]]; qq = [0.0, 0.0, 0.0]
     def cho(extra): return run(td, a.cho_ffield, sy, pp, qq, extra, 10.0)
-    rcA, oA, _ = cho("")
-    check("H without eparams is refused (allow-list)", rcA != 0 and "allow-list" in oA)
-    (Path(td) / "h_un.eparams").write_text("H 1 -1 untested\n")
-    rcB, oB, _ = cho(f"eparams {Path(td)/'h_un.eparams'}")
-    check("H marked untested is refused with a specific message", rcB != 0 and "untested" in oB)
+    rcA, oA, vA = cho("")
+    check("H without eparams runs (no allow-list) and warns that it is not validated", rcA == 0 and vA is not None and "not been validated" in oA, oA[-200:] if rcA else "")
+    (Path(td) / "h_un.eparams").write_text("H 1 -1 untested\nEL 0 0 tested\n")
+    rcB, oB, vB = cho(f"eparams {Path(td)/'h_un.eparams'}")
+    check("H marked untested runs with the warning, same energy as without an entry", rcB == 0 and "not been validated" in oB and vA and vB and vA == vB, str(vB))
+    (Path(td) / "h_zero.eparams").write_text("H 0 -1 tested\nEL 0 0 tested\n")
+    rcZ, oZ, _ = cho(f"eparams {Path(td)/'h_zero.eparams'}")
+    check("an atom species with core charge 0 is refused with a clear message", rcZ != 0 and "no core charge" in oZ)
     (Path(td) / "h_ok.eparams").write_text("H 1 -1 tested\nEL 0 0 tested\n")
     rcC, oC, vC = cho(f"eparams {Path(td)/'h_ok.eparams'}")
-    check("H marked tested is accepted and gives a finite energy", rcC == 0 and vC is not None and abs(vC[0]) < 1e6, str(vC))
+    check("H marked tested runs without the warning and gives a finite energy", rcC == 0 and vC is not None and abs(vC[0]) < 1e6 and "not been validated" not in oC, str(vC))
     (Path(td) / "h_ok2.eparams").write_text("H 2 1 tested\nEL 0 0 tested\n")
     rcD, oD, vD = cho(f"eparams {Path(td)/'h_ok2.eparams'}")
     check("changing H's Z / sign in the file changes the electron energy", rcD == 0 and vC and vD and abs(vD[1] - vC[1]) > 1e-6, f"{vC} vs {vD}")

@@ -14,9 +14,13 @@
 
 namespace reaxmetal {
 
+constexpr double kStockEvKcal = 23.02;   // = RM_KCAL_TO_EV (terms.hpp, reaxff_defs.h KCALpMOL_to_EV)
+
 // s_kin: nall entries (s[N + i]) ; q: charge per owned atom or per atom as for compute_nonbonded_core. Adds into `res` (Coulomb and Polarization energies,
 // gradient, and the per-atom tallies if `res` already carries them).
+// evkcmol: eV -> kcal/mol of these terms (the stock 23.02; the eReaxFF legacy value is the single-precision literal). no_coupling (optional, owned atoms):
+// 1 = leave the coupling energy q*s of that atom out (eReaxFF species with `polarization off`); the bond-softness term is not affected.
 void add_acks2_terms(const ForceField& ff, const NeighborCutoffs& cut, const AtomSet& atoms, const FarList& far, const std::vector<double>& q,
-                     const double* s_kin, NonbondedResult& res);
+                     const double* s_kin, NonbondedResult& res, double evkcmol = kStockEvKcal, const std::vector<char>* no_coupling = nullptr);
 
 }  // namespace reaxmetal

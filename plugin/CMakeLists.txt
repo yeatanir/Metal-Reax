@@ -139,6 +139,15 @@ if(REAXMETAL_LAMMPS_PREFIX AND EXISTS "${REAXMETAL_LAMMPS_PREFIX}/bin/lmp" AND R
       set_tests_properties(lammps_hybrid_metal PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
     endif()
   endif()
+  # ACKS2 charges for eReaxFF (acks2 yes): legacy compact / full chargesa references, acks2 off regression, finite-difference forces
+  # private Si reference data (not in the repo): set REAXMETAL_ACKS2_SI_DATA=<dir with refs_si.json, ffield_si> when configuring to include the Si cases
+  set(_acks2_si "")
+  if(DEFINED ENV{REAXMETAL_ACKS2_SI_DATA})
+    set(_acks2_si --si-data $ENV{REAXMETAL_ACKS2_SI_DATA})
+  endif()
+  add_test(NAME lammps_acks2_ereaxff COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_acks2_ereaxff.py
+           --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --data ${PROJECT_SOURCE_DIR}/tests/data/acks2 ${_acks2_si})
+  set_tests_properties(lammps_acks2_ereaxff PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")
   add_test(NAME lammps_min1_cpu64 COMMAND ${Python3_EXECUTABLE} -I ${PROJECT_SOURCE_DIR}/tests/lammps/run_min.py
            --lmp ${REAXMETAL_LAMMPS_PREFIX}/bin/lmp --plugin $<TARGET_FILE:reaxmetal_adapter_plugin> --ffield-dir ${REAXMETAL_FFIELD_DIR} --backend cpu64)
   set_tests_properties(lammps_min1_cpu64 PROPERTIES FAIL_REGULAR_EXPRESSION "RESULT: FAIL")

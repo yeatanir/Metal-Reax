@@ -127,5 +127,18 @@ int main() {
     RM_EXPECT_THROW(parse_species_table("Si 4 -1 tested extra\n", "mem"), std::invalid_argument);
     RM_EXPECT_THROW(read_species_table("/nonexistent/eparams"), std::invalid_argument);
   }
+  {   // ACKS2 charge keys: charge=fixed|solve, polarization=on|off, electron=yes|no; defaults follow the electron flag, not an element name
+    const SpeciesTable t = parse_species_table("Av 3 1 tested charge=fixed polarization=off\nZz 2 0 untested electron=yes\nEl 0 0 tested charge=solve\nXx 4 1 tested polarization=on charge=solve\n", "mem");
+    const SpeciesFlags el = derive_species_flags("El", 1.0), c = derive_species_flags("C", 12.0), av = derive_species_flags("Av", 107.9, &t);
+    RM_CHECK(el.is_electron && !el.charge_solve && !el.pol_energy);          // default: an electron stays fixed, has no q*s term (legacy ech sum)
+    RM_CHECK(!c.is_electron && c.charge_solve && c.pol_energy);               // default: every other species is solved
+    RM_CHECK(!av.charge_solve && !av.pol_energy);                             // per-species override: any atom can be fixed
+    const SpeciesFlags zz = derive_species_flags("Zz", 50.0, &t), el2 = derive_species_flags("El", 1.0, &t), xx = derive_species_flags("Xx", 50.0, &t);
+    RM_CHECK(zz.is_electron && !zz.charge_solve);                             // electron=yes flags a species by data
+    RM_CHECK(el2.is_electron && el2.charge_solve && !el2.pol_energy);         // El solved: reproduces the legacy full ACKS2 (q*s of El left out)
+    RM_CHECK(!xx.is_electron && xx.charge_solve && xx.pol_energy);
+    RM_EXPECT_THROW(parse_species_table("Si 4 -1 tested charge=maybe\n", "mem"), std::invalid_argument);
+    RM_EXPECT_THROW(parse_species_table("Si 4 -1 tested pol=on\n", "mem"), std::invalid_argument);
+  }
   return rmtest::finish("compat_flags");
 }

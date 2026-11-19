@@ -31,6 +31,8 @@ struct PairSettings {
   double electron_taper = std::numeric_limits<double>::quiet_NaN();   // Angstrom; NaN = general parameter 38 of the ffield (must then be > 0)
   std::shared_ptr<const SpeciesTable> species;   // `eparams <file>`: per-element Z / sharing sign / tested flag (eReaxFF mode)
   std::string eparams_file;
+  bool acks2_legacy_constants = true;   // `acks2_constants legacy|consistent`: legacy = the numeric constants of the legacy executable (reproduces its charges and energies); consistent = constants that make the forces the exact gradient of the energy
+  bool acks2 = false;                // eReaxFF mode: solve the charges of the species with `charge solve` (default: every non-electron species) with ACKS2 inside the pair style (legacy icharg 7); off = all charges from the data file (legacy icharg 8)
   bool selfcheck = false;            // development keyword `reaxmetal_selfcheck yes`: A2 builds the ghost-native view and verifies it against LAMMPS' own neighbor list (then stops with an error: development aid)
   ControlParams control;             // defaults, or the control file contents
   std::vector<std::string> notices;  // warnings from the control file and "ignored option" notices

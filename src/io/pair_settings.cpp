@@ -55,6 +55,11 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     else if (key == "lgvdw") p.lgvdw = logical(val, "lgvdw");
     else if (key == "shellcheck") p.shellcheck = logical(val, "shellcheck");
     else if (key == "ereaxff") p.ereaxff = logical(val, "ereaxff");
+    else if (key == "acks2") p.acks2 = logical(val, "acks2");
+    else if (key == "acks2_constants") {
+      if (val != "legacy" && val != "consistent") throw FfieldError("Illegal pair_style reaxff/metal command: acks2_constants must be legacy or consistent, got '" + val + "'");
+      p.acks2_legacy_constants = val == "legacy";
+    }
     else if (key == "eparams") {
       p.eparams_file = val;
       try {
@@ -101,8 +106,17 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
   if (p.ereaxff) {
     if (p.backend != "cpu64") throw FfieldError("pair_style reaxff/metal: eReaxFF mode (ereaxff yes) supports only backend cpu64");
     if (p.lgvdw) throw FfieldError("pair_style reaxff/metal: eReaxFF mode does not support lgvdw");
-    p.checkqeq = false;   // charges are fixed (MOLCHARGE / legacy icharg 8): a charge fix would overwrite them
-    p.notices.push_back("pair_style reaxff/metal: eReaxFF mode: charges are taken from the data file (legacy icharg 8, no charge fix, no polarization energy); only elements C, El, Av are accepted (allow-list)");
+    p.checkqeq = false;   // charges are fixed (icharg 8) or solved inside the pair style (acks2 yes, icharg 7): a charge fix would overwrite them
+    if (p.acks2 && p.acks2_legacy_constants)
+      p.notices.push_back("pair_style reaxff/metal: acks2_constants legacy reproduces the legacy executable, whose forces are NOT the exact gradient of its energy "
+                          "(compact: bond-softness pairs with a fixed particle are in the energy but not in the solve; several charge groups: the -q_ref*s term is missing; "
+                          "mismatched Coulomb constants). Use `acks2_constants consistent` for dynamics (forces = gradient of the energy to ~1e-7 relative).");
+    if (p.acks2)
+      p.notices.push_back("pair_style reaxff/metal: eReaxFF mode with acks2 yes: the charges of the species marked `charge solve` (default: all but the electron species) are solved by ACKS2 inside the pair style (legacy icharg 7); the others keep their data-file charge");
+    else
+      p.notices.push_back("pair_style reaxff/metal: eReaxFF mode: charges are taken from the data file (legacy icharg 8, no charge fix, no polarization energy); use `acks2 yes` to solve them");
+  } else if (p.acks2) {
+    throw FfieldError("pair_style reaxff/metal: acks2 needs ereaxff yes");
   } else if (!std::isnan(p.electron_taper)) {
     throw FfieldError("pair_style reaxff/metal: electron_taper needs ereaxff yes");
   } else if (p.species) {

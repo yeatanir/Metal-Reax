@@ -52,18 +52,33 @@ SpeciesTable parse_species_table(std::string_view text, std::string_view name) {
     ++ln;
     if (const auto h = line.find('#'); h != std::string::npos) line.erase(h);
     std::istringstream ls(line);
-    std::string sym, tag, extra;
+    std::string sym, tag;
     double z = 0.0;
     int sign = 0;
     if (!(ls >> sym)) continue;   // blank line
     const std::string where = std::string(name) + ":" + std::to_string(ln) + ": ";
-    if (!(ls >> z >> sign >> tag) || (ls >> extra)) throw std::invalid_argument(where + "expected 'SYMBOL Z SHARE_SIGN tested|untested'");
+    if (!(ls >> z >> sign >> tag)) throw std::invalid_argument(where + "expected 'SYMBOL Z SHARE_SIGN tested|untested [electron=yes|no] [charge=fixed|solve] [polarization=on|off]'");
     if (sign < -1 || sign > 1) throw std::invalid_argument(where + "SHARE_SIGN must be -1, 0 or +1");
     if (!(z >= 0.0 && z < 200.0)) throw std::invalid_argument(where + "nuclear charge Z out of range");
     if (tag != "tested" && tag != "untested") throw std::invalid_argument(where + "last field must be 'tested' or 'untested'");
     const std::string key = normalize_symbol(sym);
     if (t.count(key)) throw std::invalid_argument(where + "element " + key + " listed twice");
-    t[key] = SpeciesEntry{z, sign, tag == "tested"};
+    SpeciesEntry e{z, sign, tag == "tested"};
+    std::string kv;
+    while (ls >> kv) {
+      const auto eq = kv.find('=');
+      const std::string k = kv.substr(0, eq), v = eq == std::string::npos ? "" : kv.substr(eq + 1);
+      auto pick = [&](const char* a, const char* b) -> int {
+        if (v == a) return 1;
+        if (v == b) return 0;
+        throw std::invalid_argument(where + "'" + k + "' needs " + a + " or " + b + ", got '" + v + "'");
+      };
+      if (k == "electron") e.electron = pick("yes", "no");
+      else if (k == "charge") e.charge_solve = pick("solve", "fixed");
+      else if (k == "polarization") e.polarization = pick("on", "off");
+      else throw std::invalid_argument(where + "unknown field '" + kv + "' (expected electron=, charge= or polarization=)");
+    }
+    t[key] = e;
   }
   return t;
 }
@@ -83,15 +98,20 @@ SpeciesFlags derive_species_flags(std::string_view symbol, double mass, const Sp
   f.mass_exactly_12_0000 = (mass == 12.0000);
   f.mass_exactly_15_9990 = (mass == 15.9990);
   const std::string n = normalize_symbol(symbol);
-  f.is_electron = (n == "EL");
+  f.is_electron = (n == "EL");   // legacy default; an eparams entry `electron=yes|no` overrides it
   f.core_charge = core_charge_of(n);
   f.share_sign = share_sign_of(n);
+  const SpeciesEntry* e = nullptr;
   if (table) {
     if (const auto it = table->find(n); it != table->end()) {
-      f.core_charge = it->second.core_charge;
-      f.share_sign = it->second.share_sign;
+      e = &it->second;
+      f.core_charge = e->core_charge;
+      f.share_sign = e->share_sign;
+      if (e->electron >= 0) f.is_electron = e->electron == 1;
     }
   }
+  f.charge_solve = e && e->charge_solve >= 0 ? e->charge_solve == 1 : !f.is_electron;
+  f.pol_energy = e && e->polarization >= 0 ? e->polarization == 1 : !f.is_electron;
   return f;
 }
 

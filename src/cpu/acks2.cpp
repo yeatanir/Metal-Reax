@@ -8,8 +8,10 @@
 
 namespace reaxmetal {
 
+static_assert(kStockEvKcal == RM_KCAL_TO_EV, "default constant of add_acks2_terms");
+
 void add_acks2_terms(const ForceField& ff, const NeighborCutoffs& cut, const AtomSet& atoms, const FarList& far, const std::vector<double>& q,
-                     const double* s_kin, NonbondedResult& res) {
+                     const double* s_kin, NonbondedResult& res, double evkcmol, const std::vector<char>* no_coupling) {
   (void)cut;
   const std::size_t N = atoms.nall(), n = atoms.nlocal;
   if (res.grad.size() != 3 * N) throw SystemError("add_acks2_terms: result gradient has the wrong size");
@@ -19,7 +21,8 @@ void add_acks2_terms(const ForceField& ff, const NeighborCutoffs& cut, const Ato
   // polarization coupling: KCALpMOL_to_EV * q * s[N + i]
   for (std::size_t i = 0; i < n; ++i) {
     if (atoms.type[i] < 0) continue;
-    const double e = RM_KCAL_TO_EV * q[i] * s_kin[i];
+    if (no_coupling && (*no_coupling)[i]) continue;
+    const double e = evkcmol * q[i] * s_kin[i];
     e_pol += e;
     if (tally) res.eatom[i] += e;
   }
@@ -40,11 +43,11 @@ void add_acks2_terms(const ForceField& ff, const NeighborCutoffs& cut, const Ato
       const double bs = softness * std::pow(d, 3.0) * std::pow(1.0 - d, 6.0);
       if (!(bs > 0.0)) continue;
       const double effpot = s_kin[i] - s_kin[j];
-      const double e = -0.5 * RM_KCAL_TO_EV * bs * effpot * effpot;
+      const double e = -0.5 * evkcmol * bs * effpot * effpot;
       e_ele += e;
       double dbs = softness * 3.0 / xcut * std::pow(d, 2.0) * std::pow(1.0 - d, 5.0) * (1.0 - 3.0 * d);
       dbs = -0.5 * dbs * effpot * effpot;
-      dbs = RM_KCAL_TO_EV * dbs / dist;
+      dbs = evkcmol * dbs / dist;
       for (std::size_t c = 0; c < 3; ++c) {
         res.grad[3 * i + c] += -dbs * dv[c];
         res.grad[3 * j + c] += +dbs * dv[c];

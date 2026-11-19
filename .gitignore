@@ -9,3 +9,8 @@ __pycache__/
 # upstream trees fetched by tools/fetch_lammps.sh must never be committed
 /third_party/lammps/checkout/
 /mac-reports/
+
+# private training material must never be committed
+/tests/data/acks2_si/
+/si_ereaxff/
+*si_private*

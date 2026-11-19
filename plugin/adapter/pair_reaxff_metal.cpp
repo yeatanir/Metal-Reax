@@ -26,9 +26,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <unordered_map>
 
 #include "reaxmetal/acks2.hpp"
+#include "reaxmetal/acks2_ereaxff.hpp"
 #include "reaxmetal/bonded.hpp"
 #include "reaxmetal/bonded_device.hpp"
 #include "reaxmetal/metal_backend.hpp"
@@ -40,10 +42,9 @@
 
 using namespace LAMMPS_NS;
 
-// Elements accepted in eReaxFF mode (upper-case; Ho is refused separately). To extend: audit the element in the legacy tables first
-// (elecpos energy sign reac.f:8779-8860, znucel reac.f:4590-4620, derivative sgn tables poten.f:486-520, 1146-1156 and the copies below them)
-// and in compat_flags.cpp (share_sign, core_charge). Av: +eshare, Z = 3. Ag is NOT accepted (no elecpos energy branch although the derivative tables list it).
-static const char *const kEreaxffElements[] = {"C", "EL", "AV"};
+// Species validated against the legacy executable (upper-case). Any other species is ACCEPTED when its data is complete; a warning says it has not been validated.
+// An eparams entry that says `tested` silences the warning. See README: "Species data".
+static const char *const kEreaxffValidated[] = {"C", "EL", "AV", "AL"};
 
 PairReaxFFMetal::PairReaxFFMetal(LAMMPS *lmp) : PairReaxFF(lmp)
 {
@@ -116,6 +117,9 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
   const int n = atom->ntypes;
   if (nargs != 3 + n) error->all(FLERR, "Incorrect args for pair coefficients" + utils::errorurl(21));
 
+  acks2_groups_set_ = false;   // a new pair_coeff starts a new set of ACKS2 charge groups (first force call)
+  acks2_group_q_.clear();
+
   // read and validate the force field with reaxmetal's own parser (every rank: the file is small and read-only)
   try {
     reaxmetal::FfieldOptions opt;
@@ -152,23 +156,23 @@ void PairReaxFFMetal::coeff(int nargs, char **args)
   if (itmp != n) error->all(FLERR, "Non-existent ReaxFF type");
 
   if (settings_.ereaxff) {
-    // eReaxFF mode is validated for C and El only: the legacy sign tables (elecpos) and core-charge table have quirks for other elements
-    // (the audited copies of the routine disagree on their element lists), so refuse instead of guessing.
+    // No element allow-list. Required data: an electron species needs nothing; every other species needs a core charge Z > 0 (eparams entry or the legacy znucel
+    // table). Missing data or a genuinely unimplemented option is an error; a species not validated against the legacy code only gives a warning.
     for (int t = 1; t <= n; ++t) {
       if (map_[static_cast<std::size_t>(t)] < 0) continue;
-      std::string nm = ff_->single(map_[static_cast<std::size_t>(t)]).name;
-      std::transform(nm.begin(), nm.end(), nm.begin(), [](unsigned char c) { return static_cast<char>(std::toupper(c)); });
-      if (nm == "HO") error->all(FLERR, "Pair style reaxff/metal ereaxff: hole particles (Ho) are not supported");
-      bool allowed = false;
-      for (const char *ok : kEreaxffElements) allowed = allowed || nm == ok;
-      if (!allowed && settings_.species) {
-        const auto it = settings_.species->find(reaxmetal::normalize_symbol(nm));
-        if (it != settings_.species->end() && it->second.tested) allowed = true;
-        else if (it != settings_.species->end())
-          error->all(FLERR, "Pair style reaxff/metal ereaxff: element '{}' is marked 'untested' in the eparams file {}; validate it against the legacy code, then mark it 'tested'", nm, settings_.eparams_file);
-      }
-      if (!allowed)
-        error->all(FLERR, "Pair style reaxff/metal ereaxff: element '{}' is not in the eReaxFF allow-list (C, El, Av); declare it as 'tested' in a pair_style `eparams <file>` (SYMBOL Z SHARE_SIGN tested) only after auditing its legacy sharing / core-charge / derivative-sign entries", ff_->single(map_[static_cast<std::size_t>(t)]).name);
+      const reaxmetal::SingleBody &sb = ff_->single(map_[static_cast<std::size_t>(t)]);
+      const std::string &nm = sb.name;
+      if (nm == "HO") error->all(FLERR, "Pair style reaxff/metal ereaxff: hole particles (Ho) are not supported (the legacy code has extra branches for them that are not reproduced)");
+      const auto ent = settings_.species ? settings_.species->find(reaxmetal::normalize_symbol(nm)) : reaxmetal::SpeciesTable::const_iterator();
+      const bool have_entry = settings_.species && ent != settings_.species->end();
+      if (!sb.flags.is_electron && !(sb.flags.core_charge > 0.0))
+        error->all(FLERR, "Pair style reaxff/metal ereaxff: species '{}' has no core charge Z: it is not in the legacy znucel table; add a line '{} Z SHARE_SIGN tested' to an eparams file (pair_style keyword eparams), or mark it 'electron=yes' if it is an explicit electron", nm, nm);
+      bool validated = have_entry && ent->second.tested;
+      for (const char *ok : kEreaxffValidated) validated = validated || nm == ok;
+      if (!validated && comm->me == 0)
+        error->warning(FLERR, "Pair style reaxff/metal ereaxff: species '{}' has not been validated against the legacy code (eparams flag 'untested' or no entry); its energy and forces are computed, but check them against the legacy executable before production use", nm);
+      if (!sb.flags.is_electron && sb.flags.share_sign == 0 && comm->me == 0)
+        error->warning(FLERR, "Pair style reaxff/metal ereaxff: species '{}' has SHARE_SIGN 0: electrons are not shared with it (the legacy code has no sharing branch for this element)", nm);
     }
     if (ff_->electron_taper() > ff_->file_control().nonb_cut)
       error->all(FLERR, "Pair style reaxff/metal ereaxff: electron taper {} A exceeds the non-bonded cutoff {} A of the force field", ff_->electron_taper(), ff_->file_control().nonb_cut);
@@ -209,7 +213,10 @@ void PairReaxFFMetal::init_style()
   if (settings_.ereaxff) {
     // charges are fixed per particle (MOLCHARGE, legacy icharg 8); a charge fix would silently replace them
     if (!modify->get_fix_by_style("^acks2/reax").empty() || !modify->get_fix_by_style("^qeq/").empty() || !modify->get_fix_by_style("^qtpie/reax").empty())
-      error->all(FLERR, "Pair style reaxff/metal ereaxff: charges are fixed (data file q, legacy icharg 8); do not combine with a charge fix (qeq/acks2/qtpie)");
+      error->all(FLERR, "Pair style reaxff/metal ereaxff: the charges are fixed (data file q, legacy icharg 8) or solved inside the pair style (acks2 yes); do not combine with a charge fix (qeq/acks2/qtpie)");
+    if (settings_.acks2) {
+      if (comm->nprocs > 1) error->all(FLERR, "Pair style reaxff/metal ereaxff acks2 yes: the ACKS2 solve needs one MPI rank (run one LAMMPS per bead)");
+    }
     // The legacy bonded terms take ONE minimum image per atom pair (dista2); a ghost-atom treatment also sees further images. Measured against the exact
     // ereac (Ag7_1 straddling the boundary, project/tools/discontinuity/periodic_ag_check.py): agreement to 1e-6 kcal/mol for box edges 11, 12, 16, 22 A, but
     // 4e-2 kcal/mol at 10 A (= 2 x bond_cut) and 5 kcal/mol at 8 A. So refuse periodic edges below 2 x bond_cut + 1 A (the smallest tested passing edge).
@@ -514,6 +521,66 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
     const NeighborCutoffs cut = cutoffs();
     std::vector<double> q(a.nall());   // per atom: ghost charges are the ones LAMMPS communicated (as the reference reads them)
     for (std::size_t i = 0; i < a.nall(); ++i) q[i] = atom->q[i];
+    const bool e_acks2 = settings_.ereaxff && settings_.acks2;
+    std::vector<double> s_all;           // eReaxFF acks2: kinetic potentials of every atom (ghosts = owner's), zero for fixed-charge particles
+    std::vector<double> acks2_ref;       // eReaxFF acks2: reference charge of each solved owned atom
+    std::vector<char> no_coupling;       // eReaxFF acks2: owned atoms whose coupling energy q*s is left out (species `polarization off`)
+    FarList far_e;
+    if (e_acks2) {
+      far_e = build_far_list(a, cut);
+      lap("far_list");
+      const std::size_t nl = a.nlocal;
+      std::vector<double> qin(nl);
+      std::vector<int> grp(nl, -1);
+      std::map<long long, int> dense;
+      const bool use_mol = atom->molecule_flag != 0 && atom->molecule != nullptr;
+      if (!acks2_groups_set_) {      // charge groups and their total charge from the data file (first force call): the legacy MOLCHARGE lines
+        for (std::size_t i = 0; i < nl; ++i) {
+          qin[i] = atom->q[i];
+          const int t = a.type[i];
+          if (t < 0 || !ff_->single(t).flags.charge_solve) continue;
+          acks2_group_q_[use_mol ? static_cast<long long>(atom->molecule[i]) : 0LL] += qin[i];
+        }
+        acks2_groups_set_ = true;
+      }
+      for (std::size_t i = 0; i < nl; ++i) qin[i] = atom->q[i];
+      std::vector<double> gq;
+      for (const auto &kv : acks2_group_q_) { dense[kv.first] = static_cast<int>(gq.size()); gq.push_back(kv.second); }
+      for (std::size_t i = 0; i < nl; ++i) {
+        const int t = a.type[i];
+        if (t < 0 || !ff_->single(t).flags.charge_solve) continue;
+        const auto it = dense.find(use_mol ? static_cast<long long>(atom->molecule[i]) : 0LL);
+        if (it == dense.end()) throw SystemError("ACKS2: a solved atom belongs to a molecule that had no solved atom at the first force call");
+        grp[i] = it->second;
+      }
+      // groups without a solved atom (all fixed) must not stay in the system
+      std::vector<std::size_t> cnt(gq.size(), 0);
+      for (std::size_t i = 0; i < nl; ++i) if (grp[i] >= 0) ++cnt[static_cast<std::size_t>(grp[i])];
+      std::vector<int> remap(gq.size(), -1); std::vector<double> gq2;
+      for (std::size_t g = 0; g < gq.size(); ++g) if (cnt[g] > 0) { remap[g] = static_cast<int>(gq2.size()); gq2.push_back(gq[g]); }
+      for (std::size_t i = 0; i < nl; ++i) if (grp[i] >= 0) grp[i] = remap[static_cast<std::size_t>(grp[i])];
+      Acks2Options ao; ao.legacy_constants = settings_.acks2_legacy_constants;
+      const Acks2Solution sol = solve_acks2_ereaxff(*ff_, cut, a, far_e, qin, grp, gq2, ao);
+      lap("acks2_solve");
+      if (sol.residual > 1.0e-8 && comm->me == 0) error->warning(FLERR, "ACKS2 solve residual {} eV is larger than 1e-8", sol.residual);
+      s_all.assign(a.nall(), 0.0);
+      acks2_ref = sol.ref;
+      no_coupling.assign(a.nall(), 0);
+      for (std::size_t i = 0; i < a.nall(); ++i) {
+        const std::size_t o = static_cast<std::size_t>(a.owner[i]);
+        q[i] = sol.q[o];
+        s_all[i] = sol.s[o];
+        const int t = a.type[o];
+        if (t >= 0 && !ff_->single(t).flags.pol_energy) no_coupling[i] = 1;
+      }
+      for (std::size_t i = 0; i < nl; ++i) atom->q[i] = sol.q[i];
+      if (const char *dump = std::getenv("REAXMETAL_ACKS2_DUMP")) {   // validation aid: tag, charge, kinetic potential (eV) of the owned atoms, %.17g
+        if (FILE *fp = std::fopen(dump, "w")) {
+          for (std::size_t i = 0; i < nl; ++i) std::fprintf(fp, "%lld %.17g %.17g\n", static_cast<long long>(atom->tag[i]), sol.q[i], sol.s[i]);
+          std::fclose(fp);
+        }
+      }
+    }
     BondedOptions bo;
     bo.enobonds = settings_.enobonds;
     bo.per_atom = per_atom;
@@ -551,12 +618,12 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
       }
       lap("finish");
     } else {
-      const FarList far = build_far_list(a, cut);
+      const FarList far = e_acks2 ? std::move(far_e) : build_far_list(a, cut);
       br = compute_bonded_core(*ff_, settings_.control, a, far, bo);
       if (settings_.ereaxff) {
         // legacy single-precision literals (c1c, 4/3 exponent), see electron.hpp / nonbonded.hpp
         no.coulomb_constant = electron_terms::kCoulombKcal;
-        no.legacy_coulomb_exponent = true;
+        no.legacy_coulomb_exponent = !e_acks2 || settings_.acks2_legacy_constants;
       }
       nr = compute_nonbonded_core(*ff_, cut, a, far, q, no);
       if (settings_.ereaxff) {
@@ -564,6 +631,19 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
         e_electron = el.e_electron;
         for (std::size_t k = 0; k < nr.grad.size(); ++k) nr.grad[k] += el.grad[k];
         nr.e[EnergyTerm::Polarization] = 0.0;   // legacy icharg 8: charges fixed, charge energy `ech` is never computed (total excludes it)
+      }
+      if (e_acks2) {
+        // legacy icharg 7: charge energy ech = evkcmol*(chi + eta q) q of the solved atoms + coupling q*s; bond-softness Coulomb term over all pairs (s = 0 on fixed particles)
+        const double evk = settings_.acks2_legacy_constants ? kLegacyEvKcal : kStockEvKcal;
+        nr.e[EnergyTerm::Polarization] = acks2_self_energy(*ff_, a, q, evk);
+        add_acks2_terms(*ff_, cut, a, far, q, s_all.data(), nr, evk, &no_coupling);
+        // The full ACKS2 functional carries -sum_i q_ref_i s_i; the legacy energy leaves it out. It vanishes when all solved atoms share one reference charge (one group,
+        // sum s = 0). With several groups it does not, and without it the forces are not the gradient of the energy: included with `acks2_constants consistent`.
+        if (!settings_.acks2_legacy_constants) {
+          double e_ref = 0.0;
+          for (std::size_t i = 0; i < a.nlocal; ++i) e_ref -= evk * acks2_ref[i] * s_all[i];
+          nr.e[EnergyTerm::Polarization] += e_ref;
+        }
       }
       if (acks2_fix_) add_acks2_terms(*ff_, cut, a, far, q, acks2_fix_->get_s() + a.nall(), nr);
     }

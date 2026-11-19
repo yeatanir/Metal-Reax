@@ -34,18 +34,29 @@ struct SpeciesFlags {
   bool is_electron = false;                 // normalized symbol == "EL" (reac.f/poten.f compare qa == 'El')
   double core_charge = 0.0;                 // znucel: nuclear charge Z of the element (reac.f:4590-4615); 0 if not in the table
   int share_sign = 0;                       // elecpos (reac.f:8815-8851): -1 -> avalc -= eshare (C,O,H,F,N,Os); +1 -> += (Li,Lv,P,B,Av,Al); 0 none
+  // ---- eReaxFF ACKS2 charges (pair_style keyword `acks2 yes`; data driven, never decided by an element name beyond the legacy "El" default of is_electron)
+  bool charge_solve = true;                 // true: the charge of this species is solved by ACKS2; false: it stays at the data-file value (default: false for electrons)
+  bool pol_energy = true;                   // true: the ACKS2 coupling energy q*s of a solved atom is included (default: false for electrons, as the legacy ech sum)
 };
 
 // Per-element eReaxFF data that the legacy source keeps in code (znucel nuclear-charge table, elecpos sharing-sign table). They can be
 // supplied from an input file (pair_style keyword `eparams <file>`) so that a new element needs a parameter file, not a code change.
-// File format, one element per line ('#' starts a comment):  SYMBOL  Z  SHARE_SIGN  tested|untested
+// File format, one element per line ('#' starts a comment):  SYMBOL  Z  SHARE_SIGN  tested|untested  [electron=yes|no] [charge=fixed|solve] [polarization=on|off]
 //   Z = nuclear charge used in the electron-core term; SHARE_SIGN in {-1, 0, +1} (elecpos: -1 avalc -= eshare, +1 avalc += eshare).
-// An entry overrides the built-in legacy tables for that element. An element is ACCEPTED in eReaxFF mode only if it is C, El, Av
-// (validated against the legacy code) or its entry says `tested`; `untested` and absent elements are refused.
+// An entry overrides the built-in legacy tables for that element. Every element is ACCEPTED in eReaxFF mode as long as its core charge is known
+// (this table or the legacy znucel table) or it is an electron species; `untested` (or absent and not C, El, Av, Al) only gives a warning.
+// The optional key=value fields (any order) set, per species:
+//   electron=yes|no           the species is an explicit electron (default: the symbol is "El", the legacy rule)
+//   charge=fixed|solve        with `acks2 yes`: keep the data-file charge, or solve it (default: fixed for an electron species, solve otherwise)
+//   polarization=on|off       with `acks2 yes`: include the coupling energy q*s of the solved species (default: off for an electron species, as the legacy
+//                              charge-energy sum, which leaves El, Ho, Lv, Av, Li out of the q*s term; on otherwise)
 struct SpeciesEntry {
   double core_charge = 0.0;
   int share_sign = 0;
   bool tested = false;
+  int electron = -1;        // -1 default, 0 no, 1 yes
+  int charge_solve = -1;    // -1 default, 0 fixed, 1 solve
+  int polarization = -1;    // -1 default, 0 off, 1 on
 };
 using SpeciesTable = std::map<std::string, SpeciesEntry>;   // key: normalize_symbol(symbol)
 // Throws std::invalid_argument with file:line on any malformed line.

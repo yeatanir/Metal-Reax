@@ -13,6 +13,7 @@
 #include "REAXFF/pair_reaxff.h"
 #include "pair.h"
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -73,6 +74,9 @@ class PairReaxFFMetal : public PairReaxFF {
   std::vector<double> chi_, eta_, gamma_, bcut_acks2_;
   double bond_softness_ = 0.0;                 // general parameter 35 (index 34), the ACKS2 bond softness      // extract() arrays, index 0..ntypes (index 0 unused)
   double cutmax_ = 0.0;
+  // eReaxFF `acks2 yes`: total charge of the solved atoms of each charge group (molecule id; one group without atom_style molecule), taken from the data-file charges at the first force call
+  std::map<long long, double> acks2_group_q_;
+  bool acks2_groups_set_ = false;
   std::unique_ptr<reaxmetal::mtl::Context> ctx_;
   std::vector<std::pair<std::string, double>> profile_;   // REAXMETAL_PROFILE=1: accumulated wall seconds per phase of compute(), printed at destruction
   void prof(const char *name, double seconds);   // Metal device context (backend metal), created on first use

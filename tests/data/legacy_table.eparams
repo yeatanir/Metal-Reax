@@ -1,5 +1,5 @@
 # Built-in legacy tables (znucel reac.f:4590-4615, elecpos sign reac.f:8815-8851) written as an eparams file.
-# Only C, El and Av are validated against the legacy code; everything else is 'untested' (refused). SYMBOL Z SHARE_SIGN tested|untested
+# C, El, Av and Al are validated against the legacy code; any other element is accepted but gives a warning while it is marked untested. SYMBOL Z SHARE_SIGN tested|untested [electron=yes|no] [charge=fixed|solve] [polarization=on|off]
 H   1 -1 untested
 HE  2 0 untested
 LI  1 1 untested
@@ -10,7 +10,7 @@ O   8 -1 untested
 F   9 -1 untested
 NA  1 0 untested
 MG  2 0 untested
-AL  5 1 untested
+AL  5 1 tested
 SI  4 0 untested
 P   15 1 untested
 S   6 0 untested
