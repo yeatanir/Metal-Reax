@@ -571,7 +571,7 @@ void PairReaxFFMetal::compute(int eflag, int vflag)
         q[i] = sol.q[o];
         s_all[i] = sol.s[o];
         const int t = a.type[o];
-        if (t >= 0 && !ff_->single(t).flags.pol_energy) no_coupling[i] = 1;
+        if (t >= 0 && settings_.acks2_legacy_constants && !ff_->single(t).flags.pol_energy) no_coupling[i] = 1;   // legacy compatibility only: the variational energy keeps q*s of every solved atom
       }
       for (std::size_t i = 0; i < nl; ++i) atom->q[i] = sol.q[i];
       if (const char *dump = std::getenv("REAXMETAL_ACKS2_DUMP")) {   // validation aid: tag, charge, kinetic potential (eV) of the owned atoms, %.17g

@@ -108,9 +108,9 @@ PairSettings parse_pair_style_args(std::span<const std::string> args) {
     if (p.lgvdw) throw FfieldError("pair_style reaxff/metal: eReaxFF mode does not support lgvdw");
     p.checkqeq = false;   // charges are fixed (icharg 8) or solved inside the pair style (acks2 yes, icharg 7): a charge fix would overwrite them
     if (p.acks2 && p.acks2_legacy_constants)
-      p.notices.push_back("pair_style reaxff/metal: acks2_constants legacy reproduces the legacy executable, whose forces are NOT the exact gradient of its energy "
+      p.notices.push_back("pair_style reaxff/metal: acks2_constants legacy reproduces the legacy executable (training energies, comparisons), but its forces are NOT the gradient of its energy "
                           "(compact: bond-softness pairs with a fixed particle are in the energy but not in the solve; several charge groups: the -q_ref*s term is missing; "
-                          "mismatched Coulomb constants). Use `acks2_constants consistent` for dynamics (forces = gradient of the energy to ~1e-7 relative).");
+                          "mismatched Coulomb constants). Do not use it for dynamics; the default `acks2_constants consistent` has forces equal to the gradient of the energy.");
     if (p.acks2)
       p.notices.push_back("pair_style reaxff/metal: eReaxFF mode with acks2 yes: the charges of the species marked `charge solve` (default: all but the electron species) are solved by ACKS2 inside the pair style (legacy icharg 7); the others keep their data-file charge");
     else

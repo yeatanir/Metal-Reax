@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-2.0-only
 # SPDX-FileCopyrightText: 2026 Anirban Phukan
-"""eReaxFF `acks2 yes` (ACKS2 charges solved inside the pair style) against the legacy executable (single points of tests/data/acks2/refs.json:
+"""eReaxFF `acks2 yes` (ACKS2 charges solved inside the pair style) against the legacy executable with `acks2_constants legacy` (single points of tests/data/acks2/refs.json:
 Ag/Av + El, C + El, Si (Al + El) cluster and 3x3x3 periodic supercell; compact = El fixed, full = El solved), plus
   * acks2 off reproduces the stored fixed-charge Ag run (energy, 15 energy slots, charges, forces) to 1e-12 relative,
   * `charge=fixed` for every species gives the same energy and forces as acks2 off,
-  * `acks2_constants consistent`: the forces equal central finite differences of the energy (rel 1e-6) for the compact and the full mode.
+  * the default `acks2_constants consistent`: the forces equal central finite differences of the energy (rel 1e-6) for the compact and the full mode.
 usage: run_acks2_ereaxff.py --lmp BIN --plugin SO --data tests/data/acks2"""
 import argparse, json, os, random, subprocess, sys, tempfile
 from pathlib import Path
@@ -76,7 +76,7 @@ if a.si_data:
     for r_ in json.loads((Path(a.si_data) / "refs_si.json").read_text()): r_["ddir"] = Path(a.si_data); refs.append(r_)
 with tempfile.TemporaryDirectory() as td:
     for ref in refs:
-        lm = lmp_run(Path(td) / ref["name"], ref["ffield"], ref["atoms"], ref["groups"], ref["cell"], eparams_for(ref), "acks2 yes", ref["taper"], ddir=ref["ddir"])
+        lm = lmp_run(Path(td) / ref["name"], ref["ffield"], ref["atoms"], ref["groups"], ref["cell"], eparams_for(ref), "acks2 yes acks2_constants legacy", ref["taper"], ddir=ref["ddir"])
         lg = ref["legacy"]; terms = [sum(lm["pv"][s] for s in sl) for sl in SLOTS]
         rel = {n: abs(t - x) / max(1.0, abs(x)) for n, t, x in zip(NAMES, terms, lg["terms"]) if n not in ("molecule", "field")}
         wt = max(v for n, v in rel.items() if not n.startswith("torsion")); tor = max(rel["torsion"], rel["torsion_conj"])
@@ -99,7 +99,7 @@ with tempfile.TemporaryDirectory() as td:
     df = max(abs(x - y) for f1, f2 in zip(off["f"], fb) for x, y in zip(f1, f2))
     check(f"... and its forces (max abs diff {df:.1e})", df <= 1e-9)
     # every species fixed with acks2 yes == acks2 off
-    allfix = lmp_run(Path(td) / "allfix", ag["ffield"], ag["atoms"], [(i + 1, i + 1, 1.0 if x[0] == "Av" else -1.0) for i, x in enumerate(ag["atoms"])], None, "AV 3 1 tested charge=fixed\n", "acks2 yes", 5.7)
+    allfix = lmp_run(Path(td) / "allfix", ag["ffield"], ag["atoms"], [(i + 1, i + 1, 1.0 if x[0] == "Av" else -1.0) for i, x in enumerate(ag["atoms"])], None, "AV 3 1 tested charge=fixed\n", "acks2 yes acks2_constants legacy", 5.7)
     check("charge=fixed for Av (El fixed by default) gives the acks2-off energy and forces",
           abs(allfix["pe"] - off["pe"]) < 1e-9 and max(abs(x - y) for f1, f2 in zip(allfix["f"], off["f"]) for x, y in zip(f1, f2)) < 1e-9)
 
@@ -117,12 +117,12 @@ with tempfile.TemporaryDirectory() as td:
                 cmds += [f"displace_atoms g{i} move {vec.format(h=hs)} units box", "run 0", f'print "FDP {i} {d} ${{E}}"', f"displace_atoms g{i} move {vec.format(h=-2 * hs)} units box", "run 0",
                          f'print "FDM {i} {d} ${{E}}"', f"displace_atoms g{i} move {vec.format(h=hs)} units box"]
         grp = [(1, 6, 6.0)] + [(i, i, -1.0) for i in range(7, 12)]
-        lm = lmp_run(Path(td) / ("fd_" + mode), ag["ffield"], at, grp, None, ep, "acks2 yes acks2_constants consistent", 5.7, post="\n".join(cmds))
+        lm = lmp_run(Path(td) / ("fd_" + mode), ag["ffield"], at, grp, None, ep, "acks2 yes", 5.7, post="\n".join(cmds))
         fp, fm = {}, {}
         for l in lm["log"].splitlines():
             w = l.split()
             if len(w) == 4 and w[0] in ("FDP", "FDM"): (fp if w[0] == "FDP" else fm)[(int(w[1]), int(w[2]))] = float(w[3])
         fmax = max(abs(v) for f in lm["f"] for v in f)
         err = max(abs(-(fp[k] - fm[k]) / (2 * hs) - lm["f"][k[0] - 1][k[1]]) for k in fp)
-        check(f"forces vs finite differences of the energy, acks2_constants consistent, {mode}: max {err:.1e} ({err / fmax:.1e} of max |F| {fmax:.1f})", err / fmax < 1e-6 and len(fp) == 33)
+        check(f"forces vs finite differences of the energy, default constants (consistent), {mode}: max {err:.1e} ({err / fmax:.1e} of max |F| {fmax:.1f})", err / fmax < 1e-6 and len(fp) == 33)
 print("RESULT: PASS" if ok else "RESULT: FAIL"); sys.exit(0 if ok else 1)
