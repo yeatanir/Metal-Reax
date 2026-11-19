@@ -183,30 +183,65 @@ FarList build_far_list(const AtomSet& atoms, const NeighborCutoffs& cut) {
   FarList out;
   out.row_start.push_back(0);
   if (n == 0) return out;
-  const CellGrid g = build_cell_grid(atoms.x, std::max(cut.nonb, cut.bond));
-  std::vector<RowEntry> row;
+  // Candidate search on a grid of cells of about half the largest cutoff, scanning each row of cells as one contiguous run of a cell-ordered copy of the
+  // coordinates. The set of pairs (distance test unchanged: d2 = dx^2 + dy^2 + dz^2 <= rc^2 on x_j - x_i), their order (ascending j per row) and every
+  // stored value are those of the previous version (3 x 3 x 3 cells of the full cutoff); only fewer far candidates are looked at.
+  constexpr double kCellsPerCutoff = 2.0;
+  const CellGrid g = build_cell_grid(atoms.x, std::max(cut.nonb, cut.bond) / kCellsPerCutoff);
+  std::vector<double> xs(3 * n);   // coordinates in cell order
+  for (std::size_t p = 0; p < n; ++p) {
+    const double* xj = &atoms.x[3 * static_cast<std::size_t>(g.cell_items[p])];
+    xs[3 * p] = xj[0]; xs[3 * p + 1] = xj[1]; xs[3 * p + 2] = xj[2];
+  }
+  auto reach = [&](double rc, std::size_t d) {   // cells to look at in direction d (margin of 1e-9 against rounding of the cell index)
+    return static_cast<std::uint32_t>(std::ceil(rc * (1.0 + 1.0e-9) / g.cell_size[d]));
+  };
+  // distance from a point (coordinate t from the grid origin) to the slab [c, c+1) * cell_size, 0 inside; atoms outside the grid range are clamped into the
+  // end cells, so the end slabs are open on the outside
+  auto slab_gap = [](double t, std::uint32_t c, double cs) {
+    const double a = c * cs, b = (c + 1) * cs;
+    return t < a ? a - t : (t > b ? t - b : 0.0);
+  };
+  std::vector<std::int32_t> row;   // j of the accepted pairs of one row
   for (std::size_t i = 0; i < n; ++i) {
     const double rc = cut.row_cut(i, atoms.nlocal);
     const double rc2 = rc * rc;
     std::uint32_t c[3];
     g.coords(g.atom_cell[i], c);
+    std::uint32_t lo[3], hi[3];
+    for (std::size_t d = 0; d < 3; ++d) {
+      const std::uint32_t r = reach(rc, d);
+      lo[d] = c[d] > r ? c[d] - r : 0;
+      hi[d] = static_cast<std::uint32_t>(std::min<std::uint64_t>(std::uint64_t{c[d]} + r, g.ncell[d] - 1));
+    }
     const double* xi = &atoms.x[3 * i];
-    for (std::uint32_t cz = c[2] ? c[2] - 1 : 0; cz <= std::min(c[2] + 1, g.ncell[2] - 1); ++cz)
-      for (std::uint32_t cy = c[1] ? c[1] - 1 : 0; cy <= std::min(c[1] + 1, g.ncell[1] - 1); ++cy)
-        for (std::uint32_t cx = c[0] ? c[0] - 1 : 0; cx <= std::min(c[0] + 1, g.ncell[0] - 1); ++cx) {
-          const std::uint32_t cell = (cz * g.ncell[1] + cy) * g.ncell[0] + cx;
-          for (std::uint32_t p = g.cell_start[cell]; p < g.cell_start[cell + 1]; ++p) {
-            const std::uint32_t j = g.cell_items[p];
-            if (j <= i) continue;
-            RowEntry e;
-            double d2;
-            if (!within(xi, &atoms.x[3 * j], rc2, e.dv, d2)) continue;
-            e.j = static_cast<std::int32_t>(j);
-            e.d = std::sqrt(d2);
-            row.push_back(e);
-          }
+    for (std::uint32_t cz = lo[2]; cz <= hi[2]; ++cz) {
+      const double gz = slab_gap(xi[2] - g.origin[2], cz, g.cell_size[2]);
+      for (std::uint32_t cy = lo[1]; cy <= hi[1]; ++cy) {
+        const double gy = slab_gap(xi[1] - g.origin[1], cy, g.cell_size[1]);
+        if (gy * gy + gz * gz > rc2 * (1.0 + 1.0e-9)) continue;   // the whole (y, z) row of cells is beyond the cutoff
+        const std::uint32_t base = (cz * g.ncell[1] + cy) * g.ncell[0];
+        for (std::uint32_t p = g.cell_start[base + lo[0]]; p < g.cell_start[base + hi[0] + 1]; ++p) {   // cells lo[0]..hi[0] of this row are contiguous
+          const std::uint32_t j = g.cell_items[p];
+          if (j <= i) continue;
+          double dv[3], d2;
+          if (!within(xi, &xs[3 * static_cast<std::size_t>(p)], rc2, dv, d2)) continue;
+          row.push_back(static_cast<std::int32_t>(j));
         }
-    append_row(out, row);
+      }
+    }
+    // ascending j, then the stored values are computed again in that order (same expressions, so the same bits; sorting 4-byte keys is much cheaper than sorting entries)
+    std::sort(row.begin(), row.end());
+    const std::size_t b = out.nbr.size(), m = row.size();
+    out.nbr.resize(b + m); out.dist.resize(b + m); out.dvec.resize(3 * (b + m));
+    for (std::size_t k = 0; k < m; ++k) {
+      double d2;
+      static_cast<void>(within(xi, &atoms.x[3 * static_cast<std::size_t>(row[k])], rc2, &out.dvec[3 * (b + k)], d2));
+      out.nbr[b + k] = row[k];
+      out.dist[b + k] = std::sqrt(d2);
+    }
+    out.row_start.push_back(b + m);
+    row.clear();
   }
   return out;
 }
