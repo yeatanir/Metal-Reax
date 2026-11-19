@@ -14,3 +14,6 @@ __pycache__/
 /tests/data/acks2_si/
 /si_ereaxff/
 *si_private*
+
+# journal Supporting Information used only as input to examples/graphitization/make_ffield.sh; not redistributed
+/jp510274e_si_001.pdf
